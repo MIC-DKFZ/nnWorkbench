@@ -1,0 +1,571 @@
+"""Open a raw nnU-Net case and its related files in a dedicated Napari process."""
+
+from __future__ import annotations
+
+import json
+import re
+import sys
+import argparse
+from html import escape
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
+from pathlib import Path
+
+from qtpy.QtCore import QObject, QSize, Qt, Signal
+from qtpy.QtGui import QColor, QKeySequence, QPainter, QShortcut
+from qtpy.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
+
+
+_NIFTI_SUFFIXES = (".nii.gz", ".nii")
+_CHANNEL_SUFFIX = re.compile(r"_\d{4}$")
+
+
+@dataclass(frozen=True)
+class InspectionFiles:
+    images: tuple[Path, ...]
+    labels: tuple[Path, ...]
+    annotations: tuple[Path, ...]
+
+
+@dataclass(frozen=True)
+class _LayerData:
+    name: str
+    kind: str
+    data: object
+    affine: object | None = None
+
+
+@dataclass(frozen=True)
+class _CaseData:
+    layers: tuple[_LayerData, ...]
+    skipped_annotations: tuple[Path, ...]
+
+
+class _PrefetchSignals(QObject):
+    completed = Signal(str, object)
+    failed = Signal(str, str)
+
+
+class PrefetchStatusBar(QWidget):
+    """Dot indicator for the cached state of the navigator's requested prefetches."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._states: list[tuple[str, bool | None]] = []
+        self.setFixedHeight(24)
+
+    def set_cases(self, previous: list[tuple[str, bool]], current: str, following: list[tuple[str, bool]]) -> None:
+        self._states = [*previous, (current, None), *following]
+        neighbours = [ready for _, ready in [*previous, *following]]
+        ready = sum(neighbours)
+        self.setToolTip(f"Prefetch: {ready}/{len(neighbours)} neighbouring cases ready")
+        self.setFixedWidth(max(18, 18 * len(self._states)))
+        self.update()
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API spelling
+        return QSize(max(72, 18 * len(self._states)), 24)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API spelling
+        painter = QPainter(self); painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        diameter, spacing = 10, 8
+        x = 0
+        for _identifier, ready in self._states:
+            painter.setBrush(QColor("#ffffff" if ready is None else "#5b9137" if ready else "#ed6a05"))
+            painter.setPen(QColor("#777777" if ready is None else "#457329" if ready else "#b84c00"))
+            painter.drawEllipse(x, (self.height() - diameter) // 2, diameter, diameter)
+            x += diameter + spacing
+        painter.end()
+
+
+def case_id(path: Path) -> str:
+    """Derive the nnU-Net case ID, stripping an image-channel suffix when present."""
+    name = path.name
+    for suffix in _NIFTI_SUFFIXES:
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+            break
+    else:
+        name = path.stem
+    return _CHANNEL_SUFFIX.sub("", name)
+
+
+def related_files(selected: Path) -> InspectionFiles:
+    """Find raw image, label, and annotation files belonging to ``selected``'s case."""
+    return related_files_for_case(selected.parent.parent, case_id(selected))
+
+
+def related_files_for_case(dataset: Path, identifier: str) -> InspectionFiles:
+    """Find all raw files for a known nnU-Net case ID."""
+
+    def matching(folder: str, nifti_only: bool = False) -> tuple[Path, ...]:
+        directory = dataset / folder
+        if not directory.is_dir():
+            return ()
+        paths = (path for path in directory.iterdir() if path.is_file() and case_id(path) == identifier
+                 and (not nifti_only or path.name.endswith(_NIFTI_SUFFIXES)))
+        return tuple(sorted(paths, key=lambda path: path.name.casefold()))
+
+    return InspectionFiles(matching("imagesTr", True), matching("labelsTr", True), matching("annotationsTr"))
+
+
+def image_case_ids(dataset: Path) -> tuple[str, ...]:
+    """Return the ordered case IDs represented by training image files."""
+    images = dataset / "imagesTr"
+    if not images.is_dir():
+        return ()
+    return tuple(sorted({case_id(path) for path in images.iterdir()
+                         if path.is_file() and path.name.endswith(_NIFTI_SUFFIXES)}, key=str.casefold))
+
+
+def prefetch_indices(index: int, count: int, previous: bool, following: bool, radius: int) -> tuple[int, ...]:
+    """Return valid prefetch positions in nearest-first alternating direction order."""
+    result: list[int] = []
+    for offset in range(1, radius + 1):
+        if following and index + offset < count:
+            result.append(index + offset)
+        if previous and index - offset >= 0:
+            result.append(index - offset)
+    return tuple(result)
+
+
+def image_layer_name(path: Path) -> str:
+    """Return the image-layer name expected by napari-nninteractive."""
+    name = path.name
+    for suffix in _NIFTI_SUFFIXES:
+        if name.endswith(suffix):
+            return name[:-len(suffix)]
+    return path.stem
+
+
+def file_ending(path: Path) -> str:
+    """Keep a compound NIfTI suffix intact, or use the image's normal suffix."""
+    return ".nii.gz" if path.name.endswith(".nii.gz") else path.suffix
+
+
+def annotation_target_path(image_path: Path) -> Path:
+    """Return the case-level annotationsTr output path corresponding to an image channel."""
+    return image_path.parent.parent / "annotationsTr" / f"{case_id(image_path)}{file_ending(image_path)}"
+
+
+def annotation_source_image(path: Path) -> Path:
+    """Return an imagesTr source for an annotation, preferring channel 0000."""
+    if path.parent.name != "annotationsTr":
+        return path
+    images = related_files(path).images
+    if not images:
+        raise ValueError(f"No imagesTr file exists for annotation case '{case_id(path)}'.")
+    return next((image for image in images if image_layer_name(image).endswith("_0000")), images[0])
+
+
+def semantic_map_name(image_path: Path) -> str:
+    return f"semantic map - {image_layer_name(image_path)}"
+
+
+def _read_nifti(path: Path) -> tuple[object, object]:
+    """Read image data and a Napari affine transform from MITK-Python."""
+    import mitk
+    import numpy as np
+
+    image = mitk.Image(path)
+    data = np.asarray(image)
+    # MITK geometry is expressed in x, y, z while its NumPy view is z, y, x.
+    # Reverse both coordinate axes to produce Napari's data-coordinate affine.
+    reverse = np.flipud(np.eye(3))
+    linear = reverse @ np.asarray(image.direction) @ reverse @ np.diag(np.asarray(image.spacing)[::-1])
+    affine = np.eye(data.ndim + 1)
+    affine[-4:-1, -4:-1] = linear
+    affine[-4:-1, -1] = np.asarray(image.origin)[::-1]
+    return data, affine
+
+
+def _read_json_points(path: Path) -> list | None:
+    """Read simple JSON point annotations, returning ``None`` for unsupported content."""
+    try:
+        with path.open(encoding="utf-8") as file:
+            data = json.load(file)
+    except (OSError, json.JSONDecodeError):
+        return None
+    points = data.get("points") if isinstance(data, dict) else data
+    if not isinstance(points, list) or not all(isinstance(point, list) for point in points):
+        return None
+    return points
+
+
+def _read_case(dataset: Path, identifier: str) -> _CaseData:
+    """Load a complete case off the Napari GUI thread for display or prefetching."""
+    files = related_files_for_case(dataset, identifier)
+    layers: list[_LayerData] = []
+    for path in files.images:
+        data, affine = _read_nifti(path)
+        layers.append(_LayerData(path.name, "image", data, affine))
+    for path in files.labels:
+        data, affine = _read_nifti(path)
+        layers.append(_LayerData(path.name, "labels", data, affine))
+    skipped: list[Path] = []
+    for path in files.annotations:
+        if path.name.endswith(_NIFTI_SUFFIXES):
+            data, affine = _read_nifti(path)
+            layers.append(_LayerData(path.name, "annotation_labels", data, affine))
+        elif path.suffix.casefold() == ".json":
+            points = _read_json_points(path)
+            if points is None:
+                skipped.append(path)
+            else:
+                layers.append(_LayerData(path.name, "annotation_points", points))
+    return _CaseData(tuple(layers), tuple(skipped))
+
+
+def _display_case(viewer, case_data: _CaseData) -> None:
+    """Update reusable Napari layers with already loaded case data and geometry."""
+    reusable = getattr(viewer, "_nnworkbench_case_layers", {})
+    used: set[tuple[str, int]] = set()
+    positions: dict[str, int] = {}
+    for layer_data in case_data.layers:
+        position = positions.get(layer_data.kind, 0)
+        positions[layer_data.kind] = position + 1
+        slot = (layer_data.kind, position); used.add(slot)
+        layer = reusable.get(slot)
+        if layer is None:
+            if layer_data.kind in {"labels", "annotation_labels"}:
+                layer = viewer.add_labels(layer_data.data, name=layer_data.name, affine=layer_data.affine)
+            elif layer_data.kind in {"points", "annotation_points"}:
+                layer = viewer.add_points(layer_data.data, name=layer_data.name)
+            else:
+                layer = viewer.add_image(layer_data.data, name=layer_data.name, affine=layer_data.affine)
+            reusable[slot] = layer
+        else:
+            layer.data = layer_data.data
+            layer.name = layer_data.name
+            if layer_data.affine is not None:
+                layer.affine = layer_data.affine
+            layer.visible = True
+        layer.metadata["nnworkbench_source"] = layer_data.name
+    for slot, layer in list(reusable.items()):
+        if slot not in used:
+            if slot[0].startswith("annotation_"):
+                # Annotations belong to one case only. Do not leave a stale layer
+                # visible in Napari's layer list when the next case has none.
+                viewer.layers.remove(layer)
+                del reusable[slot]
+            else:
+                layer.visible = False
+    viewer._nnworkbench_case_layers = reusable
+    _reset_middle_slice(viewer, case_data)
+    if hasattr(viewer, "reset_view"):
+        viewer.reset_view()
+    for path in case_data.skipped_annotations:
+        print(f"Skipping unsupported annotation format: {path}")
+
+
+def _reset_middle_slice(viewer, case_data: _CaseData) -> None:
+    """Place Napari's z slider at the middle slice of the newly displayed volume."""
+    if not hasattr(viewer, "dims"):
+        return
+    image = next((layer.data for layer in case_data.layers if layer.kind == "image"), None)
+    shape = getattr(image, "shape", ())
+    if len(shape) < 3:
+        return
+    axis = viewer.dims.ndim - 3
+    if axis >= 0:
+        viewer.dims.set_current_step(axis, shape[-3] // 2)
+
+
+def save_semantic_annotation(viewer, image_path: Path, target: Path) -> None:
+    """Save nnInteractive's semantic-map layer with the source image geometry."""
+    import mitk
+    import numpy as np
+
+    layer_name = semantic_map_name(image_path)
+    try:
+        layer = viewer.layers[layer_name]
+    except (KeyError, IndexError) as error:
+        raise ValueError(f"No nnInteractive semantic-map layer named '{layer_name}' is available.") from error
+    source = mitk.Image(image_path)
+    annotation = mitk.Image(np.asarray(layer.data), spacing=source.spacing, origin=source.origin,
+                            direction=source.direction)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    annotation.save(target)
+
+
+class AnnotationSaveWidget(QWidget):
+    """Napari dock widget that saves the current nnInteractive semantic map."""
+
+    def __init__(self, viewer, image_path: Path, target: Path) -> None:
+        super().__init__()
+        self._viewer, self._image_path, self._target = viewer, image_path, target
+        self._semantic_layer_name = semantic_map_name(image_path)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+        self._layer_info = QLabel()
+        layout.addWidget(self._layer_info)
+        self._status = QLabel(); layout.addWidget(self._status)
+        save = QPushButton("Save annotation")
+        save.clicked.connect(self._save); layout.addWidget(save)
+        close = QPushButton("Close Napari (Ctrl+C)")
+        close.clicked.connect(self._viewer.close); layout.addWidget(close)
+        self._close_shortcut = QShortcut(QKeySequence("Ctrl+C"), self)
+        self._close_shortcut.setContext(Qt.ApplicationShortcut)
+        self._close_shortcut.activated.connect(self._viewer.close)
+        self._viewer.layers.events.inserted.connect(self._update_layer_info)
+        self._viewer.layers.events.removed.connect(self._update_layer_info)
+        self._update_layer_info()
+
+    def _update_layer_info(self, event=None) -> None:
+        try:
+            layer = self._viewer.layers[self._semantic_layer_name]
+        except (KeyError, IndexError):
+            self._layer_info.setText("<b>Annotation layer:</b>")
+        else:
+            self._layer_info.setText(f"<b>Annotation layer:</b> {escape(layer.name)}")
+
+    def _save(self) -> None:
+        try:
+            save_semantic_annotation(self._viewer, self._image_path, self._target)
+        except (OSError, ValueError) as error:
+            self._status.setText(f"Could not save: {error}")
+            QMessageBox.warning(self, "Annotation not saved", str(error))
+            return
+        self._status.setText(f"Saved to {self._target.name}")
+
+
+def _activate_nninteractive(viewer):
+    """Show napari-nninteractive's dock widget when the plugin is installed."""
+    try:
+        dock_widget, widget = viewer.window.add_plugin_dock_widget("napari-nninteractive")
+        dock_widget.setWindowTitle("nnInteractive controls")
+        # nnWorkbench saves the shared semantic map, rather than individual object layers.
+        output = getattr(widget, "aggregation_output_combo", None)
+        semantic_output = getattr(widget, "OUT_SEMANTIC", None)
+        if output is not None and semantic_output is not None:
+            output.setCurrentText(semantic_output)
+        return dock_widget
+    except (KeyError, ModuleNotFoundError, ValueError) as error:
+        print(f"Could not activate napari-nninteractive: {error}")
+        return None
+
+
+def open_annotation(selected_path: Path) -> None:
+    """Open an image in Napari for nnInteractive annotation and optional semantic-map reuse."""
+    import napari
+    import numpy as np
+
+    image_path = annotation_source_image(selected_path)
+    data, affine = _read_nifti(image_path)
+    viewer = napari.Viewer(title=f"nnWorkbench annotation — {case_id(image_path)}")
+    viewer.add_image(data, name=image_layer_name(image_path), affine=affine)
+    target = (selected_path if selected_path.parent.name == "annotationsTr"
+              and selected_path.name.endswith(_NIFTI_SUFFIXES) else annotation_target_path(image_path))
+    if target.is_file():
+        annotation_data, annotation_affine = _read_nifti(target)
+        # MITK exposes an efficient, read-only NumPy view. nnInteractive updates the
+        # semantic map in place, so an existing annotation must be copied first.
+        viewer.add_labels(annotation_data.copy(), name=semantic_map_name(image_path), affine=annotation_affine)
+    else:
+        # Always provide nnInteractive with a writable semantic map matching the
+        # source image's dimensions and geometry, even before its first save.
+        viewer.add_labels(np.zeros(data.shape, dtype=np.uint16), name=semantic_map_name(image_path), affine=affine)
+    _reset_middle_slice(viewer, _CaseData((_LayerData(image_layer_name(image_path), "image", data, affine),), ()))
+    viewer.reset_view()
+    save_widget = AnnotationSaveWidget(viewer, image_path, target)
+    save_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+    save_dock = viewer.window.add_dock_widget(
+        save_widget,
+        name="nnWorkbench — Annotation saving",
+        area="right",
+        add_vertical_stretch=False,
+    )
+    # Do not let the small save panel claim half of the right dock area.
+    save_dock.setMaximumHeight(save_widget.sizeHint().height() + 36)
+    nninteractive_dock = _activate_nninteractive(viewer)
+    if nninteractive_dock is not None:
+        nninteractive_widget = nninteractive_dock.widget()
+        save_widget.setMinimumWidth(nninteractive_widget.minimumSizeHint().width())
+        # Keep nnWorkbench's save controls above the nnInteractive controls.
+        viewer.window._qt_window.splitDockWidget(save_dock, nninteractive_dock, Qt.Vertical)
+    napari.run()
+
+
+class CaseNavigator(QWidget):
+    """A compact right-side Napari control for switching between image cases."""
+
+    def __init__(self, viewer, dataset: Path, cases: tuple[str, ...], current_case: str, current_data: _CaseData,
+                 prefetch_previous: bool = True, prefetch_next: bool = True, prefetch_radius: int = 1) -> None:
+        super().__init__()
+        self._viewer, self._dataset, self._cases = viewer, dataset, cases
+        self._index = cases.index(current_case) if current_case in cases else 0
+        self._prefetch_previous = prefetch_previous
+        self._prefetch_next = prefetch_next
+        self._prefetch_radius = prefetch_radius
+        self._cache: dict[str, _CaseData] = {current_case: current_data}
+        self._prefetching: set[str] = set()
+        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="napari-prefetch")
+        self._signals = _PrefetchSignals(self)
+        self._signals.completed.connect(self._prefetch_completed)
+        self._signals.failed.connect(self._prefetch_failed)
+        self.destroyed.connect(self._shutdown_prefetching)
+        layout = QVBoxLayout(self)
+        self._current = QLabel(); layout.addWidget(self._current)
+        buttons = QHBoxLayout()
+        self._previous = QPushButton("Previous (A)"); self._previous.clicked.connect(self.previous)
+        self._next = QPushButton("Next (D)"); self._next.clicked.connect(self.next)
+        buttons.addWidget(self._previous); buttons.addWidget(self._next); layout.addLayout(buttons)
+        self._prefetch_status = PrefetchStatusBar(self)
+        prefetch_line = QHBoxLayout(); prefetch_line.setContentsMargins(0, 0, 0, 0)
+        prefetch_line.addWidget(QLabel("Prefetch")); prefetch_line.addWidget(self._prefetch_status)
+        prefetch_line.addStretch(); layout.addLayout(prefetch_line)
+        self._close = QPushButton("Close Napari (Ctrl+C)"); self._close.clicked.connect(self.close_viewer)
+        layout.addWidget(self._close)
+        self._close_shortcut = QShortcut(QKeySequence("Ctrl+C"), self)
+        self._close_shortcut.setContext(Qt.ApplicationShortcut)
+        self._close_shortcut.activated.connect(self.close_viewer)
+        self._update_controls()
+        self._prefetch_neighbours()
+
+    def previous(self) -> None:
+        if self._index > 0:
+            self._navigate(-1)
+
+    def next(self) -> None:
+        if self._index < len(self._cases) - 1:
+            self._navigate(1)
+
+    def close_viewer(self) -> None:
+        self._viewer.close()
+
+    def _navigate(self, step: int) -> None:
+        self._index += step
+        identifier = self._cases[self._index]
+        case_data = self._cache.get(identifier)
+        if case_data is None:
+            case_data = _read_case(self._dataset, identifier)
+            self._cache[identifier] = case_data
+        _display_case(self._viewer, case_data)
+        self._update_controls()
+        self._prefetch_neighbours()
+
+    def _update_controls(self) -> None:
+        self._current.setText(f"Image case {self._index + 1}/{len(self._cases)}")
+        self._previous.setEnabled(self._index > 0)
+        self._next.setEnabled(self._index < len(self._cases) - 1)
+
+    def _prefetch_neighbours(self) -> None:
+        indices = prefetch_indices(self._index, len(self._cases), self._prefetch_previous,
+                                   self._prefetch_next, self._prefetch_radius)
+        for index in indices:
+            identifier = self._cases[index]
+            if identifier not in self._cache and identifier not in self._prefetching:
+                self._prefetching.add(identifier)
+                future = self._executor.submit(_read_case, self._dataset, identifier)
+                future.add_done_callback(lambda completed, case=identifier: self._finish_prefetch(case, completed))
+        keep = {self._cases[self._index]}
+        keep.update(self._cases[index] for index in indices)
+        self._cache = {identifier: data for identifier, data in self._cache.items() if identifier in keep}
+        self._refresh_prefetch_status(indices)
+
+    def _finish_prefetch(self, identifier: str, future: Future) -> None:
+        try:
+            self._signals.completed.emit(identifier, future.result())
+        except Exception as error:
+            self._signals.failed.emit(identifier, str(error))
+
+    def _prefetch_completed(self, identifier: str, data: object) -> None:
+        self._prefetching.discard(identifier)
+        if isinstance(data, _CaseData):
+            self._cache[identifier] = data
+        self._refresh_prefetch_status()
+
+    def _prefetch_failed(self, identifier: str, error: str) -> None:
+        self._prefetching.discard(identifier)
+        print(f"Could not prefetch {identifier}: {error}")
+        self._refresh_prefetch_status()
+
+    def _refresh_prefetch_status(self, indices: tuple[int, ...] | None = None) -> None:
+        previous = [(self._cases[index], self._cases[index] in self._cache)
+                    for index in range(max(0, self._index - self._prefetch_radius), self._index)] if self._prefetch_previous else []
+        following = [(self._cases[index], self._cases[index] in self._cache)
+                     for index in range(self._index + 1,
+                                        min(len(self._cases), self._index + self._prefetch_radius + 1))] if self._prefetch_next else []
+        self._prefetch_status.set_cases(previous, self._cases[self._index], following)
+
+    def _shutdown_prefetching(self) -> None:
+        self._executor.shutdown(wait=False, cancel_futures=True)
+
+
+def open_case(selected: Path, prefetch_previous: bool = True, prefetch_next: bool = True,
+              prefetch_radius: int = 1) -> None:
+    """Start Napari and add all supported raw files related to the selected case."""
+    import napari
+
+    dataset, identifier = selected.parent.parent, case_id(selected)
+    viewer = napari.Viewer(title=f"nnWorkbench — {identifier}")
+    current_data = _read_case(dataset, identifier)
+    _display_case(viewer, current_data)
+    cases = image_case_ids(dataset)
+    if cases:
+        navigator = CaseNavigator(viewer, dataset, cases, identifier, current_data,
+                                  prefetch_previous, prefetch_next, prefetch_radius)
+        viewer.window.add_dock_widget(navigator, name="Case navigation", area="right")
+        viewer.bind_key("a", lambda *_: navigator.previous(), overwrite=True)
+        viewer.bind_key("d", lambda *_: navigator.next(), overwrite=True)
+    napari.run()
+
+
+def open_validation_prediction(prediction_path: Path, raw_dataset: Path | None = None) -> None:
+    """Inspect a validation prediction, with matching raw image and label when available."""
+    import napari
+
+    identifier = case_id(prediction_path)
+    viewer = napari.Viewer(title=f"nnWorkbench validation — {identifier}")
+    if raw_dataset is not None and raw_dataset.is_dir():
+        files = related_files_for_case(raw_dataset, identifier)
+        for image_path in files.images:
+            data, affine = _read_nifti(image_path)
+            viewer.add_image(data, name=f"Image — {image_path.name}", affine=affine)
+        for label_path in files.labels:
+            data, affine = _read_nifti(label_path)
+            viewer.add_labels(data, name=f"Label — {label_path.name}", affine=affine)
+    prediction_data, prediction_affine = _read_nifti(prediction_path)
+    viewer.add_labels(prediction_data, name=f"Validation prediction — {prediction_path.name}", affine=prediction_affine)
+    _reset_middle_slice(
+        viewer, _CaseData((_LayerData(prediction_path.name, "image", prediction_data, prediction_affine),), ())
+    )
+    viewer.reset_view()
+    napari.run()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Open an nnU-Net raw case in Napari.")
+    parser.add_argument("file", type=Path)
+    parser.add_argument("--prefetch-radius", type=int, default=1, choices=range(1, 21))
+    parser.add_argument("--no-prefetch-previous", action="store_true")
+    parser.add_argument("--no-prefetch-next", action="store_true")
+    parser.add_argument("--annotate", action="store_true")
+    parser.add_argument("--validation-prediction", action="store_true")
+    parser.add_argument("--raw-dataset", type=Path)
+    arguments = parser.parse_args()
+    selected = arguments.file
+    if not selected.is_file():
+        raise SystemExit(f"File not found: {selected}")
+    try:
+        if arguments.annotate:
+            open_annotation(selected)
+        elif arguments.validation_prediction:
+            open_validation_prediction(selected, arguments.raw_dataset)
+        else:
+            open_case(selected, not arguments.no_prefetch_previous, not arguments.no_prefetch_next,
+                      arguments.prefetch_radius)
+    except ImportError as error:
+        raise SystemExit("Napari is not installed. Reinstall nnWorkbench to install the inspection dependency.") from error
+
+
+if __name__ == "__main__":
+    main()

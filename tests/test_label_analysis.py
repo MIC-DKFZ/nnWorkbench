@@ -1,0 +1,57 @@
+import json
+from pathlib import Path
+
+import pytest
+
+from nnworkbench.services.label_analysis import (aggregate_class_counts, analyse_label_distribution, analysis_path,
+                                                load_label_analysis)
+
+
+def test_aggregate_class_counts_includes_declared_and_encountered_classes() -> None:
+    classes = aggregate_class_counts([{0: 15, 1: 4}, {0: 7, 2: 3}, {1: 0}], {0: "background", 1: "organ"})
+
+    assert classes == [
+        {"id": 0, "name": "background", "images": 2, "voxels": 22},
+        {"id": 1, "name": "organ", "images": 1, "voxels": 4},
+        {"id": 2, "name": "Class 2", "images": 1, "voxels": 3},
+    ]
+
+
+def test_aggregate_class_counts_excludes_the_configured_ignore_label() -> None:
+    classes = aggregate_class_counts([{0: 2, 1: 4, 2: 8}],
+                                     {0: "background", 1: "tumour", 2: "ignore"}, {2})
+
+    assert classes == [
+        {"id": 0, "name": "background", "images": 1, "voxels": 2},
+        {"id": 1, "name": "tumour", "images": 1, "voxels": 4},
+    ]
+
+
+def test_load_label_analysis_reads_cached_raw_file(tmp_path: Path) -> None:
+    analysis_path(tmp_path).write_text(json.dumps({"classes": []}), encoding="utf-8")
+
+    assert load_label_analysis(tmp_path) == {"classes": []}
+
+
+def test_label_analysis_counts_images_voxels_and_writes_cache(tmp_path: Path) -> None:
+    mitk = pytest.importorskip("mitk")
+    np = pytest.importorskip("numpy")
+    labels = tmp_path / "labelsTr"; labels.mkdir()
+    (tmp_path / "dataset.json").write_text(
+        '{"labels": {"background": 0, "tumour": 1, "ignore": 2}}', encoding="utf-8"
+    )
+    mitk.Image(np.array([[[0, 1], [1, 2]]], dtype=np.uint8)).save(labels / "case_001.nii.gz")
+    mitk.Image(np.array([[[0, 1], [2, 0]]], dtype=np.uint8)).save(labels / "case_002.nii.gz")
+
+    analysis = analyse_label_distribution(tmp_path, workers=1)
+
+    assert analysis["files_analyzed"] == 2
+    assert analysis["classes"] == [
+        {"id": 0, "name": "background", "images": 2, "voxels": 3},
+        {"id": 1, "name": "tumour", "images": 2, "voxels": 3},
+    ]
+    assert analysis["per_image"] == [
+        {"image": "case_001.nii.gz", "voxels": {"0": 1, "1": 2}},
+        {"image": "case_002.nii.gz", "voxels": {"0": 2, "1": 1}},
+    ]
+    assert load_label_analysis(tmp_path) == analysis

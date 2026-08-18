@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class ImageCountCheck:
+    images: int
+    channels: int
+    labels: int
+
+    @property
+    def expected_images(self) -> int:
+        return self.channels * self.labels
+
+    @property
+    def matches(self) -> bool:
+        return self.images == self.expected_images
+
+
+def manifest_source(raw_directory: Path | None, preprocessed_directory: Path | None,
+                    results_directory: Path | None) -> tuple[str, Path] | None:
+    """Return the first available manifest source in display-priority order."""
+    for kind, directory in (("raw", raw_directory), ("preprocessed", preprocessed_directory),
+                            ("results", results_directory)):
+        if directory and (directory / "dataset.json").is_file():
+            return kind, directory
+    return None
+
+
+def labels_tr_count(dataset_directory: Path | None) -> int:
+    """Return the number of accepted label files in a raw dataset."""
+    labels_directory = dataset_directory / "labelsTr" if dataset_directory else None
+    if labels_directory is None or not labels_directory.is_dir():
+        return 0
+    return sum(path.is_file() for path in labels_directory.iterdir())
+
+
+def image_count_check(raw_directory: Path | None, preprocessed_directory: Path | None,
+                      results_directory: Path | None) -> ImageCountCheck | None:
+    """Compare raw image count with channels multiplied by accepted label count."""
+    if raw_directory is None or not raw_directory.is_dir():
+        return None
+    source = manifest_source(raw_directory, preprocessed_directory, results_directory)
+    if source is None:
+        return None
+    try:
+        manifest = read_manifest(source[1])
+    except (OSError, ValueError):
+        return None
+    channels = manifest.get("channel_names", {})
+    if not isinstance(channels, dict):
+        return None
+    images_directory = raw_directory / "imagesTr"
+    images = sum(path.is_file() for path in images_directory.iterdir()) if images_directory.is_dir() else 0
+    return ImageCountCheck(images, len(channels), labels_tr_count(raw_directory))
+
+
+def read_manifest(dataset_directory: Path) -> dict:
+    with (dataset_directory / "dataset.json").open(encoding="utf-8") as file:
+        data = json.load(file)
+    if not isinstance(data, dict):
+        raise ValueError("dataset.json must contain a JSON object")
+    return data
+
+
+def validate_manifest(data: dict) -> None:
+    if not isinstance(data.get("channel_names", {}), dict):
+        raise ValueError("channel_names must be an object")
+    if not isinstance(data.get("labels", {}), dict):
+        raise ValueError("labels must be an object")
+    if not isinstance(data.get("file_ending", ""), str):
+        raise ValueError("file_ending must be text")
+    for field in ("description", "license"):
+        if field in data and not isinstance(data[field], str):
+            raise ValueError(f"{field} must be text")
+
+
+def write_manifest(dataset_directory: Path, data: dict) -> None:
+    """Atomically replace a raw dataset manifest without creating a backup copy."""
+    validate_manifest(data)
+    target = dataset_directory / "dataset.json"
+    if not target.is_file():
+        raise FileNotFoundError(target)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=".dataset.", suffix=".json", dir=dataset_directory)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            json.dump(data, file, indent=2, ensure_ascii=False)
+            file.write("\n")
+        os.replace(temporary_name, target)
+    except Exception:
+        Path(temporary_name).unlink(missing_ok=True)
+        raise
