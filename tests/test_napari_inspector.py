@@ -4,8 +4,8 @@ from types import SimpleNamespace
 import pytest
 
 from nnworkbench.services.napari_inspector import (_CaseData, _LayerData, _display_case, _read_case, case_id,
-                                                  annotation_source_image, annotation_target_path, image_case_ids, prefetch_indices,
-                                                  related_files, save_semantic_annotation, semantic_map_name)
+                                                  annotation_label_summary, annotation_source_image, annotation_target_path, image_case_ids, prefetch_indices,
+                                                  prediction_case_ids, related_files, save_semantic_annotation, semantic_map_name)
 
 
 def test_related_files_groups_raw_case_across_folders(tmp_path: Path) -> None:
@@ -27,6 +27,17 @@ def test_related_files_groups_raw_case_across_folders(tmp_path: Path) -> None:
     assert image_case_ids(tmp_path) == ("case_001", "case_002")
 
 
+def test_prediction_case_ids_uses_predictions_not_the_number_of_input_images(tmp_path: Path) -> None:
+    predictions = tmp_path / "predictions"; images = tmp_path / "images"
+    predictions.mkdir(); images.mkdir()
+    for name in ("case_001.nii.gz", "case_002.nii.gz"):
+        (predictions / name).touch()
+    for name in ("case_001_0000.nii.gz", "case_002_0000.nii.gz", "case_003_0000.nii.gz"):
+        (images / name).touch()
+
+    assert prediction_case_ids(predictions) == ("case_001", "case_002")
+
+
 def test_annotation_source_image_uses_the_first_image_channel(tmp_path: Path) -> None:
     images = tmp_path / "imagesTr"; annotations = tmp_path / "annotationsTr"
     images.mkdir(); annotations.mkdir()
@@ -35,6 +46,16 @@ def test_annotation_source_image_uses_the_first_image_channel(tmp_path: Path) ->
     annotation = annotations / "case_001.nii.gz"; annotation.touch()
 
     assert annotation_source_image(annotation) == primary
+
+
+def test_annotation_label_summary_reserves_zero_for_ignore(tmp_path: Path) -> None:
+    images = tmp_path / "imagesTr"; images.mkdir()
+    image = images / "case_001_0000.nii.gz"; image.touch()
+    (tmp_path / "dataset.json").write_text(
+        '{"labels": {"background": 0, "tumour": 1, "ignore": 2}}', encoding="utf-8"
+    )
+
+    assert annotation_label_summary(image) == ((0, "ignore"), (1, "background"), (2, "tumour"))
 
 
 def test_prefetch_indices_prioritise_nearest_next_then_previous() -> None:

@@ -21,12 +21,16 @@ class PredictionDialog(QDialog):
         self.input_directory = QLineEdit(); self.output_directory = QLineEdit()
         self.plan = EditableDropdownComboBox(); self.plan.addItems(sorted({plan for plan, _ in self._options}))
         self.configuration = EditableDropdownComboBox()
+        self.additional_arguments = QLineEdit()
+        self.additional_arguments.setPlaceholderText("Optional, e.g. --save_probabilities")
+        self.additional_arguments.setToolTip("Extra arguments passed directly to nnUNetv2_predict.")
         self.plan.currentTextChanged.connect(self._set_configurations)
         self._set_configurations(self.plan.currentText())
         layout.addRow("Input directory", self._directory_field(self.input_directory, "Choose input directory"))
         layout.addRow("Output directory", self._directory_field(self.output_directory, "Choose output directory"))
         layout.addRow("Plans", self.plan)
         layout.addRow("Configuration", self.configuration)
+        layout.addRow("Additional arguments", self.additional_arguments)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Run prediction")
         self.copy = buttons.addButton("Copy command", QDialogButtonBox.ButtonRole.ActionRole)
@@ -55,13 +59,18 @@ class PredictionDialog(QDialog):
     def command(self) -> str:
         return prediction_command(self.dataset_id, self.input_directory.text().strip(),
                                   self.output_directory.text().strip(), self.plan.currentText(),
-                                  self.configuration.currentText())
+                                  self.configuration.currentText(), self.additional_arguments.text())
 
     def _copy_command(self) -> None:
         if not self.input_directory.text().strip() or not self.output_directory.text().strip():
             QMessageBox.warning(self, "Directories required", "Choose both an input and output directory first.")
             return
-        command = self.command()
+        try:
+            command = self.command()
+        except ValueError as error:
+            QToolTip.showText(self.additional_arguments.mapToGlobal(self.additional_arguments.rect().bottomLeft()),
+                              f"Invalid arguments: {error}", self.additional_arguments)
+            return
         QApplication.clipboard().setText(command)
         print(command)
         QToolTip.showText(self.copy.mapToGlobal(self.copy.rect().bottomLeft()), "Copied to clipboard", self.copy)
@@ -69,5 +78,11 @@ class PredictionDialog(QDialog):
     def accept(self) -> None:
         if not self.input_directory.text().strip() or not self.output_directory.text().strip():
             QMessageBox.warning(self, "Directories required", "Choose both an input and output directory.")
+            return
+        try:
+            self.command()
+        except ValueError as error:
+            QToolTip.showText(self.additional_arguments.mapToGlobal(self.additional_arguments.rect().bottomLeft()),
+                              f"Invalid arguments: {error}", self.additional_arguments)
             return
         super().accept()

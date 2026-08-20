@@ -1,110 +1,87 @@
 # nnWorkbench
 
-> A GUI for nnU-Net workflows and nnInteractive-powered annotation
+> A GUI for nnU-Net workflows and nnInteractive-powered annotation.
 
-## Your workflow, one workbench
+From the first image to a trained segmentation model, nnWorkbench keeps the entire workflow in one place. It provides researchers and domain scientists with a clear workspace to inspect images in Napari, prepare or create labels, and guide an nnU-Net model from dataset preparation to prediction.
+Existing labels can be imported directly into an nnU-Net workflow, while unlabeled images can be annotated with nnInteractive before continuing to model training and inference.
 
-nnWorkbench brings nnU-Net and nnInteractive together in one desktop app. Start with images and labels to train a model, or start with images only and create the labels you need in Napari. From the first image to a trained model ready for inference, your workflow stays connected.
+## Why nnWorkbench
 
-The nnWorkbench GUI supports **Windows, macOS, and Ubuntu**. Its own interface, file browsing, settings, documentation viewer, and background loading are platform-neutral; availability of nnU-Net, nnInteractive, MITK-Python, and their hardware dependencies is determined by those projects and your environment.
+- **All projects in one place:** Browse all configured nnU-Net datasets and keep each dataset’s images, labels, preprocessing, trained models, and validation results connected.
+- **Guided nnU-Net from data to prediction:** Plan, preprocess, train, and predict through clear dialogs, or copy the exact commands when you prefer the command line.
+- **Inspect at every stage:** Open Raw images and labels, annotations, predictions, and validation results in Napari, with matching files loaded together whenever available.
+- **Connect nnInteractive and nnU-Net:** Use nnInteractive in Napari to create annotations, convert them into training labels, and continue directly to nnU-Net preprocessing and training.
+- **Annotation Workflow:** Follow a documented, guided workflow designed to create high-quality labels that support model performance while minimizing manual annotation effort.
 
-## Setup
+nnWorkbench’s GUI runs on **Windows, macOS, and Ubuntu**. Compatibility of nnU-Net, nnInteractive, MITK-Python, PyTorch, and their hardware requirements remains determined by those projects and your environment.
+
+## Installation
+
+Requirements:
 
 - Python 3.12 or newer
-- nn-U-Net data roots for the workflows you intend to use
+- Conda or another suitable Python environment manager
 
-### Optional: create a Conda environment
-
-If you do not already have a suitable Python environment, create one with Conda (for example, [Miniforge](https://github.com/conda-forge/miniforge) or Anaconda):
+Create an environment if needed:
 
 ```bash
 conda create -n nnworkbench python=3.12
 conda activate nnworkbench
 ```
 
-### Install and start
-
-Install nnWorkbench and its nnU-Net, Napari, MITK-Python, and local nnInteractive dependencies:
+Install and start nnWorkbench:
 
 ```bash
 git clone <your-repository-url> nnWorkbench
 cd nnWorkbench
-pip install -e '.[dev]'
+pip install -e .
 nnworkbench-gui
 ```
 
-`nnworkbench-gui` is the recommended way to start the installed application. Local nnInteractive inference additionally requires a compatible PyTorch installation and an nnInteractive model; configure these only if you plan to use interactive annotation.
+`nnworkbench-gui` is the recommended launch command. Press `Ctrl+C` in the launching terminal to close nnWorkbench and its child Napari windows.
 
-For development, you can alternatively launch the application directly from the repository:
+The default installation includes nnInteractive. Local interactive inference also needs a compatible PyTorch installation and an nnInteractive model; configure these only when using the annotation workflow.
 
-```bash
-python -m nnworkbench.app
-```
-
-Press `Ctrl+C` in the launching terminal to close the GUI and its child Napari windows.
-
-## Configure data roots
-
-Select the directories that contain your `DatasetNNN_Name` folders:
-
-- `nnUNet_raw`
-- `nnUNet_preprocessed`
-- `nnUNet_results`
-
-The roots are independent. nnWorkbench works with any available subset and remembers the paths locally. The **Open folder** button opens the selected dataset folder for the active Raw, Preprocessed, or Results tab.
-
-## Annotation workflow
-
-In the **Raw** tab, choose **Annotate** for an image or **Edit** for an existing `annotationsTr` map. Napari opens with nnInteractive, semantic-map aggregation enabled, and nnWorkbench’s saving controls above the nnInteractive controls.
-
-An annotation session always has a writable semantic layer named `semantic map - <image-layer-name>`. A missing annotation starts as an empty map with the source image’s shape and geometry. Saving writes it to `annotationsTr` using the nnU-Net case name—for example, `Case_001_0000.nii.gz` saves as `annotationsTr/Case_001.nii.gz`.
-
-## Convert annotations and analyze labels
-
-**Convert Annotations** turns NIfTI semantic maps in `annotationsTr` into training labels in `labelsTr`. The Raw `dataset.json` must contain an integer `ignore` label with the highest ID. During conversion:
-
-- annotation value `0` becomes the nnU-Net ignore ID;
-- positive IDs are shifted down by one;
-- valid output replaces the matching `labelsTr` file;
-- empty or out-of-range maps are skipped and reported without stopping the batch.
-
-Conversion and **Analyze Labels** run in the background using the shared worker-process count configured in Raw workspace settings. Analyze Labels stores `class_distribution.json` in the raw dataset folder; select it in the Raw tree to view the saved table and plots.
-
-## nnU-Net commands
-
-The GUI runs `nnUNetv2_*` commands asynchronously and streams their output to its console and the launching terminal. It exports only the environment roots needed by each operation:
-
-- preprocessing: `nnUNet_raw`, `nnUNet_preprocessed`
-- training: `nnUNet_preprocessed`, `nnUNet_results`
-- prediction: `nnUNet_results`
-
-Only one nnU-Net command can run at a time. The console includes a terminate action while a command is active.
-
-In the **Results** tab, each trained fold exposes a collapsed `validation` folder. Use **Inspect** beside a validation NIfTI prediction to open it in Napari. When the matching Raw dataset is available, nnWorkbench also loads the corresponding training image and ground-truth label for comparison; otherwise it opens the validation prediction on its own.
-
-## Dataset layout
-
-```text
-nnUNet_raw/
-└── Dataset001_MyDataset/
-    ├── imagesTr/        # image cases, e.g. Case_001_0000.nii.gz
-    ├── labelsTr/        # nnU-Net training labels, e.g. Case_001.nii.gz
-    ├── annotationsTr/   # nnInteractive semantic annotations (optional)
-    ├── imagesTs/        # optional test images
-    └── dataset.json
-```
-
-Only reviewed labels should be used for training. Validate geometry and class definitions before preprocessing or training.
-
-## Optional CLI
-
-`nnworkbench` provides `init`, `status`, `next`, `accept`, and `run` commands for configuration-driven workflows. Copy [config/example.yaml](config/example.yaml) to `config/local.yaml` and adapt it before using these commands.
-
-## Development
+For development tools, install the optional test and lint dependencies:
 
 ```bash
-pytest -q
-ruff check .
+pip install -e '.[dev]'
 ```
 
-See [docs/GUI.md](docs/GUI.md) for the GUI reference and [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
+## Quick start: nnU-Net workflow
+
+1. **Configure roots:** Choose the directories containing your `DatasetNNN_Name` folders: `nnUNet_raw`, `nnUNet_preprocessed`, and `nnUNet_results`.
+2. **Prepare and inspect:** Select an existing dataset—or create one from the Raw root—then review its `dataset.json`. Use **Inspect** beside a Raw image to open the case in Napari with its available matching files.
+3. **Preprocess:** In **Raw**, choose **Run Preprocessing**, select a configuration and planner, then run the command.
+4. **Train:** In **Preprocessed**, choose **Run Training**, select the plans file, configuration, trainer, and fold, then run the command.
+5. **Predict:** In **Results**, choose **Run Predict**, select a trained plan/configuration and the input/output directories, then run the command.
+
+Read the full [nnU-Net workflow guide](docs/nnunet-workflow.md).
+
+## Quick start: Annotation Workflow
+
+1. **Enable the workflow:** Turn on **Annotation workflow** in the header and select a Raw dataset with `imagesTr`.
+2. **Prepare label IDs:** In Raw `dataset.json`, add an integer `ignore` label as the highest label ID. The editor highlights this requirement while Annotation Workflow is enabled.
+3. **Annotate in Napari:** In `imagesTr`, choose **Annotate** for a new case; choose **Edit** in `annotationsTr` to continue an existing annotation. This opens Napari directly with nnInteractive and a writable semantic annotation layer.
+4. **Save:** Use **Save annotation** in Napari to write the semantic map to `annotationsTr`.
+5. **Convert:** Back in **Raw**, choose **Convert Annotations** to create matching nnU-Net labels in `labelsTr`.
+6. **Train a model:** Continue with **Run Preprocessing**, **Run Training**, and **Run Predict** as described in the nnU-Net workflow above.
+
+Read the full [Annotation Workflow guide](docs/annotation-workflow.md), including label-ID mapping and conversion requirements.
+
+## Further documentation
+
+- [nnU-Net workflow guide](docs/nnunet-workflow.md)
+- [Annotation Workflow guide](docs/annotation-workflow.md)
+- [GUI documentation overview](docs/GUI.md)
+
+
+# Acknowledgements
+
+<img src="src/nnworkbench/assets/HI_Logo.svg" alt="Helmholtz Imaging" height="40"><br>
+<img src="src/nnworkbench/assets/DKFZ_Logo.svg" alt="German Cancer Research Center (DKFZ)" height="38">&nbsp;&nbsp;&nbsp;
+
+
+
+This repository is developed and maintained by the Applied Computer Vision Lab (ACVL)
+of [Helmholtz Imaging](https://www.helmholtz-imaging.de/).

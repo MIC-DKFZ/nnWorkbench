@@ -12,6 +12,7 @@ class ImageCountCheck:
     images: int
     channels: int
     labels: int
+    labels_directory_exists: bool
 
     @property
     def expected_images(self) -> int:
@@ -40,6 +41,31 @@ def labels_tr_count(dataset_directory: Path | None) -> int:
     return sum(path.is_file() for path in labels_directory.iterdir())
 
 
+def definition_errors(manifest: dict) -> tuple[str, ...]:
+    """Return user-facing errors for incomplete nnU-Net channel or label definitions."""
+    errors: list[str] = []
+    channels = manifest.get("channel_names")
+    if not isinstance(channels, dict) or not channels:
+        errors.append("Channels are not defined. Add continuous channel IDs and names, starting at 0.")
+    else:
+        channel_ids = list(channels)
+        if (not all(isinstance(identifier, str) and identifier.isdigit() for identifier in channel_ids)
+                or not all(isinstance(name, str) and name.strip() for name in channels.values())
+                or sorted(int(identifier) for identifier in channel_ids) != list(range(len(channel_ids)))):
+            errors.append("Channels must have continuous numeric IDs and a name for every channel.")
+    labels = manifest.get("labels")
+    if not isinstance(labels, dict) or not labels:
+        errors.append("Labels are not defined. Add continuous label IDs and names, starting at 0.")
+    else:
+        label_ids = list(labels.values())
+        if (not all(isinstance(name, str) and name.strip() for name in labels)
+                or not all(isinstance(identifier, int) and not isinstance(identifier, bool) and identifier >= 0
+                           for identifier in label_ids)
+                or sorted(label_ids) != list(range(len(label_ids)))):
+            errors.append("Labels must have continuous numeric IDs and a name for every label.")
+    return tuple(errors)
+
+
 def image_count_check(raw_directory: Path | None, preprocessed_directory: Path | None,
                       results_directory: Path | None) -> ImageCountCheck | None:
     """Compare raw image count with channels multiplied by accepted label count."""
@@ -52,12 +78,13 @@ def image_count_check(raw_directory: Path | None, preprocessed_directory: Path |
         manifest = read_manifest(source[1])
     except (OSError, ValueError):
         return None
-    channels = manifest.get("channel_names", {})
-    if not isinstance(channels, dict):
+    if definition_errors(manifest):
         return None
+    channels = manifest["channel_names"]
     images_directory = raw_directory / "imagesTr"
     images = sum(path.is_file() for path in images_directory.iterdir()) if images_directory.is_dir() else 0
-    return ImageCountCheck(images, len(channels), labels_tr_count(raw_directory))
+    labels_directory = raw_directory / "labelsTr"
+    return ImageCountCheck(images, len(channels), labels_tr_count(raw_directory), labels_directory.is_dir())
 
 
 def read_manifest(dataset_directory: Path) -> dict:

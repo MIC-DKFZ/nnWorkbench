@@ -3,7 +3,7 @@ from pathlib import Path
 from nnworkbench.services.dataset_contents import (json_object, json_value, model_folds, model_plan_configuration, plan_files,
                                                   preprocessed_files, raw_files, trained_models, validation_files,
                                                   validation_summary)
-from nnworkbench.services.dataset_json import image_count_check, labels_tr_count, manifest_source
+from nnworkbench.services.dataset_json import definition_errors, image_count_check, labels_tr_count, manifest_source
 
 
 def test_raw_files_includes_standard_and_optional_annotation_folders(tmp_path: Path) -> None:
@@ -90,10 +90,47 @@ def test_image_count_check_compares_channels_and_labels(tmp_path: Path) -> None:
         (tmp_path / "imagesTr" / name).touch()
     for name in ("case_001.nii.gz", "case_002.nii.gz"):
         (tmp_path / "labelsTr" / name).touch()
-    (tmp_path / "dataset.json").write_text('{"channel_names": {"0": "CT", "1": "MR"}}', encoding="utf-8")
+    (tmp_path / "dataset.json").write_text(
+        '{"channel_names": {"0": "CT", "1": "MR"}, "labels": {"background": 0}}',
+        encoding="utf-8",
+    )
 
     check = image_count_check(tmp_path, None, None)
 
     assert check is not None
-    assert (check.images, check.channels, check.labels, check.expected_images) == (3, 2, 2, 4)
+    assert (check.images, check.channels, check.labels, check.labels_directory_exists, check.expected_images) == (3, 2, 2, True, 4)
     assert not check.matches
+
+
+def test_image_count_check_reports_missing_or_empty_label_folder(tmp_path: Path) -> None:
+    (tmp_path / "imagesTr").mkdir()
+    (tmp_path / "dataset.json").write_text(
+        '{"channel_names": {"0": "CT"}, "labels": {"background": 0}}', encoding="utf-8"
+    )
+
+    missing = image_count_check(tmp_path, None, None)
+    assert missing is not None and not missing.labels_directory_exists and missing.labels == 0
+    (tmp_path / "labelsTr").mkdir()
+    empty = image_count_check(tmp_path, None, None)
+    assert empty is not None and empty.labels_directory_exists and empty.labels == 0
+
+
+def test_invalid_definitions_suppress_image_count_check(tmp_path: Path) -> None:
+    for directory in (tmp_path / "imagesTr", tmp_path / "labelsTr"):
+        directory.mkdir()
+    (tmp_path / "imagesTr" / "case_001_0000.nii.gz").touch()
+    (tmp_path / "labelsTr" / "case_001.nii.gz").touch()
+    (tmp_path / "dataset.json").write_text(
+        '{"channel_names": {"0": ""}, "labels": {"background": 0}}', encoding="utf-8"
+    )
+
+    errors = definition_errors({"channel_names": {"0": ""}, "labels": {"background": 0}})
+
+    assert errors == ("Channels must have continuous numeric IDs and a name for every channel.",)
+    assert image_count_check(tmp_path, None, None) is None
+
+
+def test_definition_errors_reports_invalid_labels() -> None:
+    errors = definition_errors({"channel_names": {"0": "CT"}, "labels": {"": 0}})
+
+    assert errors == ("Labels must have continuous numeric IDs and a name for every label.",)

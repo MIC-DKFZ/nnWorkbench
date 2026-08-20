@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QIntValidator
 from PySide6.QtWidgets import (QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
                                QPlainTextEdit, QHeaderView, QStyledItemDelegate, QTableWidget,
@@ -20,6 +21,9 @@ class _ChannelIdDelegate(QStyledItemDelegate):
 
 
 class MetadataEditor(QWidget):
+    definition_errors_changed = Signal(tuple)
+    metadata_saved = Signal()
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("metadataEditor")
@@ -88,7 +92,9 @@ class MetadataEditor(QWidget):
         if self._source_directory is None:
             self.notice.setText("No readable dataset.json is available in raw, preprocessed, or results.")
             self.name.clear(); self.training.clear(); self._set_table(self.channels, {}); self._set_table(self.labels, {})
-            self.file_ending.clear(); self.description.clear(); self.license.clear(); return
+            self.file_ending.clear(); self.description.clear(); self.license.clear()
+            self.definition_errors_changed.emit(())
+            return
         try:
             self._manifest = read_manifest(self._source_directory)
         except (OSError, ValueError) as error:
@@ -96,6 +102,7 @@ class MetadataEditor(QWidget):
             self.notice.setText(f"Could not read {self._source_kind} dataset.json: {error}")
             self.name.clear(); self.training.clear(); self._set_table(self.channels, {}); self._set_table(self.labels, {})
             self.file_ending.clear(); self.description.clear(); self.license.clear()
+            self.definition_errors_changed.emit(())
             return
         self._set_editing_enabled(self._directory is not None)
         self.notice.setText("" if self._directory else f"Viewing {self._source_kind} dataset.json (read-only).")
@@ -121,11 +128,13 @@ class MetadataEditor(QWidget):
         self.training.style().unpolish(self.training); self.training.style().polish(self.training)
 
     def _update_table_validation(self, *_ignored) -> None:
-        self._set_table_validation(self.channels, "Channel")
-        self._set_table_validation(self.labels, "Label", require_ignore=self._annotation_workflow_enabled)
+        channel_error = self._set_table_validation(self.channels, "Channel")
+        label_error = self._set_table_validation(self.labels, "Label", require_ignore=self._annotation_workflow_enabled)
+        errors = tuple(error for error in (channel_error, label_error) if error)
+        self.definition_errors_changed.emit(errors if self._source_directory is not None else ())
 
     @staticmethod
-    def _set_table_validation(table: QTableWidget, singular: str, *, require_ignore: bool = False) -> None:
+    def _set_table_validation(table: QTableWidget, singular: str, *, require_ignore: bool = False) -> str:
         identifiers: list[str] = []
         for row in range(table.rowCount()):
             identifier = table.item(row, 0).text().strip() if table.item(row, 0) else ""
@@ -148,8 +157,9 @@ class MetadataEditor(QWidget):
                     "The ignore label must use the last (highest) ID." if ignore_id != len(identifiers) - 1 else "")
             else:
                 message = ""
-        table.setProperty("invalid", bool(message)); table.setToolTip(message); table.viewport().setToolTip(message)
+        table.setProperty("invalid", bool(message)); table.setToolTip(""); table.viewport().setToolTip("")
         table.style().unpolish(table); table.style().polish(table)
+        return message
 
     def set_annotation_workflow_enabled(self, enabled: bool) -> None:
         self._annotation_workflow_enabled = enabled
@@ -229,4 +239,5 @@ class MetadataEditor(QWidget):
             QMessageBox.critical(self, "Could not save metadata", str(error)); return
         self._manifest = data
         self._update_training_validation()
+        self.metadata_saved.emit()
         QMessageBox.information(self, "Metadata saved", "dataset.json was saved.")

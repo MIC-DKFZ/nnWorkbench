@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QSignalBlocker, QTimer
+from PySide6.QtCore import QSettings, QSignalBlocker, QSize, QTimer
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (QLabel, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
                                QSplitter, QVBoxLayout, QWidget)
 
 from nnworkbench.models.dataset import DatasetRecord
-from nnworkbench.services.dataset_creator import create_dataset
+from nnworkbench.services.dataset_creator import (create_dataset, create_next_iteration, next_free_dataset_id,
+                                                  next_iteration_name)
 from nnworkbench.services.dataset_scanner import scan_datasets
 from .metadata_editor import MetadataEditor
 from .dataset_workspace import DatasetWorkspace
@@ -33,6 +35,15 @@ class MainWindow(QMainWindow):
         datasets_title = QLabel("Datasets"); datasets_title.setObjectName("paneTitle"); left_layout.addWidget(datasets_title)
         self.new_dataset = QPushButton("New dataset"); self.new_dataset.setObjectName("primaryButton"); self.new_dataset.clicked.connect(self._create_dataset); left_layout.addWidget(self.new_dataset)
         self.list = QListWidget(); self.list.currentRowChanged.connect(self._select); left_layout.addWidget(self.list, 1); self.splitter.addWidget(left)
+        acknowledgements = QWidget(); acknowledgements.setObjectName("acknowledgementLogos")
+        acknowledgements_layout = QVBoxLayout(acknowledgements)
+        acknowledgements_layout.setContentsMargins(0, 8, 0, 0); acknowledgements_layout.setSpacing(4)
+        asset_directory = Path(__file__).parent.parent / "assets"
+        for filename, size, tooltip in (("HI_Logo.svg", QSize(145, 30), "Helmholtz Imaging"),
+                                        ("DKFZ_Logo.svg", QSize(195, 32), "German Cancer Research Center (DKFZ)")):
+            logo = QLabel(); logo.setPixmap(QIcon(str(asset_directory / filename)).pixmap(size)); logo.setToolTip(tooltip)
+            acknowledgements_layout.addWidget(logo)
+        left_layout.addWidget(acknowledgements)
         centre = DatasetWorkspace(); centre.setObjectName("workspacePane"); self.workspace = centre; self.splitter.addWidget(centre)
         self.header.annotation_documentation_requested.connect(self.workspace.show_annotation_documentation)
         self.header.annotation_documentation_closed.connect(self.workspace.hide_annotation_documentation)
@@ -40,7 +51,10 @@ class MainWindow(QMainWindow):
             self.header.set_annotation_documentation_visible)
         self.header.annotation_enabled_changed.connect(self.workspace.set_annotation_workflow_enabled)
         self.workspace.set_annotation_workflow_enabled(self.header.annotation_enabled())
+        self.workspace.next_iteration_requested.connect(self._create_next_iteration)
         self.editor = MetadataEditor(); self.splitter.addWidget(self.editor)
+        self.editor.definition_errors_changed.connect(self.workspace.set_metadata_definition_errors)
+        self.editor.metadata_saved.connect(self.workspace.refresh_consistency_check)
         self.header.annotation_enabled_changed.connect(self.editor.set_annotation_workflow_enabled)
         self.editor.set_annotation_workflow_enabled(self.header.annotation_enabled())
         # Allocate Datasets, the main workspace, and dataset.json at a 1:3:1 ratio.
@@ -103,3 +117,31 @@ class MainWindow(QMainWindow):
         self.refresh()
         row = next((i for i, record in enumerate(self.records) if record.raw_path == created), -1); self.list.setCurrentRow(row)
         QMessageBox.information(self, "Dataset created", f"Created {created.name} in the raw directory.")
+
+    def _create_next_iteration(self) -> None:
+        row = self.list.currentRow()
+        if not 0 <= row < len(self.records):
+            return
+        source = self.records[row]
+        raw, preprocessed, results = self._paths()
+        if raw is None or not raw.is_dir() or source.raw_path is None:
+            QMessageBox.warning(self, "Raw path required", "Choose a dataset available in nnUNet_raw first.")
+            return
+        dataset_id = next_free_dataset_id(source.dataset_id + 1, [raw, preprocessed, results])
+        dialog = NewDatasetDialog(self, dataset_id=dataset_id, name=next_iteration_name(source.name),
+                                  title="Create next iteration")
+        if not dialog.exec():
+            return
+        try:
+            created = create_next_iteration(raw, [raw, preprocessed, results], source.raw_path,
+                                            dialog.dataset_id.value(), dialog.name.text())
+        except ValueError as error:
+            QMessageBox.warning(self, "Iteration not created", str(error))
+            return
+        except OSError as error:
+            QMessageBox.critical(self, "Iteration not created", f"Could not copy dataset files:\n{error}")
+            return
+        self.refresh()
+        new_row = next((index for index, record in enumerate(self.records) if record.raw_path == created), -1)
+        self.list.setCurrentRow(new_row)
+        QMessageBox.information(self, "Iteration created", f"Created {created.name} with copied images and annotations.")

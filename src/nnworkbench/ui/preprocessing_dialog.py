@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QToolTip
+from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QToolTip
 
 from nnworkbench.services.commands import preprocessing_command
 from .editable_dropdown import EditableDropdownComboBox
@@ -23,20 +23,39 @@ class PreprocessingDialog(QDialog):
         self.planner.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.planner.setCurrentText("ExperimentPlanner")
         self.planner.setToolTip("Type a custom planner name, or use the arrow on the right to choose an installed planner.")
+        self.additional_arguments = QLineEdit()
+        self.additional_arguments.setPlaceholderText("Optional, e.g. --np 8")
+        self.additional_arguments.setToolTip("Extra arguments passed directly to nnUNetv2_plan_and_preprocess.")
         layout.addRow("Configuration", self.configuration)
         layout.addRow("Planner", self.planner)
+        layout.addRow("Additional arguments", self.additional_arguments)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Run preprocessing")
         self.copy = buttons.addButton("Copy command", QDialogButtonBox.ButtonRole.ActionRole)
         self.copy.clicked.connect(self._copy_command)
-        buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
+        buttons.accepted.connect(self._accept_if_valid); buttons.rejected.connect(self.reject)
         layout.addRow(buttons)
 
     def command(self) -> str:
-        return preprocessing_command(self.dataset_id, self.configuration.currentText(), self.planner.currentText())
+        return preprocessing_command(self.dataset_id, self.configuration.currentText(), self.planner.currentText(),
+                                     self.additional_arguments.text())
+
+    def _accept_if_valid(self) -> None:
+        try:
+            self.command()
+        except ValueError as error:
+            QToolTip.showText(self.additional_arguments.mapToGlobal(self.additional_arguments.rect().bottomLeft()),
+                              f"Invalid arguments: {error}", self.additional_arguments)
+            return
+        self.accept()
 
     def _copy_command(self) -> None:
-        command = self.command()
+        try:
+            command = self.command()
+        except ValueError as error:
+            QToolTip.showText(self.additional_arguments.mapToGlobal(self.additional_arguments.rect().bottomLeft()),
+                              f"Invalid arguments: {error}", self.additional_arguments)
+            return
         QApplication.clipboard().setText(command)
         print(command)
         QToolTip.showText(self.copy.mapToGlobal(self.copy.rect().bottomLeft()), "Copied to clipboard", self.copy)

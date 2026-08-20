@@ -27,6 +27,10 @@ QLabel {
 #pathsHeader {
     padding: 6px;
 }
+QWidget#acknowledgementLogos {
+    background: transparent;
+    border: 0;
+}
 QWidget#annotationWorkflow {
     background: #eeeeee;
     border: 1px solid #c7c7c7;
@@ -83,6 +87,13 @@ QLabel#consistencyWarning {
     border: 1px solid #f29a57;
     border-radius: 6px;
     color: #a74400;
+    padding: 7px 9px;
+}
+QLabel#metadataError {
+    background: #fff1f2;
+    border: 1px solid #dc2626;
+    border-radius: 6px;
+    color: #b91c1c;
     padding: 7px 9px;
 }
 QLineEdit, QPlainTextEdit, QTableWidget, QSpinBox, QComboBox {

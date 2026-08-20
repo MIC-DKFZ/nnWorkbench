@@ -27,6 +27,7 @@ from nnworkbench.services.nnunet_discovery import available_planners, available_
 from .label_statistics_dialog import LabelStatisticsView
 from .preprocessing_dialog import PreprocessingDialog
 from .prediction_dialog import PredictionDialog
+from .prediction_inspection_dialog import PredictionInspectionDialog
 from .training_dialog import TrainingDialog
 
 
@@ -80,6 +81,7 @@ class DatasetWorkspace(QWidget):
     _FOLD_ROLE = Qt.ItemDataRole.UserRole + 3
     _VALIDATION_FILE_ROLE = Qt.ItemDataRole.UserRole + 4
     annotation_documentation_visibility_changed = Signal(bool)
+    next_iteration_requested = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -97,6 +99,7 @@ class DatasetWorkspace(QWidget):
         self._conversion_request = 0
         self._conversion_running = False
         self._annotation_workflow_enabled = False
+        self._metadata_errors: tuple[str, ...] = ()
         self._analysis_workers = 8
         self._napari_prefetch_previous = True
         self._napari_prefetch_next = True
@@ -142,6 +145,8 @@ class DatasetWorkspace(QWidget):
         self.summary.setWordWrap(True); layout.addWidget(self.summary)
         self.consistency_warning = QLabel(); self.consistency_warning.setObjectName("consistencyWarning")
         self.consistency_warning.setWordWrap(True); self.consistency_warning.hide(); layout.addWidget(self.consistency_warning)
+        self.metadata_error = QLabel(); self.metadata_error.setObjectName("metadataError")
+        self.metadata_error.setWordWrap(True); self.metadata_error.hide(); layout.addWidget(self.metadata_error)
         self.tabs = QTabWidget(); self.tabs.currentChanged.connect(self._load_active_tab); layout.addWidget(self.tabs, 1)
         self.documentation_panel = QWidget(); documentation_layout = QVBoxLayout(self.documentation_panel)
         documentation_layout.setContentsMargins(0, 0, 0, 0); documentation_layout.setSpacing(8)
@@ -171,10 +176,11 @@ class DatasetWorkspace(QWidget):
         self.console_panel.hide(); layout.addWidget(self.console_panel)
 
         raw = QWidget(); raw_layout = QVBoxLayout(raw); raw_layout.setContentsMargins(0, 0, 0, 0); raw_layout.setSpacing(8)
-        raw_actions = QHBoxLayout()
+        basic_actions = QHBoxLayout()
         self.convert_annotations = QPushButton("Convert Annotations")
         self.convert_annotations.clicked.connect(self._convert_annotations)
-        self.convert_annotations.hide()
+        self.next_iteration = QPushButton("Create next iteration")
+        self.next_iteration.clicked.connect(self.next_iteration_requested.emit)
         self.analyze_labels = QPushButton("Analyze Labels")
         self.analyze_labels.clicked.connect(self._analyze_labels)
         self.analysis_settings = QPushButton("⚙")
@@ -183,9 +189,13 @@ class DatasetWorkspace(QWidget):
         self.analysis_settings.clicked.connect(self._configure_workspace_settings)
         self.run_preprocessing = QPushButton("Run Preprocessing")
         self.run_preprocessing.clicked.connect(self._configure_preprocessing)
-        raw_actions.addWidget(self.convert_annotations); raw_actions.addWidget(self.analyze_labels)
-        raw_actions.addWidget(self.run_preprocessing); raw_actions.addStretch(); raw_actions.addWidget(self.analysis_settings)
-        raw_actions.addStretch(); raw_layout.addLayout(raw_actions)
+        basic_actions.addWidget(self.analyze_labels); basic_actions.addWidget(self.run_preprocessing)
+        basic_actions.addStretch(); basic_actions.addWidget(self.analysis_settings); raw_layout.addLayout(basic_actions)
+        self.annotation_actions = QWidget()
+        annotation_actions = QHBoxLayout(self.annotation_actions)
+        annotation_actions.setContentsMargins(0, 0, 0, 0)
+        annotation_actions.addWidget(self.convert_annotations); annotation_actions.addWidget(self.next_iteration)
+        annotation_actions.addStretch(); self.annotation_actions.hide(); raw_layout.addWidget(self.annotation_actions)
         self.raw_tree = QTreeWidget(); self.raw_tree.setColumnCount(2); self.raw_tree.setHeaderHidden(True)
         self.raw_tree.itemExpanded.connect(self._expand_raw_folder)
         raw_header = self.raw_tree.header()
@@ -220,7 +230,10 @@ class DatasetWorkspace(QWidget):
         results_actions = QHBoxLayout()
         self.run_prediction = QPushButton("Run Predict"); self.run_prediction.setEnabled(False)
         self.run_prediction.clicked.connect(self._configure_prediction)
-        results_actions.addWidget(self.run_prediction); results_actions.addStretch(); results_layout.addLayout(results_actions)
+        self.inspect_predictions = QPushButton("Inspect predictions")
+        self.inspect_predictions.clicked.connect(self._configure_prediction_inspection)
+        results_actions.addWidget(self.run_prediction); results_actions.addWidget(self.inspect_predictions)
+        results_actions.addStretch(); results_layout.addLayout(results_actions)
         self.results_splitter = QSplitter(); results_layout.addWidget(self.results_splitter)
         self.models = QTreeWidget(); self.models.setColumnCount(2); self.models.setHeaderHidden(True)
         self.models.currentItemChanged.connect(self._show_fold_summary)
@@ -274,9 +287,14 @@ class DatasetWorkspace(QWidget):
     def set_annotation_workflow_enabled(self, enabled: bool) -> None:
         """Expose annotation-only actions only while that workflow is active."""
         self._annotation_workflow_enabled = enabled
-        self.convert_annotations.setVisible(enabled)
+        self.annotation_actions.setVisible(enabled)
         self._update_convert_annotations_enabled()
+        self._update_next_iteration_enabled()
         self._refresh_raw_file_actions()
+
+    def _update_next_iteration_enabled(self) -> None:
+        self.next_iteration.setEnabled(bool(self._annotation_workflow_enabled and self._record
+                                             and self._record.raw_path and self._record.raw_path.is_dir()))
 
     def _refresh_raw_file_actions(self) -> None:
         """Update already-expanded raw folders when the workflow switch changes."""
@@ -300,6 +318,7 @@ class DatasetWorkspace(QWidget):
         self._analysis_running = False
         self._conversion_running = False
         self._record = record; self._loaded_tabs.clear(); self._loading_tabs.clear()
+        self._metadata_errors = (); self.metadata_error.hide()
         self._preprocessed_paths = []; self.run_training.setEnabled(False); self.run_training.setText("Run Training")
         self._trained_model_paths = []; self.run_prediction.setEnabled(False)
         self._raw_folder_files = {}; self._loaded_raw_folders.clear(); self._raw_render_version += 1
@@ -308,6 +327,7 @@ class DatasetWorkspace(QWidget):
         self.json_content.hide(); self.result_summary.hide()
         raw_actions_enabled = record is not None and record.raw_path is not None
         self._update_convert_annotations_enabled()
+        self._update_next_iteration_enabled()
         self.analyze_labels.setEnabled(raw_actions_enabled)
         self.analysis_settings.setEnabled(raw_actions_enabled)
         self._clear_raw_statistics()
@@ -357,13 +377,40 @@ class DatasetWorkspace(QWidget):
     def _show_consistency_check(self, request: int, version: int, check: object) -> None:
         if request != self._consistency_request or version != self._dataset_version or not isinstance(check, ImageCountCheck):
             return
+        if self._metadata_errors:
+            self.consistency_warning.hide()
+            return
+        if not check.labels_directory_exists:
+            self.consistency_warning.setText("Warning: labelsTr folder is missing.")
+            self.consistency_warning.show()
+            return
+        if check.labels == 0:
+            self.consistency_warning.setText("Warning: labelsTr folder is empty.")
+            self.consistency_warning.show()
+            return
         if check.matches:
             self.consistency_warning.hide()
             return
         self.consistency_warning.setText(
-            f"Warning: imagesTr contains {check.images} files, but {check.channels} channels × "
-            f"{check.labels} labelsTr files expects {check.expected_images} images.")
+            f"Warning: imagesTr contains {check.images} image file(s) across {check.channels} channel(s), "
+            f"which does not match {check.labels} file(s) in labelsTr.")
         self.consistency_warning.show()
+
+    def set_metadata_definition_errors(self, errors: tuple[str, ...]) -> None:
+        """Show manifest-definition problems in the main pane, not only as field tooltips."""
+        had_errors = bool(self._metadata_errors)
+        self._metadata_errors = errors
+        if errors:
+            self.metadata_error.setText("Error: " + " ".join(errors))
+            self.metadata_error.show(); self.consistency_warning.hide()
+        else:
+            self.metadata_error.hide()
+            if had_errors and self._record is not None:
+                self._start_consistency_check(self._record)
+
+    def refresh_consistency_check(self) -> None:
+        if self._record is not None:
+            self._start_consistency_check(self._record)
 
     def set_environment_roots(self, raw: Path | None, preprocessed: Path | None, results: Path | None) -> None:
         self._environment_roots = {"nnUNet_raw": raw, "nnUNet_preprocessed": preprocessed,
@@ -519,6 +566,24 @@ class DatasetWorkspace(QWidget):
         if self._record is not None and self._record.raw_path is not None:
             command.extend(("--raw-dataset", str(self._record.raw_path)))
         self._start_napari(command, path)
+
+    def _configure_prediction_inspection(self) -> None:
+        raw_dataset = self._record.raw_path if self._record else None
+        dialog = PredictionInspectionDialog(raw_dataset, self)
+        if not dialog.exec():
+            return
+        images, predictions, reference = dialog.directories()
+        command = ["-m", "nnworkbench.services.napari_inspector", "--prediction-folder", str(predictions),
+                   "--prefetch-radius", str(self._napari_prefetch_radius)]
+        if images is not None:
+            command.extend(("--image-folder", str(images)))
+        if reference is not None:
+            command.extend(("--reference-folder", str(reference)))
+        if not self._napari_prefetch_previous:
+            command.append("--no-prefetch-previous")
+        if not self._napari_prefetch_next:
+            command.append("--no-prefetch-next")
+        self._start_napari(command, predictions)
 
     def _start_napari(self, command: list[str], path: Path) -> None:
         print(f"Napari: {shlex.join([sys.executable, *command])}")
@@ -936,6 +1001,9 @@ class DatasetWorkspace(QWidget):
         self.run_training.setEnabled(has_plans and not running)
         has_models = any(model_plan_configuration(path) for path in self._trained_model_paths)
         self.run_prediction.setEnabled(has_models and not running)
+        # Inspection accepts any user-selected prediction folder, including outputs
+        # produced on another machine or outside the configured Results directory.
+        self.inspect_predictions.setEnabled(True)
 
     def _render_preprocessed(self, dataset_path: Path | None, data: object) -> None:
         self.preprocessed_tree.clear(); self.json_content.hide()
