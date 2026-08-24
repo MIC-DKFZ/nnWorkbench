@@ -6,6 +6,3 @@ __pycache__/
 .ruff_cache/
 .idea/
 src/nnworkbench/assets/Annotation Workflow.pdf
-config/local.yaml
-data/
-!data/.gitkeep
