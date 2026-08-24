@@ -3,7 +3,6 @@ from __future__ import annotations
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
-
 STYLESHEET = """
 QMainWindow, QDialog {
     background: #f7f8fa;
@@ -180,6 +179,9 @@ QPushButton#primaryButton {
 QPushButton#primaryButton:hover {
     background: #0a4697;
     border-color: #0a4697;
+}
+QPushButton#refreshDatasetsButton {
+    padding: 0;
 }
 QPushButton#rawActionButton {
     border-radius: 4px;

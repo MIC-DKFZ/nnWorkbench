@@ -2,8 +2,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QLineEdit,
-                               QMessageBox, QPushButton, QWidget)
+from PySide6.QtWidgets import (
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QWidget,
+)
 
 
 class PredictionInspectionDialog(QDialog):

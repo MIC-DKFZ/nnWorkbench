@@ -4,11 +4,28 @@ from pathlib import Path
 
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QIntValidator
-from PySide6.QtWidgets import (QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
-                               QPlainTextEdit, QHeaderView, QStyledItemDelegate, QTableWidget,
-                               QTableWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QFormLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QStyledItemDelegate,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
-from nnworkbench.services.dataset_json import labels_tr_count, manifest_source, read_manifest, write_manifest
+from nnworkbench.services.dataset_json import (
+    labels_tr_count,
+    manifest_source,
+    read_manifest,
+    write_manifest,
+)
 
 
 class _ChannelIdDelegate(QStyledItemDelegate):

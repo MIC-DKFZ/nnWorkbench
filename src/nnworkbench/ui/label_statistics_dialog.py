@@ -4,8 +4,17 @@ from collections.abc import Sequence
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFontMetrics, QPainter
-from PySide6.QtWidgets import (QCheckBox, QHeaderView, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
-                               QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class _ClassChart(QWidget):
@@ -26,7 +35,7 @@ class _ClassChart(QWidget):
         self._ignore_background = ignore
         self.update()
 
-    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API spelling
+    def paintEvent(self, event) -> None:
         painter = QPainter(self); painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), QColor("#f8fafc"))
         classes = [item for item in self._all_classes

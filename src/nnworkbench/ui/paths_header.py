@@ -4,8 +4,16 @@ from pathlib import Path
 
 from PySide6.QtCore import QSize, Signal
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import (QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class PathsHeader(QWidget):
@@ -18,6 +26,7 @@ class PathsHeader(QWidget):
         super().__init__()
         self.setObjectName("pathsHeader")
         self._fields: dict[str, QLineEdit] = {}
+        self._saved_path_texts: tuple[str, ...] = ()
         self._documentation_visible = False
         layout = QGridLayout(self)
         layout.setContentsMargins(12, 10, 12, 10); layout.setHorizontalSpacing(10); layout.setVerticalSpacing(8)
@@ -25,7 +34,7 @@ class PathsHeader(QWidget):
                                              ("results", "nnUNet_results"))):
             field = QLineEdit()
             field.setPlaceholderText(f"Optional {title} directory")
-            field.editingFinished.connect(self.paths_changed)
+            field.editingFinished.connect(self._emit_paths_changed_if_modified)
             browse = QPushButton("Browse…")
             browse.clicked.connect(lambda _=False, item=key: self._browse(item))
             layout.addWidget(QLabel(title), row, 0); layout.addWidget(field, row, 1); layout.addWidget(browse, row, 2)
@@ -58,6 +67,18 @@ class PathsHeader(QWidget):
         annotation_layout.addLayout(annotation_actions)
         self._set_annotation_state(False)
         layout.addWidget(self.annotation_group, 0, 3, 3, 1)
+        self._saved_path_texts = self._path_texts()
+
+    def _path_texts(self) -> tuple[str, ...]:
+        return tuple(field.text().strip() for field in self._fields.values())
+
+    def _emit_paths_changed_if_modified(self) -> None:
+        """Refresh datasets only after the user actually changed a path."""
+        path_texts = self._path_texts()
+        if path_texts == self._saved_path_texts:
+            return
+        self._saved_path_texts = path_texts
+        self.paths_changed.emit()
 
     def _set_annotation_state(self, active: bool) -> None:
         """Show the future annotation-workflow switch state without changing workflow behavior."""
@@ -89,7 +110,8 @@ class PathsHeader(QWidget):
     def _browse(self, key: str) -> None:
         selected = QFileDialog.getExistingDirectory(self, "Choose nnU-Net directory", self._fields[key].text())
         if selected:
-            self._fields[key].setText(selected); self.paths_changed.emit()
+            self._fields[key].setText(selected)
+            self._emit_paths_changed_if_modified()
 
     def paths(self) -> tuple[Path | None, Path | None, Path | None]:
         return tuple(Path(field.text()).expanduser() if field.text().strip() else None
@@ -98,3 +120,4 @@ class PathsHeader(QWidget):
     def set_paths(self, raw: str, preprocessed: str, results: str) -> None:
         for field, value in zip(self._fields.values(), (raw, preprocessed, results)):
             field.setText(value)
+        self._saved_path_texts = self._path_texts()

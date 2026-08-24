@@ -1,11 +1,21 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from PySide6.QtWidgets import (QApplication, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
-                               QHBoxLayout, QLineEdit, QMessageBox, QPushButton, QToolTip, QWidget)
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QToolTip,
+    QWidget,
+)
 
 from nnworkbench.services.commands import prediction_command
+
 from .editable_dropdown import EditableDropdownComboBox
 
 
@@ -54,7 +64,7 @@ class PredictionDialog(QDialog):
         self.configuration.clear()
         self.configuration.addItems(configuration for option_plan, configuration in self._options if option_plan == plan)
         index = self.configuration.findText("3d_fullres")
-        self.configuration.setCurrentIndex(index if index >= 0 else 0)
+        self.configuration.setCurrentIndex(max(index, 0))
 
     def command(self) -> str:
         return prediction_command(self.dataset_id, self.input_directory.text().strip(),

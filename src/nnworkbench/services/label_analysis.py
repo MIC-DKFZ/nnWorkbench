@@ -7,13 +7,12 @@ import multiprocessing
 import os
 import tempfile
 from collections import Counter
+from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
 
 from .dataset_json import read_manifest
-
 
 ANALYSIS_FILENAME = "class_distribution.json"
 

@@ -3,7 +3,6 @@ from pathlib import Path
 
 from nnworkbench.workflow import accept_label, initialise, status
 
-
 CONFIG = {"data_root": "data", "dataset_id": "Dataset001_nnWorkbench", "modalities": {"0": "CT"},
           "labels": {"background": 0, "target": 1}}
 

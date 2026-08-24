@@ -2,8 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from nnworkbench.services.dataset_creator import (create_dataset, create_next_iteration, next_free_dataset_id,
-                                                  next_iteration_name)
+from nnworkbench.services.dataset_creator import (
+    create_dataset,
+    create_next_iteration,
+    next_free_dataset_id,
+    next_iteration_name,
+)
 from nnworkbench.services.dataset_scanner import scan_datasets
 
 

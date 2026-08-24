@@ -4,15 +4,31 @@ from pathlib import Path
 
 from PySide6.QtCore import QSettings, QSignalBlocker, QSize, QTimer
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import (QLabel, QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton,
-                               QSplitter, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QSplitter,
+    QStyle,
+    QVBoxLayout,
+    QWidget,
+)
 
 from nnworkbench.models.dataset import DatasetRecord
-from nnworkbench.services.dataset_creator import (create_dataset, create_next_iteration, next_free_dataset_id,
-                                                  next_iteration_name)
+from nnworkbench.services.dataset_creator import (
+    create_dataset,
+    create_next_iteration,
+    next_free_dataset_id,
+    next_iteration_name,
+)
 from nnworkbench.services.dataset_scanner import scan_datasets
-from .metadata_editor import MetadataEditor
+
 from .dataset_workspace import DatasetWorkspace
+from .metadata_editor import MetadataEditor
 from .new_dataset_dialog import NewDatasetDialog
 from .paths_header import PathsHeader
 
@@ -33,7 +49,17 @@ class MainWindow(QMainWindow):
         self.splitter = QSplitter(); layout.addWidget(self.splitter, 1)
         left = QWidget(); left.setObjectName("datasetsPane"); left_layout = QVBoxLayout(left); left_layout.setContentsMargins(16, 16, 16, 16); left_layout.setSpacing(10)
         datasets_title = QLabel("Datasets"); datasets_title.setObjectName("paneTitle"); left_layout.addWidget(datasets_title)
-        self.new_dataset = QPushButton("New dataset"); self.new_dataset.setObjectName("primaryButton"); self.new_dataset.clicked.connect(self._create_dataset); left_layout.addWidget(self.new_dataset)
+        dataset_actions = QHBoxLayout()
+        self.new_dataset = QPushButton("New dataset"); self.new_dataset.setObjectName("primaryButton"); self.new_dataset.clicked.connect(self._create_dataset)
+        self.refresh_datasets = QPushButton()
+        self.refresh_datasets.setObjectName("refreshDatasetsButton")
+        self.refresh_datasets.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
+        self.refresh_datasets.setIconSize(QSize(20, 20))
+        self.refresh_datasets.setToolTip("Reload dataset folders")
+        self.refresh_datasets.setFixedSize(34, 34)
+        self.refresh_datasets.clicked.connect(self.refresh)
+        dataset_actions.addWidget(self.new_dataset, 1); dataset_actions.addWidget(self.refresh_datasets)
+        left_layout.addLayout(dataset_actions)
         self.list = QListWidget(); self.list.currentRowChanged.connect(self._select); left_layout.addWidget(self.list, 1); self.splitter.addWidget(left)
         acknowledgements = QWidget(); acknowledgements.setObjectName("acknowledgementLogos")
         acknowledgements_layout = QVBoxLayout(acknowledgements)
@@ -52,6 +78,7 @@ class MainWindow(QMainWindow):
         self.header.annotation_enabled_changed.connect(self.workspace.set_annotation_workflow_enabled)
         self.workspace.set_annotation_workflow_enabled(self.header.annotation_enabled())
         self.workspace.next_iteration_requested.connect(self._create_next_iteration)
+        self.workspace.nnunet_command_finished.connect(self.refresh)
         self.editor = MetadataEditor(); self.splitter.addWidget(self.editor)
         self.editor.definition_errors_changed.connect(self.workspace.set_metadata_definition_errors)
         self.editor.metadata_saved.connect(self.workspace.refresh_consistency_check)

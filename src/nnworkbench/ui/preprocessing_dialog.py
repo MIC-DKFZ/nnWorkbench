@@ -1,8 +1,17 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QApplication, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QToolTip
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QLineEdit,
+    QToolTip,
+)
 
 from nnworkbench.services.commands import preprocessing_command
+
 from .editable_dropdown import EditableDropdownComboBox
 
 

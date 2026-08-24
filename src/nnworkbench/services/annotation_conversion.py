@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import os
 import multiprocessing
+import os
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
 from .dataset_json import read_manifest
-
 
 _NIFTI_SUFFIXES = (".nii.gz", ".nii")
 

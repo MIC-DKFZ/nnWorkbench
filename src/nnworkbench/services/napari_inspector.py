@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
-import sys
-import argparse
-from html import escape
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
+from html import escape
 from pathlib import Path
 
 from qtpy.QtCore import QObject, QSize, Qt, Signal
@@ -24,9 +23,10 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-
 _NIFTI_SUFFIXES = (".nii.gz", ".nii")
 _CHANNEL_SUFFIX = re.compile(r"_\d{4}$")
+_B2ND_SUFFIX = ".b2nd"
+_B2ND_SEGMENTATION_SUFFIX = "_seg.b2nd"
 
 
 @dataclass(frozen=True)
@@ -71,10 +71,10 @@ class PrefetchStatusBar(QWidget):
         self.setFixedWidth(max(18, 18 * len(self._states)))
         self.update()
 
-    def sizeHint(self) -> QSize:  # noqa: N802 - Qt API spelling
+    def sizeHint(self) -> QSize:
         return QSize(max(72, 18 * len(self._states)), 24)
 
-    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API spelling
+    def paintEvent(self, event) -> None:
         painter = QPainter(self); painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         diameter, spacing = 10, 8
         x = 0
@@ -132,6 +132,22 @@ def prediction_case_ids(prediction_folder: Path) -> tuple[str, ...]:
         return ()
     return tuple(sorted({case_id(path) for path in prediction_folder.iterdir()
                          if path.is_file() and path.name.endswith(_NIFTI_SUFFIXES)}, key=str.casefold))
+
+
+def preprocessed_case_id(path: Path) -> str:
+    """Return an nnU-Net preprocessed case ID from a data or segmentation B2ND file."""
+    if path.name.endswith(_B2ND_SEGMENTATION_SUFFIX):
+        return path.name[:-len(_B2ND_SEGMENTATION_SUFFIX)]
+    return path.name[:-len(_B2ND_SUFFIX)] if path.name.endswith(_B2ND_SUFFIX) else path.stem
+
+
+def preprocessed_case_ids(session_folder: Path) -> tuple[str, ...]:
+    """Return cases represented by data B2ND files, excluding their ``_seg`` companions."""
+    if not session_folder.is_dir():
+        return ()
+    return tuple(sorted({preprocessed_case_id(path) for path in session_folder.iterdir()
+                         if path.is_file() and path.name.endswith(_B2ND_SUFFIX)
+                         and not path.name.endswith(_B2ND_SEGMENTATION_SUFFIX)}, key=str.casefold))
 
 
 def _matching_case_files(directory: Path | None, identifier: str) -> tuple[Path, ...]:
@@ -253,6 +269,34 @@ def _read_prediction_case(prediction_folder: Path, image_folder: Path | None, re
     for path in _matching_case_files(reference_folder, identifier):
         data, affine = _read_nifti(path)
         layers.append(_LayerData(f"Reference — {path.name}", "reference", data, affine))
+    return _CaseData(tuple(layers), ())
+
+
+def _read_preprocessed_case(session_folder: Path, identifier: str) -> _CaseData:
+    """Load nnU-Net's preprocessed B2ND data through nnU-Net's Blosc2 dataset reader."""
+    import numpy as np
+    from nnunetv2.training.dataloading.nnunet_dataset import nnUNetDatasetBlosc2
+
+    data_path = session_folder / f"{identifier}{_B2ND_SUFFIX}"
+    if not data_path.is_file():
+        raise ValueError(f"Preprocessed data file not found: {data_path}")
+    segmentation_path = session_folder / f"{identifier}{_B2ND_SEGMENTATION_SUFFIX}"
+    if not segmentation_path.is_file():
+        raise ValueError(f"Preprocessed segmentation file not found: {segmentation_path}")
+    dataset = nnUNetDatasetBlosc2(str(session_folder), identifiers=[identifier])
+    data, segmentation, _previous_stage_segmentation, _properties = dataset[identifier]
+    data_array = np.asarray(data)
+    if data_array.ndim < 3:
+        raise ValueError(f"Unexpected preprocessed data shape for {data_path.name}: {data_array.shape}")
+    channels = data_array if data_array.ndim > 3 else (data_array,)
+    layers = [
+        _LayerData(f"Preprocessed data — {data_path.name} (channel {index})", "image", channel)
+        for index, channel in enumerate(channels)
+    ]
+    segmentation_array = np.asarray(segmentation)
+    if segmentation_array.ndim > 3 and segmentation_array.shape[0] == 1:
+        segmentation_array = segmentation_array[0]
+    layers.append(_LayerData(f"Preprocessed segmentation — {segmentation_path.name}", "labels", segmentation_array))
     return _CaseData(tuple(layers), ())
 
 
@@ -614,6 +658,27 @@ def open_prediction_folder(prediction_folder: Path, image_folder: Path | None = 
     napari.run()
 
 
+def open_preprocessed_case(selected: Path, prefetch_previous: bool = True, prefetch_next: bool = True,
+                           prefetch_radius: int = 1) -> None:
+    """Inspect a preprocessed nnU-Net B2ND session with the standard case navigator."""
+    import napari
+
+    session_folder, identifier = selected.parent, preprocessed_case_id(selected)
+    cases = preprocessed_case_ids(session_folder)
+    if identifier not in cases:
+        raise ValueError(f"No preprocessed data case found for {selected.name}.")
+    loader = lambda case: _read_preprocessed_case(session_folder, case)
+    viewer = napari.Viewer(title=f"nnWorkbench preprocessed — {identifier}")
+    current_data = loader(identifier)
+    _display_case(viewer, current_data)
+    navigator = CaseNavigator(viewer, loader, cases, identifier, current_data,
+                              prefetch_previous, prefetch_next, prefetch_radius)
+    viewer.window.add_dock_widget(navigator, name="Case navigation", area="right")
+    viewer.bind_key("a", lambda *_: navigator.previous(), overwrite=True)
+    viewer.bind_key("d", lambda *_: navigator.next(), overwrite=True)
+    napari.run()
+
+
 def open_validation_prediction(prediction_path: Path, raw_dataset: Path | None = None) -> None:
     """Inspect a validation prediction, with matching raw image and label when available."""
     import napari
@@ -638,12 +703,13 @@ def open_validation_prediction(prediction_path: Path, raw_dataset: Path | None =
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Open an nnU-Net raw case in Napari.")
+    parser = argparse.ArgumentParser(description="Open an nnU-Net case in Napari.")
     parser.add_argument("file", type=Path, nargs="?")
     parser.add_argument("--prefetch-radius", type=int, default=1, choices=range(1, 21))
     parser.add_argument("--no-prefetch-previous", action="store_true")
     parser.add_argument("--no-prefetch-next", action="store_true")
     parser.add_argument("--annotate", action="store_true")
+    parser.add_argument("--preprocessed-case", action="store_true")
     parser.add_argument("--validation-prediction", action="store_true")
     parser.add_argument("--raw-dataset", type=Path)
     parser.add_argument("--prediction-folder", type=Path)
@@ -659,6 +725,9 @@ def main() -> None:
         if arguments.prediction_folder is not None:
             open_prediction_folder(arguments.prediction_folder, arguments.image_folder, arguments.reference_folder,
                                    not arguments.no_prefetch_previous, not arguments.no_prefetch_next,
+                                   arguments.prefetch_radius)
+        elif arguments.preprocessed_case:
+            open_preprocessed_case(selected, not arguments.no_prefetch_previous, not arguments.no_prefetch_next,
                                    arguments.prefetch_radius)
         elif arguments.annotate:
             open_annotation(selected)

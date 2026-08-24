@@ -21,6 +21,9 @@ nnworkbench-gui = "nnworkbench.app:main"
 [tool.setuptools.package-data]
 nnworkbench = ["assets/*.svg", "assets/*.pdf"]
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

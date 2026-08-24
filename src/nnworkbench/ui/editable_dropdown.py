@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QComboBox, QStyle, QStyleOptionComboBox
 class EditableDropdownComboBox(QComboBox):
     """Keep text editable while drawing a clear arrow over custom Qt stylesheets."""
 
-    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API spelling
+    def paintEvent(self, event) -> None:
         super().paintEvent(event)
         option = QStyleOptionComboBox(); self.initStyleOption(option)
         arrow = self.style().subControlRect(QStyle.ComplexControl.CC_ComboBox, option,

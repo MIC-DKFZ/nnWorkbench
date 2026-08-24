@@ -9,25 +9,72 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QPoint, QProcess, QProcessEnvironment, QRunnable, QThreadPool, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import (
+    QObject,
+    QPoint,
+    QProcess,
+    QProcessEnvironment,
+    QRunnable,
+    QSize,
+    Qt,
+    QThreadPool,
+    QTimer,
+    QUrl,
+    Signal,
+)
 from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPixmap, QPolygon, QTextCursor
-from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QGroupBox, QHBoxLayout,
-                               QHeaderView, QLabel, QPlainTextEdit, QPushButton, QSpinBox, QSplitter, QTabWidget,
-                               QStyle, QStyleOptionSpinBox, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QMessageBox)
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QPlainTextEdit,
+    QPushButton,
+    QSpinBox,
+    QSplitter,
+    QStyle,
+    QStyleOptionSpinBox,
+    QTabWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from nnworkbench.models.dataset import DatasetRecord
-from nnworkbench.services.dataset_contents import (json_value, model_folds, model_plan_configuration,
-                                                  preprocessed_files, raw_files, trained_models, validation_files)
+from nnworkbench.services.annotation_conversion import (
+    AnnotationConversionResult,
+    annotation_files,
+    convert_annotations,
+    has_annotation_files,
+)
+from nnworkbench.services.dataset_contents import (
+    json_value,
+    model_folds,
+    model_plan_configuration,
+    preprocessed_files,
+    raw_files,
+    trained_models,
+    validation_files,
+)
 from nnworkbench.services.dataset_json import ImageCountCheck, image_count_check
-from nnworkbench.services.label_analysis import (analyse_label_distribution, analysis_path, label_files,
-                                                load_label_analysis)
-from nnworkbench.services.annotation_conversion import (AnnotationConversionResult, annotation_files, convert_annotations,
-                                                        has_annotation_files)
+from nnworkbench.services.label_analysis import (
+    analyse_label_distribution,
+    analysis_path,
+    label_files,
+    load_label_analysis,
+)
 from nnworkbench.services.nnunet_discovery import available_planners, available_trainers
+
 from .label_statistics_dialog import LabelStatisticsView
-from .preprocessing_dialog import PreprocessingDialog
 from .prediction_dialog import PredictionDialog
 from .prediction_inspection_dialog import PredictionInspectionDialog
+from .preprocessing_dialog import PreprocessingDialog
 from .training_dialog import TrainingDialog
 
 
@@ -59,7 +106,7 @@ class _LoadWorker(QRunnable):
 class _SettingsSpinBox(QSpinBox):
     """A styled spin box that keeps visible arrows after QSS customisation."""
 
-    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API spelling
+    def paintEvent(self, event) -> None:
         super().paintEvent(event)
         option = QStyleOptionSpinBox(); self.initStyleOption(option)
         style = self.style()
@@ -82,6 +129,7 @@ class DatasetWorkspace(QWidget):
     _VALIDATION_FILE_ROLE = Qt.ItemDataRole.UserRole + 4
     annotation_documentation_visibility_changed = Signal(bool)
     next_iteration_requested = Signal()
+    nnunet_command_finished = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -214,11 +262,20 @@ class DatasetWorkspace(QWidget):
         preprocessed_actions = QHBoxLayout()
         self.run_training = QPushButton("Run Training"); self.run_training.setEnabled(False)
         self.run_training.clicked.connect(self._configure_training)
+        self.preprocessed_settings = QPushButton("⚙")
+        self.preprocessed_settings.setObjectName("settingsButton")
+        self.preprocessed_settings.setToolTip("Analysis and Napari settings")
+        self.preprocessed_settings.clicked.connect(self._configure_workspace_settings)
         preprocessed_actions.addWidget(self.run_training); preprocessed_actions.addStretch()
+        preprocessed_actions.addWidget(self.preprocessed_settings)
         preprocessed_layout.addLayout(preprocessed_actions)
         self.preprocessed_splitter = QSplitter(); preprocessed_layout.addWidget(self.preprocessed_splitter)
-        self.preprocessed_tree = QTreeWidget(); self.preprocessed_tree.setHeaderHidden(True)
+        self.preprocessed_tree = QTreeWidget(); self.preprocessed_tree.setColumnCount(2); self.preprocessed_tree.setHeaderHidden(True)
         self.preprocessed_tree.currentItemChanged.connect(self._show_json_content)
+        preprocessed_header = self.preprocessed_tree.header()
+        preprocessed_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        preprocessed_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self.preprocessed_tree.setColumnWidth(1, 180)
         self.preprocessed_splitter.addWidget(self.preprocessed_tree)
         self.json_content = QPlainTextEdit(); self.json_content.setReadOnly(True)
         self.preprocessed_splitter.addWidget(self.json_content)
@@ -232,8 +289,12 @@ class DatasetWorkspace(QWidget):
         self.run_prediction.clicked.connect(self._configure_prediction)
         self.inspect_predictions = QPushButton("Inspect predictions")
         self.inspect_predictions.clicked.connect(self._configure_prediction_inspection)
+        self.results_settings = QPushButton("⚙")
+        self.results_settings.setObjectName("settingsButton")
+        self.results_settings.setToolTip("Analysis and Napari settings")
+        self.results_settings.clicked.connect(self._configure_workspace_settings)
         results_actions.addWidget(self.run_prediction); results_actions.addWidget(self.inspect_predictions)
-        results_actions.addStretch(); results_layout.addLayout(results_actions)
+        results_actions.addStretch(); results_actions.addWidget(self.results_settings); results_layout.addLayout(results_actions)
         self.results_splitter = QSplitter(); results_layout.addWidget(self.results_splitter)
         self.models = QTreeWidget(); self.models.setColumnCount(2); self.models.setHeaderHidden(True)
         self.models.currentItemChanged.connect(self._show_fold_summary)
@@ -567,6 +628,15 @@ class DatasetWorkspace(QWidget):
             command.extend(("--raw-dataset", str(self._record.raw_path)))
         self._start_napari(command, path)
 
+    def _inspect_preprocessed_file(self, path: Path) -> None:
+        command = ["-m", "nnworkbench.services.napari_inspector", str(path), "--preprocessed-case",
+                   "--prefetch-radius", str(self._napari_prefetch_radius)]
+        if not self._napari_prefetch_previous:
+            command.append("--no-prefetch-previous")
+        if not self._napari_prefetch_next:
+            command.append("--no-prefetch-next")
+        self._start_napari(command, path)
+
     def _configure_prediction_inspection(self) -> None:
         raw_dataset = self._record.raw_path if self._record else None
         dialog = PredictionInspectionDialog(raw_dataset, self)
@@ -897,7 +967,11 @@ class DatasetWorkspace(QWidget):
                 plans.append((str(path), names))
         if not plans:
             return
-        dialog = TrainingDialog(self._record.dataset_id, plans, self._available_trainers, self)
+        default_trainer = ("nnUNetTrainerBetterIgnoreSampling" if self._annotation_workflow_enabled
+                           else "nnUNetTrainer")
+        dialog = TrainingDialog(self._record.dataset_id, plans, self._available_trainers,
+                                default_trainer=default_trainer,
+                                annotation_workflow_enabled=self._annotation_workflow_enabled, parent=self)
         if dialog.exec() and self._record:
             self._run_nnunet_command(dialog.command(), ("nnUNet_preprocessed", "nnUNet_results"))
 
@@ -935,6 +1009,14 @@ class DatasetWorkspace(QWidget):
             self._log(f"export {name}={shlex.quote(str(path))}")
         environment.insert("PYTHONUNBUFFERED", "1")
         self._log("export PYTHONUNBUFFERED=1")
+        from nnworkbench import nnunet_trainers
+        trainer_directory = str(Path(nnunet_trainers.__file__).parent)
+        configured_trainers = environment.value("nnUNet_extTrainer")
+        trainer_paths = [trainer_directory]
+        if configured_trainers:
+            trainer_paths.extend(path for path in configured_trainers.split(os.pathsep) if path)
+        environment.insert("nnUNet_extTrainer", os.pathsep.join(dict.fromkeys(trainer_paths)))
+        self._log(f"export nnUNet_extTrainer={shlex.quote(environment.value('nnUNet_extTrainer'))}")
         self._log(f"Run: {command}")
         process = QProcess(self); process.setProcessEnvironment(environment)
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
@@ -953,6 +1035,7 @@ class DatasetWorkspace(QWidget):
             self._active_process = None; self._update_console_controls(); self._refresh_run_actions()
         outcome = "completed" if status == QProcess.ExitStatus.NormalExit and exit_code == 0 else "failed"
         self._log(f"nnU-Net command {outcome} (exit code {exit_code}).")
+        self.nnunet_command_finished.emit()
 
     def _command_failed(self, process: QProcess, error: QProcess.ProcessError) -> None:
         if error == QProcess.ProcessError.FailedToStart:
@@ -1030,7 +1113,22 @@ class DatasetWorkspace(QWidget):
                     parent.addChild(folder); folder.setExpanded(False); folders[folder_parts] = folder
                 parent = folder
             file_item = QTreeWidgetItem([relative_path.name]); parent.addChild(file_item)
-            file_item.setData(0, Qt.ItemDataRole.UserRole, str(dataset_path / relative_path))
+            target = dataset_path / relative_path
+            file_item.setData(0, Qt.ItemDataRole.UserRole, str(target))
+            if target.name.endswith(".b2nd") and not target.name.endswith("_seg.b2nd"):
+                file_item.setSizeHint(0, QSize(0, 34)); file_item.setSizeHint(1, QSize(0, 34))
+                self.preprocessed_tree.setItemWidget(file_item, 1, self._preprocessed_file_actions(target))
+
+    def _preprocessed_file_actions(self, path: Path) -> QWidget:
+        """Offer inspection for a B2ND data file; the matching segmentation loads automatically."""
+        widget = QWidget(); layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(4)
+        inspect = QPushButton("Inspect"); inspect.setObjectName("rawActionButton")
+        inspect.clicked.connect(lambda _=False, selected=path: self._inspect_preprocessed_file(selected))
+        layout.addWidget(inspect)
+        placeholder = QWidget(); placeholder.setFixedWidth(QPushButton("Annotate").sizeHint().width())
+        layout.addWidget(placeholder)
+        return widget
 
     def _render_results(self, data: object) -> None:
         self.models.clear(); self.result_summary.hide()

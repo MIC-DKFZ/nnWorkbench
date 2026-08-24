@@ -3,8 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from nnworkbench.services.label_analysis import (aggregate_class_counts, analyse_label_distribution, analysis_path,
-                                                load_label_analysis)
+from nnworkbench.services.label_analysis import (
+    aggregate_class_counts,
+    analyse_label_distribution,
+    analysis_path,
+    load_label_analysis,
+)
 
 
 def test_aggregate_class_counts_includes_declared_and_encountered_classes() -> None:

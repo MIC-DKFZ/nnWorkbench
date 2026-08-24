@@ -3,9 +3,24 @@ from types import SimpleNamespace
 
 import pytest
 
-from nnworkbench.services.napari_inspector import (_CaseData, _LayerData, _display_case, _read_case, case_id,
-                                                  annotation_label_summary, annotation_source_image, annotation_target_path, image_case_ids, prefetch_indices,
-                                                  prediction_case_ids, related_files, save_semantic_annotation, semantic_map_name)
+from nnworkbench.services.napari_inspector import (
+    _CaseData,
+    _display_case,
+    _LayerData,
+    _read_case,
+    annotation_label_summary,
+    annotation_source_image,
+    annotation_target_path,
+    case_id,
+    image_case_ids,
+    prediction_case_ids,
+    prefetch_indices,
+    preprocessed_case_id,
+    preprocessed_case_ids,
+    related_files,
+    save_semantic_annotation,
+    semantic_map_name,
+)
 
 
 def test_related_files_groups_raw_case_across_folders(tmp_path: Path) -> None:
@@ -36,6 +51,15 @@ def test_prediction_case_ids_uses_predictions_not_the_number_of_input_images(tmp
         (images / name).touch()
 
     assert prediction_case_ids(predictions) == ("case_001", "case_002")
+
+
+def test_preprocessed_case_ids_excludes_segmentation_companions(tmp_path: Path) -> None:
+    session = tmp_path / "nnUNetPlans_3d_fullres"; session.mkdir()
+    for name in ("001.b2nd", "001_seg.b2nd", "002.b2nd", "dataset.json"):
+        (session / name).touch()
+
+    assert preprocessed_case_id(session / "001_seg.b2nd") == "001"
+    assert preprocessed_case_ids(session) == ("001", "002")
 
 
 def test_annotation_source_image_uses_the_first_image_channel(tmp_path: Path) -> None:

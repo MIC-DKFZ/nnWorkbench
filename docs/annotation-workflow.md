@@ -49,6 +49,23 @@ Use **Inspect** on images, labels, or annotations to open available matching fil
 
 After conversion, use **Analyze Labels** to calculate class presence and voxel counts. The saved `class_distribution.json` can be reopened later from the Raw tree without recomputing.
 
+## Train with annotation-aware sampling
+
+When Annotation Workflow is enabled, train with an `nnUNetTrainerBetterIgnoreSampling` variant.
+
+These trainers are designed for incomplete annotations. They place annotated structures at different positions within training patches instead of always centring them. This gives the model more varied examples and helps reduce errors near patch borders.
+
+Choose the variant that matches the augmentation policy you need:
+
+- `nnUNetTrainerBetterIgnoreSampling` — recommended default.
+- `nnUNetTrainerBetterIgnoreSamplingDA5` — use the nnU-Net DA5 augmentation policy.
+- `nnUNetTrainerBetterIgnoreSamplingDA5ord0` — use DA5 order-0 augmentation.
+- `nnUNetTrainerBetterIgnoreSamplingOnlyMirror01` — mirror only axes 0 and 1.
+- `nnUNetTrainerBetterIgnoreSamplingNoMirroring` — disable mirroring augmentation.
+- `nnUNetTrainerBetterIgnoreSampling_10epochs` — short debugging run.
+
+Select one in **Preprocessed → Run Training**. The variants are bundled with nnWorkbench and are made available to the nnU-Net command automatically when training is started from the GUI.
+
 ## Continue with nnU-Net
 
 Once annotations have been converted and reviewed as `labelsTr`, follow the [nnU-Net workflow guide](nnunet-workflow.md) to preprocess, train, validate, and predict.

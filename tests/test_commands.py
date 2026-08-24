@@ -1,4 +1,9 @@
-from nnworkbench.services.commands import prediction_command, preprocessing_command, training_command
+from nnworkbench.services.commands import (
+    prediction_command,
+    preprocessing_command,
+    training_command,
+)
+from nnworkbench.services.nnunet_discovery import available_trainers
 
 
 def test_nnunet_command_generation() -> None:
@@ -14,3 +19,12 @@ def test_nnunet_command_generation() -> None:
         "nnUNetv2_predict -i '/input path' -o '/output path' -d 1 -c 3d_fullres -p nnUNetPlans")
     assert prediction_command(1, "/input", "/output", "nnUNetPlans", "2d", "--save_probabilities") == (
         "nnUNetv2_predict -i /input -o /output -d 1 -c 2d -p nnUNetPlans --save_probabilities")
+
+
+def test_bundled_annotation_workflow_trainer_is_discoverable() -> None:
+    trainers = available_trainers()
+
+    assert "nnUNetTrainer" in trainers
+    assert "nnUNetTrainerBetterIgnoreSampling" in trainers
+    assert "nnUNetTrainerBetterIgnoreSamplingOnlyMirror01" in trainers
+    assert "nnUNetTrainerBetterIgnoreSamplingNoMirroring" in trainers

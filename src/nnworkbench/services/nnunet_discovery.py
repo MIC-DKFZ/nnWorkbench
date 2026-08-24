@@ -47,16 +47,23 @@ def available_trainers() -> tuple[str, ...]:
     except Exception:
         return (default,)
 
+    packages = [package]
+    try:
+        packages.append(importlib.import_module("nnworkbench.nnunet_trainers"))
+    except Exception:
+        pass
     names = {default}
-    for module_info in pkgutil.walk_packages(package.__path__, f"{package.__name__}.", onerror=lambda _name: None):
-        try:
-            module = importlib.import_module(module_info.name)
-        except Exception:
-            continue
-        for _name, candidate in inspect.getmembers(module, inspect.isclass):
+    for trainer_package in packages:
+        for module_info in pkgutil.walk_packages(trainer_package.__path__, f"{trainer_package.__name__}.",
+                                                 onerror=lambda _name: None):
             try:
-                if candidate is not base_class and issubclass(candidate, base_class):
-                    names.add(candidate.__name__)
-            except TypeError:
+                module = importlib.import_module(module_info.name)
+            except Exception:
                 continue
+            for _name, candidate in inspect.getmembers(module, inspect.isclass):
+                try:
+                    if candidate is not base_class and issubclass(candidate, base_class):
+                        names.add(candidate.__name__)
+                except TypeError:
+                    continue
     return tuple(sorted(names, key=lambda name: (name != default, name.casefold())))
