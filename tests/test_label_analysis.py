@@ -8,6 +8,7 @@ from nnworkbench.services.label_analysis import (
     analyse_label_distribution,
     analysis_path,
     load_label_analysis,
+    undefined_label_ids,
 )
 
 
@@ -29,6 +30,16 @@ def test_aggregate_class_counts_excludes_the_configured_ignore_label() -> None:
         {"id": 0, "name": "background", "images": 1, "voxels": 2},
         {"id": 1, "name": "tumour", "images": 1, "voxels": 4},
     ]
+
+
+def test_undefined_label_ids_reports_each_affected_file() -> None:
+    result = undefined_label_ids(
+        [Path("case_001.nii.gz"), Path("case_002.nii.gz")],
+        [{0: 10, 1: 2, 7: 1}, {0: 5, 9: 3}],
+        {0, 1, 2},
+    )
+
+    assert result == {"case_001.nii.gz": [7], "case_002.nii.gz": [9]}
 
 
 def test_load_label_analysis_reads_cached_raw_file(tmp_path: Path) -> None:
@@ -58,4 +69,5 @@ def test_label_analysis_counts_images_voxels_and_writes_cache(tmp_path: Path) ->
         {"image": "case_001.nii.gz", "voxels": {"0": 1, "1": 2}},
         {"image": "case_002.nii.gz", "voxels": {"0": 2, "1": 1}},
     ]
+    assert analysis["undefined_label_ids"] == {}
     assert load_label_analysis(tmp_path) == analysis

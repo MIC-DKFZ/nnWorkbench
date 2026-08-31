@@ -22,30 +22,53 @@ Requirements:
 - Python 3.12 or newer
 - Conda or another suitable Python environment manager
 
-Create an environment if needed:
+![nnWorkbench local and remote installation overview](src/nnworkbench/assets/installation.svg)
+
+Create an environment and clone the repository once:
 
 ```bash
 conda create -n nnworkbench python=3.12
 conda activate nnworkbench
-```
-
-Install and start nnWorkbench:
-
-```bash
 git clone <your-repository-url> nnWorkbench
 cd nnWorkbench
-pip install -e .
+```
+
+### Local installation — full workbench
+
+GUI, Napari inspection, and optional nnInteractive annotation workflow.
+
+```bash
+pip install -e '.[local]'
 nnworkbench-gui
 ```
 
-`nnworkbench-gui` is the recommended launch command. Press `Ctrl+C` in the launching terminal to close nnWorkbench and its child Napari windows.
+Local interactive inference additionally needs a compatible PyTorch installation.
 
-The default installation includes nnInteractive. Local interactive inference also needs a compatible PyTorch installation and an nnInteractive model; configure these only when using the annotation workflow.
+### Remote installation — lightweight execution
+
+For clusters or remote machines: nnU-Net, custom trainers, and remote commands only—no GUI, Napari or nnInteractive.
+
+```bash
+pip install -e .
+```
+
+## Remote control
+
+nnWorkbench distinguishes between **Local** and **Remote** path profiles. **Local** is the default and always supplies the paths used by the GUI to discover datasets, inspect data, and start local nnU-Net commands.
+
+Use the `+` tab in the GUI to create a named **Remote** profile and enter its `nnUNet_raw`, `nnUNet_preprocessed`, and `nnUNet_results` paths. Remote profiles do not change the Local GUI workspace; they only describe another machine or cluster setup.
+
+Select a Remote profile and click **Export** to copy an `nnworkbench-set-paths` command containing its paths. Paste and run that command on the remote machine after the lightweight installation. The remote setup is then stored there and can be used with `nnworkbench-run` in a shell script or scheduler job.
+
+```bash
+nnworkbench-set-paths --raw /path/to/nnUNet_raw --preprocessed /path/to/nnUNet_preprocessed --results /path/to/nnUNet_results
+nnworkbench-run nnUNetv2_train 1 3d_fullres 0
+```
 
 For development tools, install the optional test and lint dependencies:
 
 ```bash
-pip install -e '.[dev]'
+pip install -e '.[local,dev]'
 ```
 
 ## Quick start: nnU-Net workflow

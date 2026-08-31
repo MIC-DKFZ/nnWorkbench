@@ -2,7 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from nnworkbench.services.annotation_conversion import convert_annotations, has_annotation_files
+from nnworkbench.services.annotation_conversion import (
+    convert_annotations,
+    has_annotation_files,
+)
 
 
 def _manifest(path: Path, labels: str = '{"background": 0, "tumour": 1, "organ": 2, "ignore": 3}') -> None:
@@ -33,10 +36,11 @@ def test_convert_annotations_skips_empty_and_out_of_range_cases(tmp_path: Path) 
     _manifest(tmp_path / "dataset.json")
     mitk.Image(np.zeros((1, 2, 2), dtype=np.uint8)).save(annotations / "empty.nii.gz")
     mitk.Image(np.array([[[0, 9], [1, 0]]], dtype=np.uint8)).save(annotations / "invalid.nii.gz")
+    mitk.Image(np.array([[[0, 1], [2, 3]]], dtype=np.uint8)).save(annotations / "valid.nii.gz")
 
     result = convert_annotations(tmp_path)
 
-    assert not result.converted
+    assert result.converted == (tmp_path / "labelsTr" / "valid.nii.gz",)
     assert len(result.warnings) == 2
     assert not (tmp_path / "labelsTr" / "empty.nii.gz").exists()
     assert not (tmp_path / "labelsTr" / "invalid.nii.gz").exists()

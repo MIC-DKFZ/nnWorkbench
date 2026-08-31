@@ -9,13 +9,17 @@ description = "A GUI for nnU-Net workflows and nnInteractive-powered annotation"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [{name = "Lars Krämer"}, {email = "lars.kraemer@dkfz-heidelberg.de"},]
-dependencies = ["PySide6>=6.6", "mitk-python>=2026.06", "napari>=0.5", "napari-nninteractive[local]>=2.5.3", "nnunetv2>=2.8.1"]
+dependencies = ["nnunetv2>=2.8.1"]
 
 [project.optional-dependencies]
+local = ["PySide6>=6.6", "mitk-python>=2026.06", "napari>=0.5", "napari-nninteractive[local]>=2.5.3"]
 dev = ["pytest>=8.0", "ruff>=0.6"]
 
 [project.scripts]
 nnworkbench-gui = "nnworkbench.app:main"
+nnworkbench-set-paths = "nnworkbench.path_setup:set_paths_main"
+nnworkbench-get-paths = "nnworkbench.path_setup:get_paths_main"
+nnworkbench-run = "nnworkbench.command_runner:main"
 
 [tool.setuptools.package-data]
 nnworkbench = ["assets/*.svg", "assets/*.pdf"]

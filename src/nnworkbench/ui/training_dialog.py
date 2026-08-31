@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QToolTip,
 )
 
-from nnworkbench.services.commands import training_command
+from nnworkbench.services.commands import training_command, wrapped_command
 
 from .editable_dropdown import EditableDropdownComboBox
 
@@ -23,7 +23,7 @@ class TrainingDialog(QDialog):
 
     def __init__(self, dataset_id: int, plans: list[tuple[str, tuple[str, ...]]],
                  trainers: tuple[str, ...] = ("nnUNetTrainer",), default_trainer: str = "nnUNetTrainer",
-                 annotation_workflow_enabled: bool = False, parent=None) -> None:
+                 annotation_workflow_enabled: bool = False, local_run_available: bool = True, parent=None) -> None:
         super().__init__(parent)
         self.dataset_id = dataset_id
         self._annotation_workflow_enabled = annotation_workflow_enabled
@@ -57,7 +57,11 @@ class TrainingDialog(QDialog):
         layout.addRow("Fold", self.fold)
         layout.addRow("Additional arguments", self.additional_arguments)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Run training")
+        run = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        run.setText("Run training")
+        run.setEnabled(local_run_available)
+        if not local_run_available:
+            run.setToolTip("Local nnUNet_preprocessed and nnUNet_results directories are required to run here.")
         self.copy = buttons.addButton("Copy command", QDialogButtonBox.ButtonRole.ActionRole)
         self.copy.clicked.connect(self._copy_command)
         buttons.accepted.connect(self._accept_if_valid); buttons.rejected.connect(self.reject)
@@ -97,6 +101,7 @@ class TrainingDialog(QDialog):
             QToolTip.showText(self.additional_arguments.mapToGlobal(self.additional_arguments.rect().bottomLeft()),
                               f"Invalid arguments: {error}", self.additional_arguments)
             return
+        command = wrapped_command(command)
         QApplication.clipboard().setText(command)
         print(command)
         QToolTip.showText(self.copy.mapToGlobal(self.copy.rect().bottomLeft()), "Copied to clipboard", self.copy)

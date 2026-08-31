@@ -282,6 +282,42 @@ QTabBar::tab:selected {
     background: #ffffff;
     color: #0a4697;
 }
+QTabBar#pathProfileTabs::tab {
+    padding: 3px 10px;
+    font-weight: 400;
+}
+QTabBar#pathProfileTabs::tab:first {
+    background: #e7f0fa;
+    border-color: #9dbbd9;
+    color: #0a4697;
+    font-weight: 600;
+}
+QTabBar#pathProfileTabs::tab:first:selected {
+    background: #ffffff;
+}
+QPushButton#pathProfileAction {
+    min-height: 22px;
+    max-height: 22px;
+    padding: 1px 8px;
+}
+QPushButton#pathProfileInfo, QPushButton#pathProfileDelete {
+    min-width: 22px;
+    max-width: 22px;
+    min-height: 22px;
+    max-height: 22px;
+    padding: 0;
+}
+QPushButton#pathProfileDelete {
+    border-color: #dca0a0;
+}
+QPushButton#pathProfileDelete:hover {
+    background: #fdecec;
+    border-color: #d97a7a;
+}
+QPushButton#pathProfileDelete:disabled {
+    background: #f5f5f5;
+    border-color: #c9c9c9;
+}
 QTableWidget {
     gridline-color: #dedede;
     padding: 0;

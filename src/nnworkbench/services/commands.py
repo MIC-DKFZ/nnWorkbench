@@ -19,3 +19,8 @@ def prediction_command(dataset_id: int, input_directory: str, output_directory: 
                        configuration: str, additional_arguments: str = "") -> str:
     return shlex.join(("nnUNetv2_predict", "-i", input_directory, "-o", output_directory, "-d",
                        str(dataset_id), "-c", configuration, "-p", plans, *shlex.split(additional_arguments)))
+
+
+def wrapped_command(command: str) -> str:
+    """Prefix an nnU-Net command with the saved-path nnWorkbench runner."""
+    return shlex.join(("nnworkbench-run", *shlex.split(command)))

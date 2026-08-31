@@ -82,6 +82,16 @@ def aggregate_class_counts(per_file: Iterable[dict[int, int]], label_names: dict
              "images": images[class_id], "voxels": voxels[class_id]} for class_id in class_ids]
 
 
+def undefined_label_ids(files: Iterable[Path], per_file: Iterable[dict[int, int]],
+                        defined_ids: set[int]) -> dict[str, list[int]]:
+    """Return undefined label IDs grouped by their affected label-map filename."""
+    return {
+        path.name: sorted(set(counts) - defined_ids)
+        for path, counts in zip(files, per_file, strict=True)
+        if set(counts) - defined_ids
+    }
+
+
 def analyse_label_distribution(dataset_directory: Path, workers: int | None = None) -> dict:
     """Analyse all ``labelsTr`` files and atomically cache the result in the raw folder.
 
@@ -97,6 +107,8 @@ def analyse_label_distribution(dataset_directory: Path, workers: int | None = No
     context = multiprocessing.get_context("spawn")
     with ProcessPoolExecutor(max_workers=worker_count, mp_context=context) as executor:
         counts = list(executor.map(_analyse_file, (str(path) for path in files)))
+    label_names = _label_names(dataset_directory)
+    unexpected = undefined_label_ids(files, counts, set(label_names))
     ignored = _ignored_label_ids(dataset_directory)
     per_image = [
         {"image": path.name,
@@ -109,9 +121,10 @@ def analyse_label_distribution(dataset_directory: Path, workers: int | None = No
         "files_analyzed": len(files),
         "workers": worker_count,
         "classes": aggregate_class_counts(
-            counts, _label_names(dataset_directory), ignored
+            counts, label_names, ignored
         ),
         "per_image": per_image,
+        "undefined_label_ids": unexpected,
     }
     _write_analysis(analysis_path(dataset_directory), analysis)
     return analysis

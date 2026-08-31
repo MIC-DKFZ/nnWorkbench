@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QSignalBlocker, QSize, QTimer
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from nnworkbench.models.dataset import DatasetRecord
+from nnworkbench.path_setup import configured_paths, save_paths
 from nnworkbench.services.dataset_creator import (
     create_dataset,
     create_next_iteration,
@@ -44,8 +46,11 @@ class MainWindow(QMainWindow):
         self.header.annotation_enabled_changed.connect(
             lambda enabled: self.settings.setValue("annotation_workflow/enabled", enabled))
         self.header.set_annotation_enabled(self.settings.value("annotation_workflow/enabled", False, type=bool))
-        self.header.set_paths(*(self.settings.value(f"paths/{key}", "", type=str) for key in ("raw", "preprocessed", "results")))
+        self.header.set_paths(*self._local_paths())
+        self.header.set_remote_profiles(self._remote_profiles())
+        self.header.paths_changed.connect(self._save_local_paths)
         self.header.paths_changed.connect(self.refresh)
+        self.header.remote_profiles_changed.connect(self._save_remote_profiles)
         self.splitter = QSplitter(); layout.addWidget(self.splitter, 1)
         left = QWidget(); left.setObjectName("datasetsPane"); left_layout = QVBoxLayout(left); left_layout.setContentsMargins(16, 16, 16, 16); left_layout.setSpacing(10)
         datasets_title = QLabel("Datasets"); datasets_title.setObjectName("paneTitle"); left_layout.addWidget(datasets_title)
@@ -58,15 +63,16 @@ class MainWindow(QMainWindow):
         self.refresh_datasets.setToolTip("Reload dataset folders")
         self.refresh_datasets.setFixedSize(34, 34)
         self.refresh_datasets.clicked.connect(self.refresh)
-        dataset_actions.addWidget(self.new_dataset, 1); dataset_actions.addWidget(self.refresh_datasets)
+        dataset_actions.addWidget(self.new_dataset, 1)
+        dataset_actions.addWidget(self.refresh_datasets)
         left_layout.addLayout(dataset_actions)
         self.list = QListWidget(); self.list.currentRowChanged.connect(self._select); left_layout.addWidget(self.list, 1); self.splitter.addWidget(left)
         acknowledgements = QWidget(); acknowledgements.setObjectName("acknowledgementLogos")
         acknowledgements_layout = QVBoxLayout(acknowledgements)
         acknowledgements_layout.setContentsMargins(0, 8, 0, 0); acknowledgements_layout.setSpacing(4)
         asset_directory = Path(__file__).parent.parent / "assets"
-        for filename, size, tooltip in (("HI_Logo.svg", QSize(145, 30), "Helmholtz Imaging"),
-                                        ("DKFZ_Logo.svg", QSize(195, 32), "German Cancer Research Center (DKFZ)")):
+        for filename, size, tooltip in (("HI_Logo.svg", QSize(170, 35), "Helmholtz Imaging"),
+                                        ("DKFZ_Logo.svg", QSize(225, 37), "German Cancer Research Center (DKFZ)")):
             logo = QLabel(); logo.setPixmap(QIcon(str(asset_directory / filename)).pixmap(size)); logo.setToolTip(tooltip)
             acknowledgements_layout.addWidget(logo)
         left_layout.addWidget(acknowledgements)
@@ -104,12 +110,34 @@ class MainWindow(QMainWindow):
         fifth = self.splitter.width() // 5
         self.splitter.setSizes((fifth, self.splitter.width() - 2 * fifth, fifth))
 
-    def _paths(self) -> tuple[Path | None, Path | None, Path | None]: return self.header.paths()
+    def _paths(self) -> tuple[Path | None, Path | None, Path | None]: return self.header.local_paths()
+
+    def _local_paths(self) -> tuple[str, str, str]:
+        """Prefer paths saved by the CLI, falling back to older GUI settings."""
+        try:
+            paths = configured_paths()
+        except (RuntimeError, TypeError):
+            return tuple(self.settings.value(f"paths/{key}", "", type=str)
+                         for key in ("raw", "preprocessed", "results"))  # type: ignore[return-value]
+        return tuple(paths[f"nnUNet_{key}"] for key in ("raw", "preprocessed", "results"))  # type: ignore[return-value]
+
+    def _remote_profiles(self) -> object:
+        try:
+            return json.loads(self.settings.value("remote_profiles", "{}", type=str))
+        except json.JSONDecodeError:
+            return {}
+
+    def _save_remote_profiles(self, profiles: object) -> None:
+        self.settings.setValue("remote_profiles", json.dumps(profiles, sort_keys=True))
+
+    def _save_local_paths(self) -> None:
+        save_paths(*(str(path) if path else "" for path in self.header.local_paths()))
 
     def refresh(self) -> None:
         raw, preprocessed, results = self._paths()
         self.workspace.set_environment_roots(raw, preprocessed, results)
-        for key, path in zip(("raw", "preprocessed", "results"), (raw, preprocessed, results)):
+        local_paths = self.header.local_paths()
+        for key, path in zip(("raw", "preprocessed", "results"), local_paths):
             self.settings.setValue(f"paths/{key}", str(path) if path else "")
         previous_id = self.records[self.list.currentRow()].dataset_id if 0 <= self.list.currentRow() < len(self.records) else None
         self.records = scan_datasets(raw, preprocessed, results)

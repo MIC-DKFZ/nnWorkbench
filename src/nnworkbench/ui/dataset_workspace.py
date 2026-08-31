@@ -146,6 +146,7 @@ class DatasetWorkspace(QWidget):
         self._analysis_running = False
         self._conversion_request = 0
         self._conversion_running = False
+        self._session_conversion_warnings: dict[Path, tuple[str, ...]] = {}
         self._annotation_workflow_enabled = False
         self._metadata_errors: tuple[str, ...] = ()
         self._analysis_workers = 8
@@ -380,8 +381,8 @@ class DatasetWorkspace(QWidget):
         self._conversion_running = False
         self._record = record; self._loaded_tabs.clear(); self._loading_tabs.clear()
         self._metadata_errors = (); self.metadata_error.hide()
-        self._preprocessed_paths = []; self.run_training.setEnabled(False); self.run_training.setText("Run Training")
-        self._trained_model_paths = []; self.run_prediction.setEnabled(False)
+        self._preprocessed_paths = []; self.run_training.setText("Run Training")
+        self._trained_model_paths = []
         self._raw_folder_files = {}; self._loaded_raw_folders.clear(); self._raw_render_version += 1
         if self._active_process is None:
             self.console_panel.hide()
@@ -441,6 +442,11 @@ class DatasetWorkspace(QWidget):
         if self._metadata_errors:
             self.consistency_warning.hide()
             return
+        stored_warnings = tuple(filter(None, (self._conversion_warning(), self._label_analysis_warning())))
+        if stored_warnings:
+            self.consistency_warning.setText("\n".join(stored_warnings))
+            self.consistency_warning.show()
+            return
         if not check.labels_directory_exists:
             self.consistency_warning.setText("Warning: labelsTr folder is missing.")
             self.consistency_warning.show()
@@ -456,6 +462,35 @@ class DatasetWorkspace(QWidget):
             f"Warning: imagesTr contains {check.images} image file(s) across {check.channels} channel(s), "
             f"which does not match {check.labels} file(s) in labelsTr.")
         self.consistency_warning.show()
+
+    def _label_analysis_warning(self) -> str | None:
+        """Return a persistent warning stored by label analysis, if present."""
+        if self._record is None:
+            return None
+        analysis = load_label_analysis(self._record.raw_path)
+        unexpected = analysis.get("undefined_label_ids") if isinstance(analysis, dict) else None
+        if not isinstance(unexpected, dict) or not unexpected:
+            return None
+        details = "; ".join(
+            f"{filename}: {', '.join(str(class_id) for class_id in class_ids)}"
+            for filename, class_ids in unexpected.items()
+            if isinstance(filename, str) and isinstance(class_ids, list)
+        )
+        if not details:
+            return None
+        return (
+            "Warning: labelsTr contains class IDs not defined in dataset.json. "
+            f"Affected files (file: undefined IDs): {details}"
+        )
+
+    def _conversion_warning(self) -> str | None:
+        """Return a session-only warning for annotations skipped during conversion."""
+        if self._record is None or self._record.raw_path is None:
+            return None
+        details = self._session_conversion_warnings.get(self._record.raw_path, ())
+        if not details:
+            return None
+        return "Warning: Some annotations were not converted. " + " ".join(details)
 
     def set_metadata_definition_errors(self, errors: tuple[str, ...]) -> None:
         """Show manifest-definition problems in the main pane, not only as field tooltips."""
@@ -793,14 +828,16 @@ class DatasetWorkspace(QWidget):
             return
         for warning in result.warnings:
             self._log(f"Annotation conversion warning: {warning}")
+        if self._record is not None and self._record.raw_path is not None:
+            self._session_conversion_warnings[self._record.raw_path] = result.warnings
         self._loaded_tabs.discard("raw")
         if self.tabs.currentIndex() == 0:
             self._load_active_tab()
         self._start_consistency_check(self._record)
         message = f"Converted {len(result.converted)} annotation file(s) into labelsTr using {result.workers} worker(s)."
         if result.warnings:
-            message += f"\n\nSkipped {len(result.warnings)} file(s); see the console for details."
-            QMessageBox.warning(self, "Annotation conversion completed with warnings", message)
+            message += "\n\nSkipped files:\n" + "\n".join(result.warnings)
+            QMessageBox.warning(self, "Some annotations were not converted", message)
         else:
             QMessageBox.information(self, "Annotation conversion completed", message)
 
@@ -842,6 +879,8 @@ class DatasetWorkspace(QWidget):
         self._analysis_running = False; self.analyze_labels.setText("Analyze Labels"); self.analyze_labels.setEnabled(True)
         self._restore_availability_summary()
         print(f"Label analysis completed: {analysis_path(raw_path)}")
+        if self._record is not None:
+            self._start_consistency_check(self._record)
         if "raw" in self._loaded_tabs:
             self._add_statistics_item(raw_path)
 
@@ -916,7 +955,7 @@ class DatasetWorkspace(QWidget):
             self._show_training_dialog(request, version, plan_data)
 
     def _configure_preprocessing(self) -> None:
-        if self._record is None or self._record.raw_path is None:
+        if self._record is None:
             return
         self._planner_request += 1; request, version = self._planner_request, self._dataset_version
         if self._planners_loaded:
@@ -931,18 +970,24 @@ class DatasetWorkspace(QWidget):
             return
         self.run_preprocessing.setText("Run Preprocessing"); self._refresh_run_actions()
         choices = tuple(item for item in planners if isinstance(item, str)) if isinstance(planners, tuple) else ()
-        dialog = PreprocessingDialog(self._record.dataset_id, choices or ("ExperimentPlanner",), self)
+        dialog = PreprocessingDialog(
+            self._record.dataset_id,
+            choices or ("ExperimentPlanner",),
+            local_run_available=self._local_preprocessing_available(),
+            parent=self,
+        )
         if dialog.exec():
             self._run_nnunet_command(dialog.command(), ("nnUNet_raw", "nnUNet_preprocessed"))
 
     def _configure_training(self) -> None:
-        if self._record is None or self._record.preprocessed_path is None:
+        if self._record is None:
             return
         plan_paths = [path for path in self._preprocessed_paths
                       if path.suffix.casefold() == ".json" and "plan" in path.name.casefold()]
-        if not plan_paths:
-            return
         self._training_request += 1; request, version = self._training_request, self._dataset_version
+        if not plan_paths or self._record.preprocessed_path is None:
+            self._show_training_dialog(request, version, [])
+            return
         root = self._record.preprocessed_path
         self.run_training.setEnabled(False); self.run_training.setText("Loading plans…")
         self._start_task(lambda: [(path, json_value(root / path)) for path in plan_paths],
@@ -965,13 +1010,16 @@ class DatasetWorkspace(QWidget):
             names = tuple(configurations) if isinstance(configurations, dict) else ()
             if names:
                 plans.append((str(path), names))
+        has_local_plans = bool(plans)
         if not plans:
-            return
+            plans = [("nnUNetPlans.json", ("2d", "3d_fullres", "3d_lowres", "3d_cascade_fullres"))]
         default_trainer = ("nnUNetTrainerBetterIgnoreSampling" if self._annotation_workflow_enabled
                            else "nnUNetTrainer")
         dialog = TrainingDialog(self._record.dataset_id, plans, self._available_trainers,
                                 default_trainer=default_trainer,
-                                annotation_workflow_enabled=self._annotation_workflow_enabled, parent=self)
+                                annotation_workflow_enabled=self._annotation_workflow_enabled,
+                                local_run_available=has_local_plans and self._local_run_available(
+                                    ("nnUNet_preprocessed", "nnUNet_results")), parent=self)
         if dialog.exec() and self._record:
             self._run_nnunet_command(dialog.command(), ("nnUNet_preprocessed", "nnUNet_results"))
 
@@ -982,9 +1030,16 @@ class DatasetWorkspace(QWidget):
 
     def _configure_prediction(self) -> None:
         options = [option for path in self._trained_model_paths if (option := model_plan_configuration(path))]
+        has_local_models = bool(options)
         if not options:
-            return
-        dialog = PredictionDialog(self._record.dataset_id, options, self)
+            options = [("nnUNetPlans", configuration)
+                       for configuration in ("2d", "3d_fullres", "3d_lowres", "3d_cascade_fullres")]
+        dialog = PredictionDialog(
+            self._record.dataset_id,
+            options,
+            local_run_available=has_local_models and self._local_run_available(("nnUNet_results",)),
+            parent=self,
+        )
         if dialog.exec() and self._record:
             self._run_nnunet_command(dialog.command(), ("nnUNet_results",))
 
@@ -999,24 +1054,14 @@ class DatasetWorkspace(QWidget):
             QMessageBox.warning(self, "nnU-Net paths required",
                                 f"Configure existing directories before running nnU-Net:\n{', '.join(invalid)}")
             return
+        from nnworkbench.path_setup import save_paths
+        save_paths(*(str(self._environment_roots[name]) if self._environment_roots[name] else ""
+                     for name in ("nnUNet_raw", "nnUNet_preprocessed", "nnUNet_results")))
         environment = QProcessEnvironment.systemEnvironment()
-        for name in self._environment_roots:
-            environment.remove(name)
-        for name in required_roots:
-            path = self._environment_roots[name]
-            assert path is not None
-            environment.insert(name, str(path))
-            self._log(f"export {name}={shlex.quote(str(path))}")
         environment.insert("PYTHONUNBUFFERED", "1")
         self._log("export PYTHONUNBUFFERED=1")
-        from nnworkbench import nnunet_trainers
-        trainer_directory = str(Path(nnunet_trainers.__file__).parent)
-        configured_trainers = environment.value("nnUNet_extTrainer")
-        trainer_paths = [trainer_directory]
-        if configured_trainers:
-            trainer_paths.extend(path for path in configured_trainers.split(os.pathsep) if path)
-        environment.insert("nnUNet_extTrainer", os.pathsep.join(dict.fromkeys(trainer_paths)))
-        self._log(f"export nnUNet_extTrainer={shlex.quote(environment.value('nnUNet_extTrainer'))}")
+        from nnworkbench.services.commands import wrapped_command
+        command = wrapped_command(command)
         self._log(f"Run: {command}")
         process = QProcess(self); process.setProcessEnvironment(environment)
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
@@ -1026,6 +1071,16 @@ class DatasetWorkspace(QWidget):
         process.errorOccurred.connect(lambda error, active=process: self._command_failed(active, error))
         arguments = shlex.split(command)
         self._start_process_group(process, arguments[0], arguments[1:])
+
+    def _local_run_available(self, required_roots: tuple[str, ...]) -> bool:
+        return all(self._environment_roots[name] is not None and self._environment_roots[name].is_dir()
+                   for name in required_roots)
+
+    def _local_preprocessing_available(self) -> bool:
+        raw_path = self._record.raw_path if self._record else None
+        images = raw_path / "imagesTr" if raw_path is not None else None
+        return (self._local_run_available(("nnUNet_raw", "nnUNet_preprocessed"))
+                and images is not None and images.is_dir() and any(images.iterdir()))
 
     def _command_finished(self, process: QProcess, exit_code: int, status: QProcess.ExitStatus) -> None:
         self._read_process_output(process)
@@ -1078,12 +1133,10 @@ class DatasetWorkspace(QWidget):
 
     def _refresh_run_actions(self) -> None:
         running = self._active_process is not None
-        self.run_preprocessing.setEnabled(bool(self._record and self._record.raw_path) and not running)
-        has_plans = any(path.suffix.casefold() == ".json" and "plan" in path.name.casefold()
-                        for path in self._preprocessed_paths)
-        self.run_training.setEnabled(has_plans and not running)
-        has_models = any(model_plan_configuration(path) for path in self._trained_model_paths)
-        self.run_prediction.setEnabled(has_models and not running)
+        has_dataset = self._record is not None
+        self.run_preprocessing.setEnabled(has_dataset and not running)
+        self.run_training.setEnabled(has_dataset and not running)
+        self.run_prediction.setEnabled(has_dataset and not running)
         # Inspection accepts any user-selected prediction folder, including outputs
         # produced on another machine or outside the configured Results directory.
         self.inspect_predictions.setEnabled(True)

@@ -66,6 +66,19 @@ Choose the variant that matches the augmentation policy you need:
 
 Select one in **Preprocessed → Run Training**. The variants are bundled with nnWorkbench and are made available to the nnU-Net command automatically when training is started from the GUI.
 
+For commands started outside the GUI, save the three nnU-Net paths once, then use the getter to display them together with the bundled trainer directory:
+
+```bash
+nnworkbench-set-paths --raw /path/to/nnUNet_raw --preprocessed /path/to/nnUNet_preprocessed --results /path/to/nnUNet_results
+nnworkbench-get-paths
+```
+
+To run nnU-Net with those saved paths in a terminal or scheduler job, prefix the command with `nnworkbench-run`:
+
+```bash
+nnworkbench-run nnUNetv2_train 1 3d_fullres 0
+```
+
 ## Continue with nnU-Net
 
 Once annotations have been converted and reviewed as `labelsTr`, follow the [nnU-Net workflow guide](nnunet-workflow.md) to preprocess, train, validate, and predict.
