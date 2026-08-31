@@ -5,4 +5,4 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .idea/
-src/nnworkbench/assets/Annotation Workflow.pdf
+src/nnworkbench/assets/Annotation_Workflow.pdf

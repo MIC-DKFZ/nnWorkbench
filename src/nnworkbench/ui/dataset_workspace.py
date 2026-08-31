@@ -314,7 +314,7 @@ class DatasetWorkspace(QWidget):
     def show_annotation_documentation(self) -> None:
         """Show the bundled annotation-workflow PDF in the main workspace."""
         if self.documentation_content_layout.count() == 0:
-            pdf_path = Path(__file__).parent.parent / "assets" / "Annotation Workflow.pdf"
+            pdf_path = Path(__file__).parent.parent / "assets" / "Annotation_Workflow.pdf"
             try:
                 from PySide6.QtPdf import QPdfDocument
                 from PySide6.QtPdfWidgets import QPdfView
