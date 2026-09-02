@@ -23,21 +23,18 @@ def run_with_configured_paths(command: Sequence[str]) -> int:
     return subprocess.run(command, env=environment, check=False).returncode
 
 
-def raw_dataset_directory(dataset: str) -> Path:
-    """Resolve a dataset ID or full directory name below the configured Raw root."""
+def raw_dataset_directory(dataset_id: int) -> Path:
+    """Resolve a dataset ID below the configured Raw root."""
     raw_root = Path(configured_paths()["nnUNet_raw"])
     datasets = discover(raw_root)
-    if dataset.isdecimal() and int(dataset) in datasets:
-        return datasets[int(dataset)][1]
-    matches = [path for _name, path in datasets.values() if dataset.casefold() == path.name.casefold()]
-    if len(matches) == 1:
-        return matches[0]
-    raise ValueError(f"No Raw dataset matching ID or directory name '{dataset}' was found in {raw_root}.")
+    if dataset_id in datasets:
+        return datasets[dataset_id][1]
+    raise ValueError(f"No Raw dataset matching ID {dataset_id} was found in {raw_root}.")
 
 
-def run_label_analysis(dataset: str, workers: int | None = None) -> int:
+def run_label_analysis(dataset_id: int, workers: int | None = None) -> int:
     """Analyse raw training labels and print progress for terminal users."""
-    dataset_directory = raw_dataset_directory(dataset)
+    dataset_directory = raw_dataset_directory(dataset_id)
     analysis = analyse_label_distribution(
         dataset_directory, workers, progress=print,
     )
@@ -46,9 +43,9 @@ def run_label_analysis(dataset: str, workers: int | None = None) -> int:
     return 0
 
 
-def run_annotation_conversion(dataset: str, workers: int | None = None) -> int:
+def run_annotation_conversion(dataset_id: int, workers: int | None = None) -> int:
     """Convert annotation-workflow maps to labelsTr and print the outcome."""
-    dataset_directory = raw_dataset_directory(dataset)
+    dataset_directory = raw_dataset_directory(dataset_id)
     result = convert_annotations(dataset_directory, workers, progress=print)
     print(f"Annotation conversion completed: {len(result.converted)} converted, "
           f"{len(result.warnings)} skipped or warned.")
@@ -62,13 +59,13 @@ def _run_builtin_command(command: Sequence[str]) -> int | None:
     name, arguments = command[0], command[1:]
     if name == "label-analysis":
         parser = argparse.ArgumentParser(prog="nnworkbench-run label-analysis")
-        parser.add_argument("dataset", help="Dataset ID or full DatasetNNN_Name directory name")
+        parser.add_argument("-d", "--dataset", type=int, required=True, help="Dataset ID")
         parser.add_argument("--workers", type=int, default=None, help="Maximum worker processes")
         options = parser.parse_args(arguments)
         return run_label_analysis(options.dataset, options.workers)
     if name == "convert-annotations":
         parser = argparse.ArgumentParser(prog="nnworkbench-run convert-annotations")
-        parser.add_argument("dataset", help="Dataset ID or full DatasetNNN_Name directory name")
+        parser.add_argument("-d", "--dataset", type=int, required=True, help="Dataset ID")
         parser.add_argument("--workers", type=int, default=None, help="Maximum worker processes")
         options = parser.parse_args(arguments)
         return run_annotation_conversion(options.dataset, options.workers)

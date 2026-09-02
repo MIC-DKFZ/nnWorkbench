@@ -105,14 +105,14 @@ nnworkbench-run nnUNetv2_predict -i /path/to/input -o /path/to/output -d 1 -c 3d
 It also provides the following dataset tools:
 
 ```bash
-# Analyse labelsTr and save class_distribution.json (dataset ID)
-nnworkbench-run label-analysis 1 --workers 4
+# Analyse labelsTr and save class_distribution.json
+nnworkbench-run label-analysis -d 1 --workers 4
 
 # Convert annotationsTr semantic maps into labelsTr training labels
-nnworkbench-run convert-annotations 1 --workers 4
+nnworkbench-run convert-annotations -d 1 --workers 4
 ```
 
-Both commands resolve the dataset under the saved `nnUNet_raw` path. Pass its numeric ID or full `DatasetNNN_Name` directory name. Annotation conversion requires a valid final `ignore` label in the dataset's `dataset.json`. Run `nnworkbench-get-paths` to view the saved path configuration.
+`-d` (or `--dataset`) specifies the numeric nnU-Net dataset ID under the saved `nnUNet_raw` path. For example, use `-d 10` for `Dataset010_MyDataset`. Annotation conversion requires a valid final `ignore` label in the dataset's `dataset.json`. Run `nnworkbench-get-paths` to view the saved path configuration.
 
 ## Further documentation
 

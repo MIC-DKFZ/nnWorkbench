@@ -82,8 +82,8 @@ nnworkbench-run nnUNetv2_train 1 3d_fullres 0
 The annotation-specific tools are available through the same command:
 
 ```bash
-nnworkbench-run convert-annotations 1 --workers 4
-nnworkbench-run label-analysis 1
+nnworkbench-run convert-annotations -d 1 --workers 4
+nnworkbench-run label-analysis -d 1
 ```
 
 ## Continue with nnU-Net
