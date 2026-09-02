@@ -192,6 +192,8 @@ class DatasetWorkspace(QWidget):
         layout.addLayout(title_row)
         self.summary = QLabel("Select a dataset."); self.summary.setObjectName("workspaceSummary")
         self.summary.setWordWrap(True); layout.addWidget(self.summary)
+        self.metadata_warning = QLabel(); self.metadata_warning.setObjectName("consistencyWarning")
+        self.metadata_warning.setWordWrap(True); self.metadata_warning.hide(); layout.addWidget(self.metadata_warning)
         self.consistency_warning = QLabel(); self.consistency_warning.setObjectName("consistencyWarning")
         self.consistency_warning.setWordWrap(True); self.consistency_warning.hide(); layout.addWidget(self.consistency_warning)
         self.metadata_error = QLabel(); self.metadata_error.setObjectName("metadataError")
@@ -336,7 +338,7 @@ class DatasetWorkspace(QWidget):
                 message = QLabel("PDF preview is unavailable in this PySide6 installation.")
                 message.setWordWrap(True); self.documentation_content_layout.addWidget(message)
 
-        self.summary.hide(); self.consistency_warning.hide(); self.tabs.hide(); self.console_panel.hide()
+        self.summary.hide(); self.metadata_warning.hide(); self.consistency_warning.hide(); self.tabs.hide(); self.console_panel.hide()
         self.documentation_panel.show()
         self.annotation_documentation_visibility_changed.emit(True)
 
@@ -380,7 +382,7 @@ class DatasetWorkspace(QWidget):
         self._analysis_running = False
         self._conversion_running = False
         self._record = record; self._loaded_tabs.clear(); self._loading_tabs.clear()
-        self._metadata_errors = (); self.metadata_error.hide()
+        self._metadata_errors = (); self.metadata_warning.hide(); self.metadata_error.hide()
         self._preprocessed_paths = []; self.run_training.setText("Run Training")
         self._trained_model_paths = []
         self._raw_folder_files = {}; self._loaded_raw_folders.clear(); self._raw_render_version += 1
@@ -503,6 +505,14 @@ class DatasetWorkspace(QWidget):
             self.metadata_error.hide()
             if had_errors and self._record is not None:
                 self._start_consistency_check(self._record)
+
+    def set_training_count_warning(self, message: str) -> None:
+        """Show a live numTraining mismatch below the selected dataset name."""
+        if message:
+            self.metadata_warning.setText(f"Warning: {message}")
+            self.metadata_warning.show()
+        else:
+            self.metadata_warning.hide()
 
     def refresh_consistency_check(self) -> None:
         if self._record is not None:

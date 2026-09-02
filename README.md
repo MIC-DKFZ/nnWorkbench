@@ -22,7 +22,7 @@ Requirements:
 - Python 3.12 or newer
 - Conda or another suitable Python environment manager
 
-![nnWorkbench local and remote installation overview](src/nnworkbench/assets/installation.svg)
+![nnWorkbench local and remote installation overview](src/nnworkbench/assets/AnnotationWorkflowInstall.png)
 
 Create an environment and clone the repository once:
 

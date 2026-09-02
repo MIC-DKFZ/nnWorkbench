@@ -17,6 +17,7 @@ from nnworkbench.services.dataset_json import (
     image_count_check,
     labels_tr_count,
     manifest_source,
+    write_manifest,
 )
 
 
@@ -87,6 +88,14 @@ def test_manifest_source_prefers_raw_then_preprocessed_then_results(tmp_path: Pa
     assert manifest_source(raw, preprocessed, results) == ("raw", raw)
     (raw / "dataset.json").unlink(); (preprocessed / "dataset.json").unlink()
     assert manifest_source(raw, preprocessed, results) == ("results", results)
+
+
+def test_write_manifest_creates_missing_dataset_json(tmp_path: Path) -> None:
+    manifest = {"channel_names": {"0": "CT"}, "labels": {"background": 0}, "file_ending": ".nii.gz"}
+
+    write_manifest(tmp_path, manifest)
+
+    assert json_object(tmp_path / "dataset.json") == manifest
 
 
 def test_labels_tr_count_counts_only_files(tmp_path: Path) -> None:

@@ -87,6 +87,7 @@ class MainWindow(QMainWindow):
         self.workspace.nnunet_command_finished.connect(self.refresh)
         self.editor = MetadataEditor(); self.splitter.addWidget(self.editor)
         self.editor.definition_errors_changed.connect(self.workspace.set_metadata_definition_errors)
+        self.editor.training_count_warning_changed.connect(self.workspace.set_training_count_warning)
         self.editor.metadata_saved.connect(self.workspace.refresh_consistency_check)
         self.header.annotation_enabled_changed.connect(self.editor.set_annotation_workflow_enabled)
         self.editor.set_annotation_workflow_enabled(self.header.annotation_enabled())

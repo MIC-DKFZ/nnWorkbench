@@ -108,11 +108,9 @@ def validate_manifest(data: dict) -> None:
 
 
 def write_manifest(dataset_directory: Path, data: dict) -> None:
-    """Atomically replace a raw dataset manifest without creating a backup copy."""
+    """Atomically write a raw dataset manifest without creating a backup copy."""
     validate_manifest(data)
     target = dataset_directory / "dataset.json"
-    if not target.is_file():
-        raise FileNotFoundError(target)
     descriptor, temporary_name = tempfile.mkstemp(prefix=".dataset.", suffix=".json", dir=dataset_directory)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as file:

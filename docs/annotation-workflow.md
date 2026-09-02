@@ -1,4 +1,4 @@
-# Annotation Workflow
+![Annotation Workflow](../src/nnworkbench/assets/AnnotationWorkflowHeader.png)
 
 This guide is for users who have images but need to create labels before training nnU-Net.
 
