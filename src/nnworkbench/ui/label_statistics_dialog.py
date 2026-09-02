@@ -158,23 +158,18 @@ class LabelStatisticsView(QWidget):
     def __init__(self, analysis: dict, annotation_workflow_enabled: bool = False, parent=None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
-        classes = [item for item in analysis.get("classes", []) if isinstance(item, dict)]
+        classes = analysis["classes"]
         self._classes = classes
-        per_image = [item for item in analysis.get("per_image", []) if isinstance(item, dict)]
+        per_image = analysis["per_image"]
         self._show_labeled_data = annotation_workflow_enabled
-        shapes = [tuple(item["shape"]) for item in per_image
-                  if isinstance(item.get("shape"), list) and 2 <= len(item["shape"]) <= 3]
-        spacings = [tuple(round(float(value), 8) for value in item["spacing"]) for item in per_image
-                    if isinstance(item.get("spacing"), list) and 2 <= len(item["spacing"]) <= 3]
+        shapes = [tuple(item["shape"]) for item in per_image]
+        spacings = [tuple(round(float(value), 8) for value in item["spacing"]) for item in per_image]
         axis_count = max((len(value) for value in (*shapes, *spacings)), default=0)
         axes = ", ".join(_AxisScatterChart._AXIS_NAMES[:axis_count])
         dimensions_header = f"Dimensions ({axes})" if axes else "Dimensions"
         spacing_header = f"Voxel spacing ({axes}; mm)" if axes else "Voxel spacing (mm)"
         summary_parts = [f"{len(per_image)} label files", f"{len(classes)} classes"]
-        if axis_count:
-            summary_parts.append(f"{axis_count}D")
-        else:
-            summary_parts.append("spatial data unavailable")
+        summary_parts.append(f"{axis_count}D")
         summary = QLabel("Label analysis · " + " · ".join(summary_parts))
         summary.setObjectName("analysisSummary")
         layout.addWidget(summary)
@@ -193,56 +188,47 @@ class LabelStatisticsView(QWidget):
             table.setItem(row, 1, QTableWidgetItem(f"{int(item.get('images', 0)):,}"))
             table.setItem(row, 2, QTableWidgetItem(f"{int(item.get('voxels', 0)):,}"))
         views.addTab(table, "Class summary")
-        if per_image:
-            class_column = 5 if self._show_labeled_data else 4
-            image_table = QTableWidget(len(per_image), len(classes) + class_column)
-            self.image_table: QTableWidget | None = image_table
-            image_table.setTextElideMode(Qt.TextElideMode.ElideNone); image_table.setWordWrap(True)
-            image_headers = ["Image", "Label validity", dimensions_header, spacing_header]
+        class_column = 5 if self._show_labeled_data else 4
+        image_table = QTableWidget(len(per_image), len(classes) + class_column)
+        self.image_table = image_table
+        image_table.setTextElideMode(Qt.TextElideMode.ElideNone); image_table.setWordWrap(True)
+        image_headers = ["Image", "Label validity", dimensions_header, spacing_header]
+        if self._show_labeled_data:
+            image_headers.append("Labeled data")
+        image_table.setHorizontalHeaderLabels((
+            *image_headers,
+            *(f"{item.get('id')}: {item.get('name')}" for item in classes),
+        ))
+        image_table.verticalHeader().hide(); image_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        image_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        for column in range(1, len(classes) + class_column):
+            image_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        for row, image in enumerate(per_image):
+            counts = image["voxels"]
+            filename = image["image"]
+            image_item = QTableWidgetItem(filename); image_item.setToolTip(filename)
+            image_table.setItem(row, 0, image_item)
+            findings = image["validity"]
+            validity, colour = (
+                ("\n".join(str(finding) for finding in findings), QColor("#a74400"))
+                if findings else ("Valid", QColor("#315f1f"))
+            )
+            validity_item = QTableWidgetItem(validity)
+            validity_item.setForeground(colour)
+            image_table.setItem(row, 1, validity_item)
+            shape = image["shape"]
+            spacing = image["spacing"]
+            image_table.setItem(row, 2, QTableWidgetItem(", ".join(str(value) for value in shape)))
+            image_table.setItem(row, 3, QTableWidgetItem(", ".join(f"{float(value):.4f}" for value in spacing)))
             if self._show_labeled_data:
-                image_headers.append("Labeled data")
-            image_table.setHorizontalHeaderLabels((
-                *image_headers,
-                *(f"{item.get('id')}: {item.get('name')}" for item in classes),
-            ))
-            image_table.verticalHeader().hide(); image_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-            image_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-            for column in range(1, len(classes) + class_column):
-                image_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
-            for row, image in enumerate(per_image):
-                counts = image.get("voxels", {})
-                filename = str(image.get("image", ""))
-                image_item = QTableWidgetItem(filename); image_item.setToolTip(filename)
-                image_table.setItem(row, 0, image_item)
-                findings = image.get("validity")
-                if not isinstance(findings, list):
-                    validity, colour = "Run Analyze Labels again", QColor("#666666")
-                elif findings:
-                    validity, colour = "\n".join(str(finding) for finding in findings), QColor("#a74400")
-                else:
-                    validity, colour = "Valid", QColor("#315f1f")
-                validity_item = QTableWidgetItem(validity)
-                validity_item.setForeground(colour)
-                image_table.setItem(row, 1, validity_item)
-                shape = image.get("shape", [])
-                spacing = image.get("spacing", [])
-                image_table.setItem(row, 2, QTableWidgetItem(", ".join(str(value) for value in shape)))
-                image_table.setItem(row, 3, QTableWidgetItem(", ".join(f"{float(value):.4f}" for value in spacing)))
-                if self._show_labeled_data:
-                    percentage = _labeled_data_percentage(shape, counts)
-                    percentage_text = f"{percentage:.2f}%" if percentage is not None else "—"
-                    image_table.setItem(row, 4, QTableWidgetItem(percentage_text))
-                for column, class_item in enumerate(classes, start=class_column):
-                    class_id = str(class_item.get("id", ""))
-                    value = counts.get(class_id, 0) if isinstance(counts, dict) else 0
-                    image_table.setItem(row, column, QTableWidgetItem(f"{int(value):,}"))
-            image_table.resizeRowsToContents()
-            views.addTab(image_table, "Per-image details")
-        else:
-            self.image_table = None
-            unavailable = QWidget(); unavailable_layout = QVBoxLayout(unavailable)
-            unavailable_layout.addWidget(QLabel("Per-image counts are unavailable. Run Analyze Labels again to create them."))
-            unavailable_layout.addStretch(); views.addTab(unavailable, "Per-image details")
+                percentage = _labeled_data_percentage(shape, counts)
+                percentage_text = f"{percentage:.2f}%" if percentage is not None else "—"
+                image_table.setItem(row, 4, QTableWidgetItem(percentage_text))
+            for column, class_item in enumerate(classes, start=class_column):
+                class_id = str(class_item.get("id", ""))
+                image_table.setItem(row, column, QTableWidgetItem(f"{int(counts.get(class_id, 0)):,}"))
+        image_table.resizeRowsToContents()
+        views.addTab(image_table, "Per-image details")
         self.voxel_chart = _ClassChart(classes); self.voxel_chart.set_metric("voxels")
         self.image_chart = _ClassChart(classes); self.image_chart.set_metric("images")
         views.addTab(self.voxel_chart, "Class voxel count")
@@ -256,10 +242,9 @@ class LabelStatisticsView(QWidget):
         self.image_chart.set_ignore_background(ignore)
         for row, item in enumerate(self._classes):
             self.class_table.setRowHidden(row, ignore and int(item.get("id", -1)) == 0)
-        if self.image_table is not None:
-            first_class_column = 5 if self._show_labeled_data else 4
-            for column, item in enumerate(self._classes, start=first_class_column):
-                self.image_table.setColumnHidden(column, ignore and int(item.get("id", -1)) == 0)
+        first_class_column = 5 if self._show_labeled_data else 4
+        for column, item in enumerate(self._classes, start=first_class_column):
+            self.image_table.setColumnHidden(column, ignore and int(item.get("id", -1)) == 0)
 
 
 def _labeled_data_percentage(shape: object, counts: object) -> float | None:

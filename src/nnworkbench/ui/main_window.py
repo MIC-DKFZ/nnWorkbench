@@ -114,12 +114,11 @@ class MainWindow(QMainWindow):
     def _paths(self) -> tuple[Path | None, Path | None, Path | None]: return self.header.local_paths()
 
     def _local_paths(self) -> tuple[str, str, str]:
-        """Prefer paths saved by the CLI, falling back to older GUI settings."""
+        """Load paths saved through nnworkbench-set-paths or the GUI."""
         try:
             paths = configured_paths()
         except (RuntimeError, TypeError):
-            return tuple(self.settings.value(f"paths/{key}", "", type=str)
-                         for key in ("raw", "preprocessed", "results"))  # type: ignore[return-value]
+            return "", "", ""
         return tuple(paths[f"nnUNet_{key}"] for key in ("raw", "preprocessed", "results"))  # type: ignore[return-value]
 
     def _remote_profiles(self) -> object:
@@ -137,9 +136,6 @@ class MainWindow(QMainWindow):
     def refresh(self) -> None:
         raw, preprocessed, results = self._paths()
         self.workspace.set_environment_roots(raw, preprocessed, results)
-        local_paths = self.header.local_paths()
-        for key, path in zip(("raw", "preprocessed", "results"), local_paths):
-            self.settings.setValue(f"paths/{key}", str(path) if path else "")
         previous_id = self.records[self.list.currentRow()].dataset_id if 0 <= self.list.currentRow() < len(self.records) else None
         self.records = scan_datasets(raw, preprocessed, results)
         index = next((i for i, record in enumerate(self.records) if record.dataset_id == previous_id), -1)

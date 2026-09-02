@@ -196,13 +196,19 @@ def analyse_label_distribution(dataset_directory: Path, workers: int | None = No
 
 
 def load_label_analysis(dataset_directory: Path) -> dict | None:
-    """Read a previously cached label analysis, if it is valid."""
+    """Read a current-format cached label analysis."""
     try:
         with analysis_path(dataset_directory).open(encoding="utf-8") as file:
             data = json.load(file)
     except (OSError, json.JSONDecodeError):
         return None
-    return data if isinstance(data, dict) and isinstance(data.get("classes"), list) else None
+    if not isinstance(data, dict) or not isinstance(data.get("classes"), list):
+        return None
+    per_image = data.get("per_image")
+    if not isinstance(per_image, list):
+        return None
+    required_fields = {"image", "voxels", "shape", "spacing", "validity"}
+    return data if all(isinstance(item, dict) and required_fields <= item.keys() for item in per_image) else None
 
 
 def _write_analysis(target: Path, data: dict) -> None:
