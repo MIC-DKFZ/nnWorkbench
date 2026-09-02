@@ -16,6 +16,7 @@ local = [
     "PySide6>=6.6,<7",
     "mitk-python>=2026.06,<2027",
     "napari>=0.5,<1",
+    "napari-layer-statistics>=1,<2",
     "napari-nninteractive[local]>=2.5.3,<3",
 ]
 dev = ["PySide6>=6.6,<7", "pytest>=8.0,<9", "ruff>=0.6,<1", "build>=1,<2"]

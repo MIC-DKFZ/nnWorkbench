@@ -11,13 +11,14 @@ from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 
-from qtpy.QtCore import QObject, QSize, Qt, Signal
+from qtpy.QtCore import QObject, QSize, Qt, QTimer, Signal
 from qtpy.QtGui import QColor, QKeySequence, QPainter, QShortcut
 from qtpy.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -466,6 +467,42 @@ def _activate_nninteractive(viewer):
         return None
 
 
+def _activate_layer_statistics(viewer):
+    """Show napari-layer-statistics when it is installed."""
+    dock_widget = None
+    try:
+        dock_widget, _widget = viewer.window.add_plugin_dock_widget("napari-layer-statistics")
+        dock_widget.setWindowTitle("Layer statistics")
+        return dock_widget
+    except Exception as error:
+        if dock_widget is not None:
+            try:
+                dock_widget.close()
+            except Exception:
+                pass
+        print(f"Could not activate napari-layer-statistics: {error}")
+        return None
+
+
+def _expand_nninteractive_dock(viewer, save_dock, nninteractive_dock) -> None:
+    """Let nnInteractive fill the right dock area after Napari has laid it out."""
+    try:
+        widget = nninteractive_dock.widget()
+        widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        widget.setMinimumSize(0, 0)
+        for scroll_area in widget.findChildren(QScrollArea):
+            scroll_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            scroll_area.setWidgetResizable(True)
+        # The save panel remains compact; nnInteractive receives the rest of the dock stack.
+        viewer.window._qt_window.resizeDocks(
+            [save_dock, nninteractive_dock],
+            [save_dock.height(), max(1, viewer.window._qt_window.height())],
+            Qt.Vertical,
+        )
+    except Exception as error:
+        print(f"Could not expand nnInteractive controls: {error}")
+
+
 def open_annotation(selected_path: Path) -> None:
     """Open an image in Napari for nnInteractive annotation and optional semantic-map reuse."""
     import napari
@@ -497,16 +534,30 @@ def open_annotation(selected_path: Path) -> None:
         add_vertical_stretch=False,
     )
     nninteractive_dock = _activate_nninteractive(viewer)
+    statistics_dock = _activate_layer_statistics(viewer)
     if nninteractive_dock is not None:
         nninteractive_widget = nninteractive_dock.widget()
         save_widget.setMinimumWidth(nninteractive_widget.minimumSizeHint().width())
         # Keep nnWorkbench's save controls above the nnInteractive controls.
         viewer.window._qt_window.splitDockWidget(save_dock, nninteractive_dock, Qt.Vertical)
+        if statistics_dock is not None:
+            try:
+                # Layer statistics shares nnInteractive's dock area as a selectable tab.
+                viewer.window._qt_window.tabifyDockWidget(nninteractive_dock, statistics_dock)
+                nninteractive_dock.raise_()
+            except Exception as error:
+                try:
+                    statistics_dock.close()
+                except Exception:
+                    pass
+                print(f"Could not dock napari-layer-statistics: {error}")
     # Keep the compact panel large enough for its two label lines. Without a
     # fixed height the vertical dock splitter can collapse them when Napari is
     # resized.
     save_widget.adjustSize()
     save_dock.setFixedHeight(save_widget.sizeHint().height() + 36)
+    if nninteractive_dock is not None:
+        QTimer.singleShot(100, lambda: _expand_nninteractive_dock(viewer, save_dock, nninteractive_dock))
     napari.run()
 
 
