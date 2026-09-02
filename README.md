@@ -64,9 +64,15 @@ You can also create a Remote profile in the GUI and use **Export** to copy this 
 
 ### Set up paths
 
-For the GUI, start `nnworkbench-gui` and select the directories containing your `DatasetNNN_Name` folders for `nnUNet_raw`, `nnUNet_preprocessed`, and `nnUNet_results`. For remote or terminal use, save the same paths with `nnworkbench-set-paths` as shown above.
+Start the GUI:
 
-### nnU-Net workflow
+```bash
+nnworkbench-gui
+```
+
+Then select the directories containing your `DatasetNNN_Name` folders for `nnUNet_raw`, `nnUNet_preprocessed`, and `nnUNet_results`. For remote or terminal use, save the same paths with `nnworkbench-set-paths` as shown above.
+
+### nnU-Net Workflow
 
 1. **Prepare and inspect:** Select an existing dataset—or create one from the Raw root—then review its `dataset.json`. Use **Inspect** beside a Raw image to open the case in Napari with its available matching files.
 2. **Preprocess:** In **Raw**, choose **Run Preprocessing**, select a configuration and planner, then run the command.
