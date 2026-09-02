@@ -7,7 +7,6 @@ from nnworkbench.services.label_analysis import (
     aggregate_class_counts,
     analyse_label_distribution,
     analysis_path,
-    labeled_data_percentage,
     label_validity,
     load_label_analysis,
     undefined_label_ids,
@@ -55,11 +54,6 @@ def test_label_validity_accumulates_empty_missing_image_and_undefined_id_finding
     ]
 
 
-def test_labeled_data_percentage_excludes_ignore_voxels() -> None:
-    assert labeled_data_percentage({0: 5, 1: 3, 2: 2}, {2}) == 80.0
-    assert labeled_data_percentage({0: 5, 1: 3}, set()) == 100.0
-
-
 def test_load_label_analysis_reads_cached_raw_file(tmp_path: Path) -> None:
     analysis_path(tmp_path).write_text(json.dumps({"classes": []}), encoding="utf-8")
 
@@ -77,9 +71,7 @@ def test_label_analysis_counts_images_voxels_and_writes_cache(tmp_path: Path) ->
     mitk.Image(np.array([[[0, 1], [2, 0]]], dtype=np.uint8)).save(labels / "case_002.nii.gz")
 
     progress: list[str] = []
-    analysis = analyse_label_distribution(
-        tmp_path, workers=1, progress=progress.append, include_labeled_data=True,
-    )
+    analysis = analyse_label_distribution(tmp_path, workers=1, progress=progress.append)
 
     assert analysis["files_analyzed"] == 2
     assert analysis["classes"] == [
@@ -92,7 +84,6 @@ def test_label_analysis_counts_images_voxels_and_writes_cache(tmp_path: Path) ->
             "voxels": {"0": 1, "1": 2},
             "shape": [2, 2, 1],
             "spacing": [1.0, 1.0, 1.0],
-            "labeled_data_percentage": 75.0,
             "validity": ["No matching imagesTr file"],
         },
         {
@@ -100,7 +91,6 @@ def test_label_analysis_counts_images_voxels_and_writes_cache(tmp_path: Path) ->
             "voxels": {"0": 2, "1": 1},
             "shape": [2, 2, 1],
             "spacing": [1.0, 1.0, 1.0],
-            "labeled_data_percentage": 75.0,
             "validity": ["No matching imagesTr file"],
         },
     ]

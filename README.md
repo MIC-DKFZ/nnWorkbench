@@ -13,7 +13,7 @@ Existing labels can be imported directly into an nnU-Net workflow, while unlabel
 - **Connect nnInteractive and nnU-Net:** Use nnInteractive in Napari to create annotations, convert them into training labels, and continue directly to nnU-Net preprocessing and training.
 - **Annotation Workflow:** Follow a documented, guided workflow designed to create high-quality labels that support model performance while minimizing manual annotation effort.
 
-nnWorkbench’s GUI runs on **Windows, macOS, and Ubuntu**. Compatibility of nnU-Net, nnInteractive, MITK-Python, PyTorch, and their hardware requirements remains determined by those projects and your environment.
+![Annotation Workflow](/src/nnworkbench/assets/AnnotationWorkflowHeader.png)
 
 ## Installation
 
@@ -52,36 +52,30 @@ For clusters or remote machines: nnU-Net, custom trainers, and remote commands o
 pip install -e .
 ```
 
-## Remote control
-
-nnWorkbench distinguishes between **Local** and **Remote** path profiles. **Local** is the default and always supplies the paths used by the GUI to discover datasets, inspect data, and start local nnU-Net commands.
-
-Use the `+` tab in the GUI to create a named **Remote** profile and enter its `nnUNet_raw`, `nnUNet_preprocessed`, and `nnUNet_results` paths. Remote profiles do not change the Local GUI workspace; they only describe another machine or cluster setup.
-
-Select a Remote profile and click **Export** to copy an `nnworkbench-set-paths` command containing its paths. Paste and run that command on the remote machine after the lightweight installation. The remote setup is then stored there and can be used with `nnworkbench-run` in a shell script or scheduler job.
+Save the nnU-Net roots on the remote machine once. `nnworkbench-run` then uses them for nnU-Net commands and dataset tools:
 
 ```bash
 nnworkbench-set-paths --raw /path/to/nnUNet_raw --preprocessed /path/to/nnUNet_preprocessed --results /path/to/nnUNet_results
-nnworkbench-run nnUNetv2_train 1 3d_fullres 0
 ```
 
-For development tools, install the optional test and lint dependencies:
+You can also create a Remote profile in the GUI and use **Export** to copy this command with its configured paths.
 
-```bash
-pip install -e '.[local,dev]'
-```
+## Quick start
 
-## Quick start: nnU-Net workflow
+### Set up paths
 
-1. **Configure roots:** Choose the directories containing your `DatasetNNN_Name` folders: `nnUNet_raw`, `nnUNet_preprocessed`, and `nnUNet_results`.
-2. **Prepare and inspect:** Select an existing dataset—or create one from the Raw root—then review its `dataset.json`. Use **Inspect** beside a Raw image to open the case in Napari with its available matching files.
-3. **Preprocess:** In **Raw**, choose **Run Preprocessing**, select a configuration and planner, then run the command.
-4. **Train:** In **Preprocessed**, choose **Run Training**, select the plans file, configuration, trainer, and fold, then run the command.
-5. **Predict:** In **Results**, choose **Run Predict**, select a trained plan/configuration and the input/output directories, then run the command.
+For the GUI, start `nnworkbench-gui` and select the directories containing your `DatasetNNN_Name` folders for `nnUNet_raw`, `nnUNet_preprocessed`, and `nnUNet_results`. For remote or terminal use, save the same paths with `nnworkbench-set-paths` as shown above.
+
+### nnU-Net workflow
+
+1. **Prepare and inspect:** Select an existing dataset—or create one from the Raw root—then review its `dataset.json`. Use **Inspect** beside a Raw image to open the case in Napari with its available matching files.
+2. **Preprocess:** In **Raw**, choose **Run Preprocessing**, select a configuration and planner, then run the command.
+3. **Train:** In **Preprocessed**, choose **Run Training**, select the plans file, configuration, trainer, and fold, then run the command.
+4. **Predict:** In **Results**, choose **Run Predict**, select a trained plan/configuration and the input/output directories, then run the command.
 
 Read the full [nnU-Net workflow guide](docs/nnunet-workflow.md).
 
-## Quick start: Annotation Workflow
+### Annotation Workflow
 
 1. **Enable the workflow:** Turn on **Annotation workflow** in the header and select a Raw dataset with `imagesTr`.
 2. **Prepare label IDs:** In Raw `dataset.json`, add an integer `ignore` label as the highest label ID. The editor highlights this requirement while Annotation Workflow is enabled.
@@ -91,6 +85,28 @@ Read the full [nnU-Net workflow guide](docs/nnunet-workflow.md).
 6. **Train a model:** Continue with **Run Preprocessing**, **Run Training**, and **Run Predict** as described in the nnU-Net workflow above.
 
 Read the full [Annotation Workflow guide](docs/annotation-workflow.md), including label-ID mapping and conversion requirements.
+
+## CLI overview
+
+After configuring the paths with `nnworkbench-set-paths`, use `nnworkbench-run` to run any nnU-Net command with those saved paths:
+
+```bash
+nnworkbench-run nnUNetv2_plan_and_preprocess -d 1 -c 3d_fullres --verify_dataset_integrity
+nnworkbench-run nnUNetv2_train 1 3d_fullres 0
+nnworkbench-run nnUNetv2_predict -i /path/to/input -o /path/to/output -d 1 -c 3d_fullres
+```
+
+It also provides the following dataset tools:
+
+```bash
+# Analyse labelsTr and save class_distribution.json (dataset ID)
+nnworkbench-run label-analysis 1 --workers 4
+
+# Convert annotationsTr semantic maps into labelsTr training labels
+nnworkbench-run convert-annotations 1 --workers 4
+```
+
+Both commands resolve the dataset under the saved `nnUNet_raw` path. Pass its numeric ID or full `DatasetNNN_Name` directory name. Annotation conversion requires a valid final `ignore` label in the dataset's `dataset.json`. Run `nnworkbench-get-paths` to view the saved path configuration.
 
 ## Further documentation
 

@@ -69,15 +69,6 @@ def label_validity(counts: dict[int, int], filename: Path, image_cases: set[str]
     return findings
 
 
-def labeled_data_percentage(counts: dict[int, int], ignored_ids: set[int]) -> float:
-    """Return the percentage of voxels that are not assigned to an ignore label."""
-    total = sum(counts.values())
-    if total == 0:
-        return 0.0
-    labeled = sum(count for class_id, count in counts.items() if class_id not in ignored_ids)
-    return 100 * labeled / total
-
-
 def _analyse_file(filename: str) -> dict:
     """Return label counts and spatial metadata for one map in a child process."""
     import mitk
@@ -147,8 +138,7 @@ def undefined_label_ids(files: Iterable[Path], per_file: Iterable[dict[int, int]
 
 
 def analyse_label_distribution(dataset_directory: Path, workers: int | None = None,
-                               progress: Callable[[str], None] | None = None,
-                               include_labeled_data: bool = False) -> dict:
+                               progress: Callable[[str], None] | None = None) -> dict:
     """Analyse all ``labelsTr`` files and atomically cache the result in the raw folder.
 
     The work is spread across separate processes so image loading and voxel counting do
@@ -183,8 +173,6 @@ def analyse_label_distribution(dataset_directory: Path, workers: int | None = No
             },
             "shape": file_analysis["shape"],
             "spacing": file_analysis["spacing"],
-            **({"labeled_data_percentage": labeled_data_percentage(file_analysis["voxels"], ignored)}
-               if include_labeled_data else {}),
             "validity": label_validity(
                 file_analysis["voxels"], path, image_cases, background, ignored,
                 set(unexpected.get(path.name, [])),
@@ -234,8 +222,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze nnU-Net training labels.")
     parser.add_argument("dataset_directory", type=Path, help="Raw dataset directory")
     parser.add_argument("--workers", type=int, default=None, help="Maximum worker processes")
-    parser.add_argument("--annotation-workflow", action="store_true",
-                        help="Include annotation-workflow labeled-data percentages")
     arguments = parser.parse_args()
     try:
         files = label_files(arguments.dataset_directory)
@@ -243,7 +229,6 @@ def main() -> None:
         analysis = analyse_label_distribution(
             arguments.dataset_directory, arguments.workers,
             progress=lambda message: print(message, flush=True),
-            include_labeled_data=arguments.annotation_workflow,
         )
     except (OSError, ValueError, RuntimeError) as error:
         raise SystemExit(f"Label analysis failed: {error}") from error

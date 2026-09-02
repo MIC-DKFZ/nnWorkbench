@@ -807,8 +807,7 @@ class DatasetWorkspace(QWidget):
         process.errorOccurred.connect(lambda error, active=process: self._analysis_process_failed(active, error))
         self._start_process_group(
             process, sys.executable,
-            ["-m", "nnworkbench.services.label_analysis", str(raw_path), "--workers", str(workers),
-             *(["--annotation-workflow"] if self._annotation_workflow_enabled else [])],
+            ["-m", "nnworkbench.services.label_analysis", str(raw_path), "--workers", str(workers)],
         )
 
     def _convert_annotations(self) -> None:

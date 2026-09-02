@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import multiprocessing
 import os
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -96,7 +97,8 @@ def _convert_file(arguments: tuple[str, str, int]) -> tuple[str | None, str | No
     return str(target), None
 
 
-def convert_annotations(dataset_directory: Path, workers: int | None = None) -> AnnotationConversionResult:
+def convert_annotations(dataset_directory: Path, workers: int | None = None,
+                        progress: Callable[[str], None] | None = None) -> AnnotationConversionResult:
     """Convert semantic maps to labelsTr, preserving geometry and skipping bad cases.
 
     Annotation value ``0`` is nnInteractive's ignore value and becomes the final
@@ -115,9 +117,13 @@ def convert_annotations(dataset_directory: Path, workers: int | None = None) -> 
     context = multiprocessing.get_context("spawn")
     arguments = ((str(path), str(targets), ignore_id) for path in files)
     with ProcessPoolExecutor(max_workers=worker_count, mp_context=context) as executor:
-        for target, warning in executor.map(_convert_file, arguments):
+        for index, (target, warning) in enumerate(executor.map(_convert_file, arguments), start=1):
             if target:
                 converted.append(Path(target))
+                if progress is not None:
+                    progress(f"Converted annotation {index}/{len(files)}: {Path(target).name}")
             if warning:
                 warnings.append(warning)
+                if progress is not None:
+                    progress(f"Warning {index}/{len(files)}: {warning}")
     return AnnotationConversionResult(tuple(converted), tuple(warnings), worker_count)

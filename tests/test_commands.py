@@ -71,3 +71,26 @@ def test_command_runner_applies_saved_paths(monkeypatch) -> None:
     assert command_runner.run_with_configured_paths(["nnUNetv2_train", "1", "2d", "0"]) == 7
     assert captured["command"] == ["nnUNetv2_train", "1", "2d", "0"]
     assert captured["env"]["nnUNet_raw"] == "/raw"
+
+
+def test_command_runner_builtin_tools(monkeypatch, tmp_path) -> None:
+    calls: list[tuple[str, object]] = []
+    raw = tmp_path / "nnUNet_raw"; raw.mkdir()
+    dataset = raw / "Dataset003_MarrowCells"; dataset.mkdir()
+    monkeypatch.setattr(command_runner, "configured_paths", lambda: {"nnUNet_raw": str(raw)})
+    monkeypatch.setattr(command_runner, "analyse_label_distribution", lambda directory, workers, **kwargs: (
+        calls.append(("analysis", (directory, workers, kwargs))) or {"files_analyzed": 2}
+    ))
+    monkeypatch.setattr(command_runner, "convert_annotations", lambda directory, workers, **kwargs: (
+        calls.append(("conversion", (directory, workers, kwargs))) or type(
+            "Result", (), {"converted": (tmp_path / "labelsTr" / "case.nii.gz",), "warnings": ()})()
+    ))
+
+    assert command_runner._run_builtin_command(["label-analysis", "3", "--workers", "3"]) == 0
+    assert command_runner._run_builtin_command(
+        ["convert-annotations", "Dataset003_MarrowCells", "--workers", "2"]
+    ) == 0
+    assert calls == [
+        ("analysis", (dataset, 3, {"progress": print})),
+        ("conversion", (dataset, 2, {"progress": print})),
+    ]

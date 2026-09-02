@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from math import ceil, floor
+from math import ceil, floor, prod
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFontMetrics, QPainter
@@ -229,8 +229,8 @@ class LabelStatisticsView(QWidget):
                 image_table.setItem(row, 2, QTableWidgetItem(", ".join(str(value) for value in shape)))
                 image_table.setItem(row, 3, QTableWidgetItem(", ".join(f"{float(value):.4f}" for value in spacing)))
                 if self._show_labeled_data:
-                    percentage = image.get("labeled_data_percentage")
-                    percentage_text = f"{float(percentage):.2f}%" if isinstance(percentage, (int, float)) else "—"
+                    percentage = _labeled_data_percentage(shape, counts)
+                    percentage_text = f"{percentage:.2f}%" if percentage is not None else "—"
                     image_table.setItem(row, 4, QTableWidgetItem(percentage_text))
                 for column, class_item in enumerate(classes, start=class_column):
                     class_id = str(class_item.get("id", ""))
@@ -260,3 +260,12 @@ class LabelStatisticsView(QWidget):
             first_class_column = 5 if self._show_labeled_data else 4
             for column, item in enumerate(self._classes, start=first_class_column):
                 self.image_table.setColumnHidden(column, ignore and int(item.get("id", -1)) == 0)
+
+
+def _labeled_data_percentage(shape: object, counts: object) -> float | None:
+    """Derive non-ignore voxel coverage from the saved image shape and class counts."""
+    if not isinstance(shape, list) or not all(isinstance(value, int) and value > 0 for value in shape):
+        return None
+    if not isinstance(counts, dict) or not all(isinstance(value, int) and value >= 0 for value in counts.values()):
+        return None
+    return 100 * sum(counts.values()) / prod(shape)
