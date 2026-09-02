@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import multiprocessing
 import os
+import re
 import tempfile
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +17,8 @@ from pathlib import Path
 from .dataset_json import read_manifest
 
 ANALYSIS_FILENAME = "class_distribution.json"
+_NIFTI_SUFFIXES = (".nii.gz", ".nii")
+_CHANNEL_SUFFIX = re.compile(r"_\d{4}$")
 
 
 def analysis_path(dataset_directory: Path) -> Path:
@@ -32,14 +36,64 @@ def label_files(dataset_directory: Path) -> list[Path]:
                   key=lambda path: path.name.casefold())
 
 
-def _analyse_file(filename: str) -> dict[int, int]:
-    """Return voxel counts for one NIfTI label map (safe to run in a child process)."""
+def _case_id(path: Path) -> str:
+    """Return an nnU-Net case ID from an image or label filename."""
+    name = path.name
+    for suffix in _NIFTI_SUFFIXES:
+        if name.endswith(suffix):
+            name = name[:-len(suffix)]
+            break
+    return _CHANNEL_SUFFIX.sub("", name)
+
+
+def _image_case_ids(dataset_directory: Path) -> set[str]:
+    images_directory = dataset_directory / "imagesTr"
+    if not images_directory.is_dir():
+        return set()
+    return {
+        _case_id(path) for path in images_directory.iterdir()
+        if path.is_file() and path.name.endswith(_NIFTI_SUFFIXES)
+    }
+
+
+def label_validity(counts: dict[int, int], filename: Path, image_cases: set[str],
+                   background_ids: set[int], ignored_ids: set[int], undefined_ids: set[int]) -> list[str]:
+    """Return all per-label findings shown in the label-analysis details table."""
+    findings: list[str] = []
+    if set(counts).issubset(background_ids | ignored_ids):
+        findings.append("Empty (background/ignore only)")
+    if _case_id(filename) not in image_cases:
+        findings.append("No matching imagesTr file")
+    if undefined_ids:
+        findings.append(f"Undefined label IDs: {', '.join(str(value) for value in sorted(undefined_ids))}")
+    return findings
+
+
+def labeled_data_percentage(counts: dict[int, int], ignored_ids: set[int]) -> float:
+    """Return the percentage of voxels that are not assigned to an ignore label."""
+    total = sum(counts.values())
+    if total == 0:
+        return 0.0
+    labeled = sum(count for class_id, count in counts.items() if class_id not in ignored_ids)
+    return 100 * labeled / total
+
+
+def _analyse_file(filename: str) -> dict:
+    """Return label counts and spatial metadata for one map in a child process."""
     import mitk
     import numpy as np
 
     image = mitk.Image(filename)
-    values, counts = np.unique(np.asarray(image), return_counts=True)
-    return {int(value): int(count) for value, count in zip(values, counts, strict=True)}
+    array = np.asarray(image)
+    values, counts = np.unique(array, return_counts=True)
+    dimensions = min(len(image.shape), 3)
+    spacing = image.spacing
+    return {
+        "voxels": {int(value): int(count) for value, count in zip(values, counts, strict=True)},
+        # MITK spacing is X/Y/Z, while Image.shape follows NumPy's Z/Y/X order.
+        "shape": [int(value) for value in reversed(image.shape[-dimensions:])],
+        "spacing": [float(spacing[index]) for index in range(dimensions)],
+    }
 
 
 def _label_names(dataset_directory: Path) -> dict[int, str]:
@@ -92,7 +146,9 @@ def undefined_label_ids(files: Iterable[Path], per_file: Iterable[dict[int, int]
     }
 
 
-def analyse_label_distribution(dataset_directory: Path, workers: int | None = None) -> dict:
+def analyse_label_distribution(dataset_directory: Path, workers: int | None = None,
+                               progress: Callable[[str], None] | None = None,
+                               include_labeled_data: bool = False) -> dict:
     """Analyse all ``labelsTr`` files and atomically cache the result in the raw folder.
 
     The work is spread across separate processes so image loading and voxel counting do
@@ -106,14 +162,35 @@ def analyse_label_distribution(dataset_directory: Path, workers: int | None = No
     # Spawn avoids forking a running Qt process from its background worker thread.
     context = multiprocessing.get_context("spawn")
     with ProcessPoolExecutor(max_workers=worker_count, mp_context=context) as executor:
-        counts = list(executor.map(_analyse_file, (str(path) for path in files)))
+        file_analyses = []
+        for index, (path, file_analysis) in enumerate(
+                zip(files, executor.map(_analyse_file, (str(path) for path in files)), strict=True), start=1):
+            file_analyses.append(file_analysis)
+            if progress is not None:
+                progress(f"Analyzed label {index}/{len(files)}: {path.name}")
+    counts = [file_analysis["voxels"] for file_analysis in file_analyses]
     label_names = _label_names(dataset_directory)
     unexpected = undefined_label_ids(files, counts, set(label_names))
     ignored = _ignored_label_ids(dataset_directory)
+    background = {class_id for class_id, name in label_names.items() if name.casefold() == "background"} or {0}
+    image_cases = _image_case_ids(dataset_directory)
     per_image = [
-        {"image": path.name,
-         "voxels": {str(class_id): count for class_id, count in file_counts.items() if class_id not in ignored}}
-        for path, file_counts in zip(files, counts, strict=True)
+        {
+            "image": path.name,
+            "voxels": {
+                str(class_id): count for class_id, count in file_analysis["voxels"].items()
+                if class_id not in ignored
+            },
+            "shape": file_analysis["shape"],
+            "spacing": file_analysis["spacing"],
+            **({"labeled_data_percentage": labeled_data_percentage(file_analysis["voxels"], ignored)}
+               if include_labeled_data else {}),
+            "validity": label_validity(
+                file_analysis["voxels"], path, image_cases, background, ignored,
+                set(unexpected.get(path.name, [])),
+            ),
+        }
+        for path, file_analysis in zip(files, file_analyses, strict=True)
     ]
     analysis = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -150,3 +227,29 @@ def _write_analysis(target: Path, data: dict) -> None:
     except Exception:
         Path(temporary_name).unlink(missing_ok=True)
         raise
+
+
+def main() -> None:
+    """Run label analysis as a console-reporting subprocess."""
+    parser = argparse.ArgumentParser(description="Analyze nnU-Net training labels.")
+    parser.add_argument("dataset_directory", type=Path, help="Raw dataset directory")
+    parser.add_argument("--workers", type=int, default=None, help="Maximum worker processes")
+    parser.add_argument("--annotation-workflow", action="store_true",
+                        help="Include annotation-workflow labeled-data percentages")
+    arguments = parser.parse_args()
+    try:
+        files = label_files(arguments.dataset_directory)
+        print(f"Analyzing {len(files)} label file(s) in {arguments.dataset_directory}", flush=True)
+        analysis = analyse_label_distribution(
+            arguments.dataset_directory, arguments.workers,
+            progress=lambda message: print(message, flush=True),
+            include_labeled_data=arguments.annotation_workflow,
+        )
+    except (OSError, ValueError, RuntimeError) as error:
+        raise SystemExit(f"Label analysis failed: {error}") from error
+    print(f"Label analysis completed: {analysis_path(arguments.dataset_directory)} "
+          f"({analysis['files_analyzed']} file(s))", flush=True)
+
+
+if __name__ == "__main__":
+    main()

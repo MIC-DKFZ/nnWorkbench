@@ -54,6 +54,7 @@ from nnworkbench.services.annotation_conversion import (
     has_annotation_files,
 )
 from nnworkbench.services.dataset_contents import (
+    fold_training_status,
     json_value,
     model_folds,
     model_plan_configuration,
@@ -64,7 +65,6 @@ from nnworkbench.services.dataset_contents import (
 )
 from nnworkbench.services.dataset_json import ImageCountCheck, image_count_check
 from nnworkbench.services.label_analysis import (
-    analyse_label_distribution,
     analysis_path,
     label_files,
     load_label_analysis,
@@ -142,7 +142,6 @@ class DatasetWorkspace(QWidget):
         self._training_request = 0
         self._planner_request = 0
         self._consistency_request = 0
-        self._analysis_request = 0
         self._analysis_running = False
         self._conversion_request = 0
         self._conversion_running = False
@@ -163,6 +162,7 @@ class DatasetWorkspace(QWidget):
         self._processes: list[QProcess] = []
         self._napari_processes: list[QProcess] = []
         self._active_process: QProcess | None = None
+        self._analysis_process: QProcess | None = None
         self._closing = False
         # Filesystem discovery is I/O bound. A small dedicated pool keeps navigation
         # responsive without competing with nnU-Net or analysis worker processes.
@@ -345,7 +345,7 @@ class DatasetWorkspace(QWidget):
     def hide_annotation_documentation(self) -> None:
         self.documentation_panel.hide(); self.summary.show(); self.tabs.show()
         self.annotation_documentation_visibility_changed.emit(False)
-        if self._active_process is not None:
+        if self._active_process is not None or self._analysis_process is not None:
             self.console_panel.show()
 
     def set_annotation_workflow_enabled(self, enabled: bool) -> None:
@@ -355,6 +355,9 @@ class DatasetWorkspace(QWidget):
         self._update_convert_annotations_enabled()
         self._update_next_iteration_enabled()
         self._refresh_raw_file_actions()
+        current_item = self.raw_tree.currentItem()
+        if current_item and current_item.data(0, self._RAW_STATISTICS_ROLE):
+            self._show_raw_statistics(current_item, None)
 
     def _update_next_iteration_enabled(self) -> None:
         self.next_iteration.setEnabled(bool(self._annotation_workflow_enabled and self._record
@@ -378,21 +381,21 @@ class DatasetWorkspace(QWidget):
         # are version-guarded and therefore cannot update the newly selected dataset.
         self._thread_pool.clear()
         self._dataset_version += 1
-        self._plan_request += 1; self._summary_request += 1; self._training_request += 1; self._consistency_request += 1; self._analysis_request += 1
-        self._analysis_running = False
+        self._plan_request += 1; self._summary_request += 1; self._training_request += 1; self._consistency_request += 1
         self._conversion_running = False
         self._record = record; self._loaded_tabs.clear(); self._loading_tabs.clear()
         self._metadata_errors = (); self.metadata_warning.hide(); self.metadata_error.hide()
         self._preprocessed_paths = []; self.run_training.setText("Run Training")
         self._trained_model_paths = []
         self._raw_folder_files = {}; self._loaded_raw_folders.clear(); self._raw_render_version += 1
-        if self._active_process is None:
+        if self._active_process is None and self._analysis_process is None:
             self.console_panel.hide()
         self.json_content.hide(); self.result_summary.hide()
         raw_actions_enabled = record is not None and record.raw_path is not None
         self._update_convert_annotations_enabled()
         self._update_next_iteration_enabled()
-        self.analyze_labels.setEnabled(raw_actions_enabled)
+        self.analyze_labels.setEnabled(raw_actions_enabled and not self._analysis_running)
+        self.analyze_labels.setText("Analyzing labels…" if self._analysis_running else "Analyze Labels")
         self.analysis_settings.setEnabled(raw_actions_enabled)
         self._clear_raw_statistics()
         self._refresh_run_actions()
@@ -540,7 +543,8 @@ class DatasetWorkspace(QWidget):
         else:
             self._set_message(self.models, "Loading trained models…")
             task = lambda: [
-                (model, [(fold, validation_files(fold)) for fold in model_folds(record.results_path / model)])
+                (model, [(fold, validation_files(fold), fold_training_status(fold))
+                         for fold in model_folds(record.results_path / model)])
                 for model in trained_models(record.results_path)
             ] if record.results_path else []
         self._start_task(task, lambda data: self._apply_tab_data(tab, version, record, data),
@@ -588,7 +592,7 @@ class DatasetWorkspace(QWidget):
             existing = self.raw_tree.topLevelItem(index)
             if existing.data(0, self._RAW_STATISTICS_ROLE) == target:
                 return
-        item = QTreeWidgetItem(["class_distribution.json"])
+        item = QTreeWidgetItem(["Label analysis"])
         item.setIcon(0, self._statistics_icon())
         item.setToolTip(0, target)
         item.setData(0, self._RAW_STATISTICS_ROLE, target)
@@ -729,7 +733,8 @@ class DatasetWorkspace(QWidget):
         self._extension_pool.clear()
         for process in tuple(self._processes) + tuple(self._napari_processes):
             self._stop_process_group(process, wait_ms=2_000)
-        self._processes.clear(); self._napari_processes.clear(); self._active_process = None
+        self._processes.clear(); self._napari_processes.clear()
+        self._active_process = None; self._analysis_process = None; self._analysis_running = False
 
     @staticmethod
     def _start_process_group(process: QProcess, program: str, arguments: list[str]) -> None:
@@ -786,18 +791,25 @@ class DatasetWorkspace(QWidget):
         if not files:
             QMessageBox.information(self, "No labels found", "No NIfTI files were found in labelsTr.")
             return
-        self._analysis_request += 1; request, version = self._analysis_request, self._dataset_version
         raw_path, workers = self._record.raw_path, self._analysis_workers
         self._analysis_running = True; self.analyze_labels.setEnabled(False); self.analyze_labels.setText("Analyzing labels…")
-        availability = ", ".join(name for name, path in (("Raw", self._record.raw_path),
-                                                            ("Preprocessed", self._record.preprocessed_path),
-                                                            ("Results", self._record.results_path)) if path)
-        self.summary.setText(
-            f"Available: {availability}\nAnalyzing {len(files)} label files in the background. "
-            "This can take a while for large datasets.")
-        self._start_task(lambda: analyse_label_distribution(raw_path, workers),
-                         lambda analysis: self._analysis_finished(request, version, raw_path, analysis),
-                         lambda error: self._analysis_failed(request, version, error))
+        self._log(f"Run: label analysis for {raw_path} ({len(files)} file(s), up to {workers} worker(s))")
+        process = QProcess(self)
+        environment = QProcessEnvironment.systemEnvironment()
+        environment.insert("PYTHONUNBUFFERED", "1")
+        process.setProcessEnvironment(environment)
+        process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        self._processes.append(process); self._analysis_process = process; self._show_console()
+        process.readyReadStandardOutput.connect(lambda active=process: self._read_process_output(active))
+        process.finished.connect(
+            lambda code, status, active=process, directory=raw_path:
+            self._analysis_process_finished(active, directory, code, status))
+        process.errorOccurred.connect(lambda error, active=process: self._analysis_process_failed(active, error))
+        self._start_process_group(
+            process, sys.executable,
+            ["-m", "nnworkbench.services.label_analysis", str(raw_path), "--workers", str(workers),
+             *(["--annotation-workflow"] if self._annotation_workflow_enabled else [])],
+        )
 
     def _convert_annotations(self) -> None:
         if self._record is None or self._record.raw_path is None or self._conversion_running:
@@ -883,23 +895,41 @@ class DatasetWorkspace(QWidget):
         self._napari_prefetch_next = following.isChecked()
         self._napari_prefetch_radius = radius.value()
 
-    def _analysis_finished(self, request: int, version: int, raw_path: Path, analysis: object) -> None:
-        if request != self._analysis_request or version != self._dataset_version:
+    def _analysis_process_finished(self, process: QProcess, raw_path: Path, exit_code: int,
+                                   status: QProcess.ExitStatus) -> None:
+        self._read_process_output(process)
+        if process in self._processes:
+            self._processes.remove(process)
+        if process is not self._analysis_process:
             return
-        self._analysis_running = False; self.analyze_labels.setText("Analyze Labels"); self.analyze_labels.setEnabled(True)
+        self._analysis_process = None; self._analysis_running = False
+        self._update_console_controls()
+        outcome = "completed" if status == QProcess.ExitStatus.NormalExit and exit_code == 0 else "failed"
+        self._log(f"Label analysis {outcome} (exit code {exit_code}).")
+        self.analyze_labels.setText("Analyze Labels")
+        self.analyze_labels.setEnabled(self._record is not None and self._record.raw_path is not None)
+        if self._record is None or self._record.raw_path != raw_path:
+            return
         self._restore_availability_summary()
-        print(f"Label analysis completed: {analysis_path(raw_path)}")
-        if self._record is not None:
+        if exit_code == 0:
             self._start_consistency_check(self._record)
-        if "raw" in self._loaded_tabs:
-            self._add_statistics_item(raw_path)
+            if "raw" in self._loaded_tabs:
+                self._add_statistics_item(raw_path)
+        else:
+            QMessageBox.warning(self, "Label analysis failed", "See the console for details.")
 
-    def _analysis_failed(self, request: int, version: int, error: str) -> None:
-        if request != self._analysis_request or version != self._dataset_version:
+    def _analysis_process_failed(self, process: QProcess, error: QProcess.ProcessError) -> None:
+        if error != QProcess.ProcessError.FailedToStart:
             return
-        self._analysis_running = False; self.analyze_labels.setText("Analyze Labels"); self.analyze_labels.setEnabled(True)
-        self._restore_availability_summary()
-        QMessageBox.warning(self, "Label analysis failed", error)
+        if process in self._processes:
+            self._processes.remove(process)
+        if process is not self._analysis_process:
+            return
+        self._analysis_process = None; self._analysis_running = False
+        self._update_console_controls()
+        self._log(f"Could not start label analysis: {process.errorString()}")
+        self.analyze_labels.setText("Analyze Labels")
+        self.analyze_labels.setEnabled(self._record is not None and self._record.raw_path is not None)
 
     def _show_raw_statistics(self, item: QTreeWidgetItem | None, previous: QTreeWidgetItem | None) -> None:
         path = item.data(0, self._RAW_STATISTICS_ROLE) if item else None
@@ -911,7 +941,10 @@ class DatasetWorkspace(QWidget):
             self._clear_raw_statistics()
             return
         self._clear_raw_statistics()
-        self.raw_statistics_layout.addWidget(LabelStatisticsView(analysis, self.raw_statistics_container))
+        self.raw_statistics_layout.addWidget(LabelStatisticsView(
+            analysis, annotation_workflow_enabled=self._annotation_workflow_enabled,
+            parent=self.raw_statistics_container,
+        ))
         self.raw_statistics_container.show()
         self.raw_splitter.setSizes((self.raw_splitter.height() // 2, self.raw_splitter.height() // 2))
 
@@ -1111,11 +1144,12 @@ class DatasetWorkspace(QWidget):
             self._log(f"Could not start nnU-Net command: {process.errorString()}")
 
     def _terminate_command(self) -> None:
-        if self._active_process is None:
+        process = self._active_process or self._analysis_process
+        if process is None:
             return
-        self._log("Termination requested for active nnU-Net command.")
+        description = "nnU-Net command" if process is self._active_process else "label analysis"
+        self._log(f"Termination requested for active {description}.")
         self.terminate_command.setEnabled(False)
-        process = self._active_process
         self._stop_process_group(process)
         # Some frameworks take a moment to drain their workers after SIGTERM.
         QTimer.singleShot(5_000, lambda active=process: self._stop_process_group(active, wait_ms=1))
@@ -1137,7 +1171,7 @@ class DatasetWorkspace(QWidget):
         self._update_console_controls()
 
     def _update_console_controls(self) -> None:
-        running = self._active_process is not None
+        running = self._active_process is not None or self._analysis_process is not None
         self.terminate_command.setEnabled(running)
         self.hide_console.setEnabled(not running)
 
@@ -1204,8 +1238,12 @@ class DatasetWorkspace(QWidget):
         assert self._record is not None and self._record.results_path is not None
         for relative_model_path, folds in models:
             model_item = QTreeWidgetItem([str(relative_model_path)]); self.models.addTopLevelItem(model_item)
-            for fold_path, files in folds:
-                fold_item = QTreeWidgetItem([fold_path.name]); model_item.addChild(fold_item)
+            for fold_path, files, status in folds:
+                suffix = "(complete)" if status.complete else (
+                    f"(epoch {status.epoch})" if status.epoch is not None else ""
+                )
+                fold_item = QTreeWidgetItem([" ".join(part for part in (fold_path.name, suffix) if part)])
+                model_item.addChild(fold_item)
                 fold_item.setData(0, Qt.ItemDataRole.UserRole, str(fold_path))
                 fold_item.setData(0, self._FOLD_ROLE, True)
                 validation = fold_path / "validation"

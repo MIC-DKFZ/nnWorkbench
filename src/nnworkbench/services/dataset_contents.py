@@ -1,9 +1,20 @@
 from __future__ import annotations
 
 import json
+import re
+from dataclasses import dataclass
 from pathlib import Path
 
 RAW_FOLDERS = ("imagesTr", "labelsTr", "annotationsTr")
+_EPOCH_PATTERN = re.compile(r"(?m)^.*?:\s*Epoch\s+(\d+)\s*$")
+
+
+@dataclass(frozen=True)
+class FoldTrainingStatus:
+    """The latest observable training state for one nnU-Net fold."""
+
+    epoch: int | None
+    complete: bool
 
 
 def raw_files(dataset_path: Path | None) -> dict[str, list[Path]]:
@@ -63,6 +74,24 @@ def validation_files(fold_path: Path) -> list[Path]:
         return []
     return sorted((path.relative_to(directory) for path in directory.rglob("*") if path.is_file()),
                   key=lambda path: str(path).casefold())
+
+
+def fold_training_status(fold_path: Path) -> FoldTrainingStatus:
+    """Return the last logged epoch and whether nnU-Net wrote its final checkpoint."""
+    complete = (fold_path / "checkpoint_final.pth").is_file()
+    logs = list(fold_path.glob("training_log_*.txt"))
+    if not logs:
+        return FoldTrainingStatus(epoch=None, complete=complete)
+    try:
+        log_path = max(logs, key=lambda path: path.stat().st_mtime_ns)
+        with log_path.open("rb") as log:
+            log.seek(0, 2)
+            log.seek(max(0, log.tell() - 64 * 1024))
+            content = log.read().decode("utf-8", errors="replace")
+    except OSError:
+        return FoldTrainingStatus(epoch=None, complete=complete)
+    matches = _EPOCH_PATTERN.findall(content)
+    return FoldTrainingStatus(epoch=int(matches[-1]) if matches else None, complete=complete)
 
 
 def validation_summary(fold_path: Path) -> dict | None:

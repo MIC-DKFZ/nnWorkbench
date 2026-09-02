@@ -29,7 +29,7 @@ def create_dataset(raw_root: Path | None, all_roots: list[Path | None], dataset_
         destination.mkdir()
     except FileExistsError as error:
         raise ValueError(f"{directory_name} already exists") from error
-    for child in ("imagesTr", "labelsTr", "imagesTs", *( ("annotationsTr",) if include_annotations else ())):
+    for child in ("imagesTr", "labelsTr", *(("annotationsTr",) if include_annotations else ())):
         (destination / child).mkdir()
     labels = {"background": 0, "": 1}
     manifest = {"channel_names": {"0": ""}, "labels": labels, "numTraining": 0,

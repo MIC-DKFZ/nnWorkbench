@@ -1,6 +1,8 @@
 from pathlib import Path
 
 from nnworkbench.services.dataset_contents import (
+    FoldTrainingStatus,
+    fold_training_status,
     json_object,
     json_value,
     model_folds,
@@ -66,6 +68,20 @@ def test_model_folds_and_validation_summary(tmp_path: Path) -> None:
     assert validation_summary(model / "fold_0") == {"foreground_mean": {"Dice": 0.91}}
     assert validation_summary(model / "fold_1") is None
     assert json_object(model / "fold_0" / "validation" / "summary.json") == {"foreground_mean": {"Dice": 0.91}}
+
+
+def test_fold_training_status_reads_latest_logged_epoch_and_completion(tmp_path: Path) -> None:
+    fold = tmp_path / "fold_0"; fold.mkdir()
+    log = fold / "training_log_2026_09_02_12_13_06.txt"
+    log.write_text(
+        "2026-09-02 12:13:26.152147: Epoch 0\n"
+        "2026-09-02 14:44:12.000000: Epoch 123\n",
+        encoding="utf-8",
+    )
+
+    assert fold_training_status(fold) == FoldTrainingStatus(epoch=123, complete=False)
+    (fold / "checkpoint_final.pth").touch()
+    assert fold_training_status(fold) == FoldTrainingStatus(epoch=123, complete=True)
 
 
 def test_json_value_reads_splits_array(tmp_path: Path) -> None:

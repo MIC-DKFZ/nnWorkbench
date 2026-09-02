@@ -81,6 +81,10 @@ QLabel#workspaceSummary {
     color: #666666;
     padding-bottom: 2px;
 }
+QLabel#analysisSummary {
+    color: #666666;
+    font-weight: 600;
+}
 QLabel#consistencyWarning {
     background: #fff1e7;
     border: 1px solid #f29a57;
@@ -281,6 +285,27 @@ QTabBar::tab {
 QTabBar::tab:selected {
     background: #ffffff;
     color: #0a4697;
+}
+QTabBar QToolButton {
+    background: #ffffff;
+    border: 1px solid #c9c9c9;
+    border-radius: 5px;
+    color: #464646;
+    margin: 2px;
+    padding: 2px;
+}
+QTabBar QToolButton:hover {
+    background: #edf4ff;
+    border-color: #7f9fc9;
+    color: #0a4697;
+}
+QTabBar QToolButton:pressed {
+    background: #dceaff;
+}
+QTabBar QToolButton:disabled {
+    background: #f3f3f3;
+    border-color: #dddddd;
+    color: #999999;
 }
 QTabBar#pathProfileTabs::tab {
     padding: 3px 10px;

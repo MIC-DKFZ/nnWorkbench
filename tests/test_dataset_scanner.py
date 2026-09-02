@@ -33,7 +33,8 @@ def test_creator_creates_raw_structure(tmp_path: Path):
     raw = tmp_path / "raw"; raw.mkdir()
     created = create_dataset(raw, [raw, None, None], 3, "My task")
     assert created.name == "Dataset003_My_task"
-    assert all((created / directory).is_dir() for directory in ("imagesTr", "labelsTr", "imagesTs"))
+    assert all((created / directory).is_dir() for directory in ("imagesTr", "labelsTr"))
+    assert not (created / "imagesTs").exists()
     assert (created / "dataset.json").is_file()
 
 

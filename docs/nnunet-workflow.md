@@ -25,7 +25,7 @@ nnUNet_raw/
     └── dataset.json
 ```
 
-Use **New dataset** after selecting a Raw root to create a starter dataset. It creates `imagesTr`, `labelsTr`, `imagesTs`, and a Raw `dataset.json`. The new manifest starts with channel `0` and labels `background: 0` and an empty class at `1`, ready to be completed.
+Use **New dataset** after selecting a Raw root to create a starter dataset. It creates `imagesTr`, `labelsTr`, and a Raw `dataset.json`. The new manifest starts with channel `0` and labels `background: 0` and an empty class at `1`, ready to be completed.
 
 The right panel lets you edit a Raw manifest. `numTraining` is checked against the number of files in `labelsTr`; channels and labels are checked for continuous IDs and missing names. The middle pane also warns if the number of `imagesTr` files does not match the configured channel count multiplied by the number of label cases.
 
@@ -33,9 +33,9 @@ Expand Raw folders only when needed. Folder counts and file lists load lazily. U
 
 ## 3. Analyze labels
 
-Choose **Analyze Labels** in Raw to calculate, in the background, how many label images contain each class and the total voxel count for each class. Use the gear beside the action to set the shared worker-process count.
+Choose **Analyze Labels** in Raw to calculate, in a separate process, how many label images contain each class and the total voxel count for each class. It also records each label image's shape and voxel spacing. Progress is shown in the command console and continues while you browse the workspace. Use the gear beside the action to set the shared worker-process count.
 
-The result is saved as `class_distribution.json` in the Raw dataset directory. Select it in the Raw tree to view aggregate and per-image tables, or voxel/image-count plots. The optional background filter applies to tables and plots.
+The result is saved as `class_distribution.json` in the Raw dataset directory. Select **Label analysis** in the Raw tree to view the class summary, per-image details, class plots, and geometry scatter plots. When Annotation Workflow is enabled, per-image details also include the percentage of voxels not assigned to the configured ignore label. The optional background filter applies to class tables and plots.
 
 ## 4. Plan and preprocess
 
@@ -51,7 +51,7 @@ Use **Additional arguments** for flags passed directly to `nnUNetv2_train`. Trai
 
 ## 6. Inspect results and predict
 
-Results shows trained models, their folds, and collapsed validation folders. Select a fold to view `validation/summary.json`. Use **Inspect** on a validation prediction to open it in Napari; when the Raw dataset is available, matching image and ground-truth label are loaded for comparison.
+Results shows trained models, their folds, and collapsed validation folders. A fold currently training shows its most recently logged epoch, for example `(epoch 123)`; once nnU-Net writes `checkpoint_final.pth`, it shows `(complete)` instead. Select a fold to view `validation/summary.json`. Use **Inspect** on a validation prediction to open it in Napari; when the Raw dataset is available, matching image and ground-truth label are loaded for comparison.
 
 Choose **Run Predict** to select input/output directories and a plan/configuration from discovered trained models. **Additional arguments** are passed to `nnUNetv2_predict`; prediction exports only `nnUNet_results`.
 
