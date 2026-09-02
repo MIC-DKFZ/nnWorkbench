@@ -15,7 +15,7 @@ Existing labels can be imported directly into an nnU-Net workflow, while unlabel
 
 ![Annotation Workflow](/src/nnworkbench/assets/AnnotationWorkflowHeader.png)
 
-## Installation
+# Installation
 
 Requirements:
 
@@ -33,7 +33,7 @@ git clone <your-repository-url> nnWorkbench
 cd nnWorkbench
 ```
 
-### Local installation — full workbench
+## Local installation — full workbench
 
 GUI, Napari inspection, and optional nnInteractive annotation workflow.
 
@@ -44,7 +44,7 @@ nnworkbench-gui
 
 Local interactive inference additionally needs a compatible PyTorch installation.
 
-### Remote installation — lightweight execution
+## Remote installation — lightweight execution
 
 For clusters or remote machines: nnU-Net, custom trainers, and remote commands only—no GUI, Napari or nnInteractive.
 
@@ -60,9 +60,9 @@ nnworkbench-set-paths --raw /path/to/nnUNet_raw --preprocessed /path/to/nnUNet_p
 
 You can also create a Remote profile in the GUI and use **Export** to copy this command with its configured paths.
 
-## Quick start
+# Quick start
 
-### Set up paths
+## Set up paths
 
 Start the GUI:
 
@@ -72,7 +72,7 @@ nnworkbench-gui
 
 Then select the directories containing your `DatasetNNN_Name` folders for `nnUNet_raw`, `nnUNet_preprocessed`, and `nnUNet_results`. For remote or terminal use, save the same paths with `nnworkbench-set-paths` as shown above.
 
-### nnU-Net Workflow
+## nnU-Net Workflow
 
 1. **Prepare and inspect:** Select an existing dataset—or create one from the Raw root—then review its `dataset.json`. Use **Inspect** beside a Raw image to open the case in Napari with its available matching files.
 2. **Preprocess:** In **Raw**, choose **Run Preprocessing**, select a configuration and planner, then run the command.
@@ -81,7 +81,7 @@ Then select the directories containing your `DatasetNNN_Name` folders for `nnUNe
 
 Read the full [nnU-Net workflow guide](docs/nnunet-workflow.md).
 
-### Annotation Workflow
+## Annotation Workflow
 
 1. **Enable the workflow:** Turn on **Annotation workflow** in the header and select a Raw dataset with `imagesTr`.
 2. **Prepare label IDs:** In Raw `dataset.json`, add an integer `ignore` label as the highest label ID. The editor highlights this requirement while Annotation Workflow is enabled.
