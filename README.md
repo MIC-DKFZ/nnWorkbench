@@ -94,6 +94,8 @@ Read the full [Annotation Workflow guide](docs/annotation-workflow.md), includin
 
 ## CLI overview
 
+nnWorkbench can be used entirely through the GUI. If you prefer not to use the GUI, or are working on a remote system, the same workflows are available from the command line.
+
 After configuring the paths with `nnworkbench-set-paths`, use `nnworkbench-run` to run any nnU-Net command with those saved paths:
 
 ```bash

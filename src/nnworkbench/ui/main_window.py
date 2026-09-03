@@ -38,7 +38,8 @@ from .paths_header import PathsHeader
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("nnWorkbench — nnU-Net workflows and nnInteractive-powered annotation"); self.resize(1200, 760)
+        self.setWindowTitle("nnWorkbench — nnU-Net workflows and nnInteractive-powered annotation")
+        self.setMinimumSize(1_050, 600); self.resize(1200, 760)
         self.settings = QSettings("nnWorkbench", "nnWorkbench"); self.records: list[DatasetRecord] = []
         root = QWidget(); root.setObjectName("appRoot"); self.setCentralWidget(root); layout = QVBoxLayout(root)
         layout.setContentsMargins(20, 20, 20, 20); layout.setSpacing(14)
@@ -52,7 +53,9 @@ class MainWindow(QMainWindow):
         self.header.paths_changed.connect(self.refresh)
         self.header.remote_profiles_changed.connect(self._save_remote_profiles)
         self.splitter = QSplitter(); layout.addWidget(self.splitter, 1)
-        left = QWidget(); left.setObjectName("datasetsPane"); left_layout = QVBoxLayout(left); left_layout.setContentsMargins(16, 16, 16, 16); left_layout.setSpacing(10)
+        left = QWidget(); left.setObjectName("datasetsPane"); left.setMinimumWidth(210)
+        self.datasets_pane = left
+        left_layout = QVBoxLayout(left); left_layout.setContentsMargins(16, 16, 16, 16); left_layout.setSpacing(10)
         datasets_title = QLabel("Datasets"); datasets_title.setObjectName("paneTitle"); left_layout.addWidget(datasets_title)
         dataset_actions = QHBoxLayout()
         self.new_dataset = QPushButton("New dataset"); self.new_dataset.setObjectName("primaryButton"); self.new_dataset.clicked.connect(self._create_dataset)
@@ -76,7 +79,8 @@ class MainWindow(QMainWindow):
             logo = QLabel(); logo.setPixmap(QIcon(str(asset_directory / filename)).pixmap(size)); logo.setToolTip(tooltip)
             acknowledgements_layout.addWidget(logo)
         left_layout.addWidget(acknowledgements)
-        centre = DatasetWorkspace(); centre.setObjectName("workspacePane"); self.workspace = centre; self.splitter.addWidget(centre)
+        centre = DatasetWorkspace(); centre.setObjectName("workspacePane"); centre.setMinimumWidth(480)
+        self.workspace = centre; self.splitter.addWidget(centre)
         self.header.annotation_documentation_requested.connect(self.workspace.show_annotation_documentation)
         self.header.annotation_documentation_closed.connect(self.workspace.hide_annotation_documentation)
         self.workspace.annotation_documentation_visibility_changed.connect(
@@ -85,7 +89,7 @@ class MainWindow(QMainWindow):
         self.workspace.set_annotation_workflow_enabled(self.header.annotation_enabled())
         self.workspace.next_iteration_requested.connect(self._create_next_iteration)
         self.workspace.nnunet_command_finished.connect(self.refresh)
-        self.editor = MetadataEditor(); self.splitter.addWidget(self.editor)
+        self.editor = MetadataEditor(); self.editor.setMinimumWidth(300); self.splitter.addWidget(self.editor)
         self.editor.definition_errors_changed.connect(self.workspace.set_metadata_definition_errors)
         self.editor.training_count_warning_changed.connect(self.workspace.set_training_count_warning)
         self.editor.metadata_saved.connect(self.workspace.refresh_consistency_check)

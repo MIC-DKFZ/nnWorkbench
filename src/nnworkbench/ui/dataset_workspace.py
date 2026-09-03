@@ -35,8 +35,10 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QSplitter,
+    QSizePolicy,
     QStyle,
     QStyleOptionSpinBox,
     QTabWidget,
@@ -180,7 +182,11 @@ class DatasetWorkspace(QWidget):
         self._environment_roots: dict[str, Path | None] = {"nnUNet_raw": None, "nnUNet_preprocessed": None,
                                                             "nnUNet_results": None}
 
-        layout = QVBoxLayout(self); layout.setContentsMargins(20, 16, 20, 16); layout.setSpacing(10)
+        root_layout = QVBoxLayout(self); root_layout.setContentsMargins(20, 16, 20, 16); root_layout.setSpacing(10)
+        self.content_splitter = QSplitter(Qt.Orientation.Vertical); root_layout.addWidget(self.content_splitter, 1)
+        content = QWidget(); layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(10)
+        self.content_splitter.addWidget(content)
         title_row = QHBoxLayout()
         self.title = QLabel("Dataset"); self.title.setObjectName("paneTitle"); title_row.addWidget(self.title)
         title_row.addStretch()
@@ -223,8 +229,9 @@ class DatasetWorkspace(QWidget):
         self.hide_console.clicked.connect(self.console_panel.hide); console_header.addWidget(self.hide_console)
         console_layout.addLayout(console_header)
         self.console = QPlainTextEdit(); self.console.setObjectName("commandConsole"); self.console.setReadOnly(True)
-        self.console.setFixedHeight(130); console_layout.addWidget(self.console)
-        self.console_panel.hide(); layout.addWidget(self.console_panel)
+        self.console.setMinimumHeight(100); console_layout.addWidget(self.console)
+        self.console_panel.hide(); self.content_splitter.addWidget(self.console_panel)
+        self.content_splitter.setStretchFactor(0, 3); self.content_splitter.setStretchFactor(1, 1)
 
         raw = QWidget(); raw_layout = QVBoxLayout(raw); raw_layout.setContentsMargins(0, 0, 0, 0); raw_layout.setSpacing(8)
         basic_actions = QHBoxLayout()
@@ -246,18 +253,23 @@ class DatasetWorkspace(QWidget):
         annotation_actions = QHBoxLayout(self.annotation_actions)
         annotation_actions.setContentsMargins(0, 0, 0, 0)
         annotation_actions.addWidget(self.convert_annotations); annotation_actions.addWidget(self.next_iteration)
-        annotation_actions.addStretch(); self.annotation_actions.hide(); raw_layout.addWidget(self.annotation_actions)
-        self.raw_tree = QTreeWidget(); self.raw_tree.setColumnCount(2); self.raw_tree.setHeaderHidden(True)
+        annotation_actions.addStretch()
+        self.annotation_actions.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.annotation_actions.hide(); raw_layout.addWidget(self.annotation_actions)
+        self.raw_tree = QTreeWidget(); self.raw_tree.setColumnCount(1); self.raw_tree.setHeaderHidden(True)
         self.raw_tree.itemExpanded.connect(self._expand_raw_folder)
         raw_header = self.raw_tree.header()
         raw_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        raw_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.raw_tree.setColumnWidth(1, 180)
         self.raw_tree.currentItemChanged.connect(self._show_raw_statistics)
+        self.raw_tree.itemClicked.connect(self._toggle_raw_statistics)
+        self._ignore_next_statistics_click: QTreeWidgetItem | None = None
         self.raw_splitter = QSplitter(Qt.Orientation.Vertical); self.raw_splitter.addWidget(self.raw_tree)
         self.raw_statistics_container = QWidget(); self.raw_statistics_layout = QVBoxLayout(self.raw_statistics_container)
         self.raw_statistics_layout.setContentsMargins(0, 0, 0, 0)
-        self.raw_splitter.addWidget(self.raw_statistics_container); self.raw_statistics_container.hide()
+        self.raw_statistics_scroll = QScrollArea(); self.raw_statistics_scroll.setObjectName("rawStatisticsScroll")
+        self.raw_statistics_scroll.setWidgetResizable(True)
+        self.raw_statistics_scroll.setWidget(self.raw_statistics_container)
+        self.raw_splitter.addWidget(self.raw_statistics_scroll); self.raw_statistics_scroll.hide()
         raw_layout.addWidget(self.raw_splitter); self.tabs.addTab(raw, "Raw")
 
         preprocessed = QWidget(); preprocessed_layout = QVBoxLayout(preprocessed)
@@ -273,12 +285,10 @@ class DatasetWorkspace(QWidget):
         preprocessed_actions.addWidget(self.preprocessed_settings)
         preprocessed_layout.addLayout(preprocessed_actions)
         self.preprocessed_splitter = QSplitter(); preprocessed_layout.addWidget(self.preprocessed_splitter)
-        self.preprocessed_tree = QTreeWidget(); self.preprocessed_tree.setColumnCount(2); self.preprocessed_tree.setHeaderHidden(True)
+        self.preprocessed_tree = QTreeWidget(); self.preprocessed_tree.setColumnCount(1); self.preprocessed_tree.setHeaderHidden(True)
         self.preprocessed_tree.currentItemChanged.connect(self._show_json_content)
         preprocessed_header = self.preprocessed_tree.header()
         preprocessed_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        preprocessed_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.preprocessed_tree.setColumnWidth(1, 180)
         self.preprocessed_splitter.addWidget(self.preprocessed_tree)
         self.json_content = QPlainTextEdit(); self.json_content.setReadOnly(True)
         self.preprocessed_splitter.addWidget(self.json_content)
@@ -299,12 +309,10 @@ class DatasetWorkspace(QWidget):
         results_actions.addWidget(self.run_prediction); results_actions.addWidget(self.inspect_predictions)
         results_actions.addStretch(); results_actions.addWidget(self.results_settings); results_layout.addLayout(results_actions)
         self.results_splitter = QSplitter(); results_layout.addWidget(self.results_splitter)
-        self.models = QTreeWidget(); self.models.setColumnCount(2); self.models.setHeaderHidden(True)
+        self.models = QTreeWidget(); self.models.setColumnCount(1); self.models.setHeaderHidden(True)
         self.models.currentItemChanged.connect(self._show_fold_summary)
         results_header = self.models.header()
         results_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        results_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.models.setColumnWidth(1, 180)
         self.results_splitter.addWidget(self.models)
         self.result_summary = QPlainTextEdit(); self.result_summary.setReadOnly(True)
         self.results_splitter.addWidget(self.result_summary)
@@ -374,7 +382,7 @@ class DatasetWorkspace(QWidget):
                 item = folder.child(child_index)
                 path_text = item.toolTip(0)
                 if path_text:
-                    self.raw_tree.setItemWidget(item, 1, self._file_actions(Path(path_text), folder_name))
+                    self.raw_tree.setItemWidget(item, 0, self._raw_file_row(Path(path_text), folder_name))
 
     def set_dataset(self, record: DatasetRecord | None) -> None:
         # Drop unstarted discovery work from the previous selection. Running tasks
@@ -625,39 +633,38 @@ class DatasetWorkspace(QWidget):
             folder.takeChildren()
         files = self._raw_folder_files.get(folder_name, [])
         for path in files[start:start + 100]:
-            item = QTreeWidgetItem([path.name]); item.setToolTip(0, str(path)); item.setSizeHint(0, QSize(0, 34))
+            item = QTreeWidgetItem([""]); item.setToolTip(0, str(path)); item.setSizeHint(0, QSize(0, 34))
             folder.addChild(item)
-            self.raw_tree.setItemWidget(item, 1, self._file_actions(path, folder_name))
+            self.raw_tree.setItemWidget(item, 0, self._raw_file_row(path, folder_name))
         next_start = start + 100
         if next_start < len(files):
             QTimer.singleShot(0, lambda: self._append_raw_file_batch(folder, folder_name, next_start, version))
 
-    def _file_actions(self, path: Path, folder_name: str) -> QWidget:
+    def _raw_file_row(self, path: Path, folder_name: str) -> QWidget:
         actions = {"imagesTr": ("Inspect", "Annotate"), "annotationsTr": ("Inspect", "Edit"),
                    "labelsTr": ("Inspect",)}.get(folder_name, ())
         if not self._annotation_workflow_enabled and folder_name in {"imagesTr", "annotationsTr"}:
             actions = ("Inspect",)
-        widget = QWidget(); layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(4)
-        action_width = QPushButton("Annotate").sizeHint().width()
+        widget, layout = self._file_row(path)
         for action in actions:
             button = QPushButton(action)
             button.setObjectName("rawActionButton")
-            button.setFixedWidth(action_width)
             if action == "Inspect":
                 button.clicked.connect(lambda _=False, selected=path: self._inspect_file(selected))
             elif action in {"Annotate", "Edit"}:
                 button.clicked.connect(lambda _=False, selected=path: self._annotate_file(selected))
             layout.addWidget(button)
-        # Keep the Inspect action in a stable first-column position even when
-        # annotation-only actions are hidden.
-        if folder_name == "labelsTr" or (
-            not self._annotation_workflow_enabled and folder_name in {"imagesTr", "annotationsTr"}
-        ):
-            placeholder = QWidget()
-            placeholder.setFixedWidth(action_width)
-            layout.addWidget(placeholder)
         return widget
+
+    @staticmethod
+    def _file_row(path: Path) -> tuple[QWidget, QHBoxLayout]:
+        """Create one tree-column row with a filename and optional right-aligned actions."""
+        widget = QWidget(); layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 4, 0); layout.setSpacing(4)
+        filename = QLabel(path.name); filename.setToolTip(str(path))
+        filename.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        layout.addWidget(filename, 1)
+        return widget, layout
 
     def _inspect_file(self, path: Path) -> None:
         command = ["-m", "nnworkbench.services.napari_inspector", str(path),
@@ -940,19 +947,35 @@ class DatasetWorkspace(QWidget):
             self._clear_raw_statistics()
             return
         self._clear_raw_statistics()
-        self.raw_statistics_layout.addWidget(LabelStatisticsView(
+        statistics_view = LabelStatisticsView(
             analysis, annotation_workflow_enabled=self._annotation_workflow_enabled,
             parent=self.raw_statistics_container,
-        ))
-        self.raw_statistics_container.show()
-        self.raw_splitter.setSizes((self.raw_splitter.height() // 2, self.raw_splitter.height() // 2))
+        )
+        self.raw_statistics_layout.addWidget(statistics_view)
+        self.raw_statistics_scroll.show()
+        self._ignore_next_statistics_click = item
+        QTimer.singleShot(0, self._split_raw_statistics)
+
+    def _toggle_raw_statistics(self, item: QTreeWidgetItem, _column: int) -> None:
+        """Hide the statistics panel when its already-selected tree entry is clicked again."""
+        if not item.data(0, self._RAW_STATISTICS_ROLE):
+            return
+        if self._ignore_next_statistics_click is item:
+            self._ignore_next_statistics_click = None
+            return
+        self._clear_raw_statistics()
+        self.raw_tree.setCurrentItem(None)
 
     def _clear_raw_statistics(self) -> None:
         while self.raw_statistics_layout.count():
             child = self.raw_statistics_layout.takeAt(0).widget()
             if child is not None:
                 child.deleteLater()
-        self.raw_statistics_container.hide()
+        self.raw_statistics_scroll.hide()
+
+    def _split_raw_statistics(self) -> None:
+        tree_height = self.raw_splitter.height() * 3 // 10
+        self.raw_splitter.setSizes((tree_height, max(1, self.raw_splitter.height() - tree_height)))
 
     def _restore_availability_summary(self) -> None:
         if self._record is None:
@@ -1167,6 +1190,8 @@ class DatasetWorkspace(QWidget):
 
     def _show_console(self) -> None:
         self.console_panel.show()
+        console_height = max(160, self.content_splitter.height() // 3)
+        self.content_splitter.setSizes((max(1, self.content_splitter.height() - console_height), console_height))
         self._update_console_controls()
 
     def _update_console_controls(self) -> None:
@@ -1212,18 +1237,16 @@ class DatasetWorkspace(QWidget):
             target = dataset_path / relative_path
             file_item.setData(0, Qt.ItemDataRole.UserRole, str(target))
             if target.name.endswith(".b2nd") and not target.name.endswith("_seg.b2nd"):
-                file_item.setSizeHint(0, QSize(0, 34)); file_item.setSizeHint(1, QSize(0, 34))
-                self.preprocessed_tree.setItemWidget(file_item, 1, self._preprocessed_file_actions(target))
+                file_item.setText(0, "")
+                file_item.setSizeHint(0, QSize(0, 34))
+                self.preprocessed_tree.setItemWidget(file_item, 0, self._preprocessed_file_row(target))
 
-    def _preprocessed_file_actions(self, path: Path) -> QWidget:
+    def _preprocessed_file_row(self, path: Path) -> QWidget:
         """Offer inspection for a B2ND data file; the matching segmentation loads automatically."""
-        widget = QWidget(); layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(4)
+        widget, layout = self._file_row(path)
         inspect = QPushButton("Inspect"); inspect.setObjectName("rawActionButton")
         inspect.clicked.connect(lambda _=False, selected=path: self._inspect_preprocessed_file(selected))
         layout.addWidget(inspect)
-        placeholder = QWidget(); placeholder.setFixedWidth(QPushButton("Annotate").sizeHint().width())
-        layout.addWidget(placeholder)
         return widget
 
     def _render_results(self, data: object) -> None:
@@ -1267,23 +1290,20 @@ class DatasetWorkspace(QWidget):
                 container = folder
             target = validation / relative_path
             item = QTreeWidgetItem([relative_path.name]); item.setToolTip(0, str(target))
-            item.setSizeHint(0, QSize(0, 34)); item.setSizeHint(1, QSize(0, 34))
+            item.setSizeHint(0, QSize(0, 34))
             item.setData(0, Qt.ItemDataRole.UserRole, str(target))
             item.setData(0, self._VALIDATION_FILE_ROLE, True)
             container.addChild(item)
             if target.name.endswith((".nii", ".nii.gz")):
-                self.models.setItemWidget(item, 1, self._validation_file_actions(target))
+                item.setText(0, "")
+                self.models.setItemWidget(item, 0, self._validation_file_row(target))
 
-    def _validation_file_actions(self, path: Path) -> QWidget:
+    def _validation_file_row(self, path: Path) -> QWidget:
         """Match labelsTr's Inspect-button layout in the Results tree."""
-        widget = QWidget(); layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(4)
+        widget, layout = self._file_row(path)
         inspect = QPushButton("Inspect"); inspect.setObjectName("rawActionButton")
         inspect.clicked.connect(lambda _=False, selected=path: self._inspect_validation_file(selected))
         layout.addWidget(inspect)
-        placeholder = QWidget()
-        placeholder.setFixedWidth(QPushButton("Annotate").sizeHint().width())
-        layout.addWidget(placeholder)
         return widget
 
     def _show_json_content(self, item: QTreeWidgetItem | None, previous: QTreeWidgetItem | None) -> None:
@@ -1293,7 +1313,7 @@ class DatasetWorkspace(QWidget):
             return
         self._plan_request += 1; request, version = self._plan_request, self._dataset_version
         self.json_content.show(); self.json_content.setPlainText("Loading JSON…")
-        self._set_equal_sizes(self.preprocessed_splitter)
+        QTimer.singleShot(0, lambda: self._prioritize_content(self.preprocessed_splitter))
         self._start_task(lambda: json_value(file_path), lambda data: self._apply_json_content(request, version, file_path, data),
                          lambda error: self._apply_json_error(request, version, file_path, error))
 
@@ -1317,7 +1337,7 @@ class DatasetWorkspace(QWidget):
             return
         self._summary_request += 1; request, version = self._summary_request, self._dataset_version
         self.result_summary.show(); self.result_summary.setPlainText("Loading validation summary…")
-        self._set_equal_sizes(self.results_splitter)
+        QTimer.singleShot(0, lambda: self._prioritize_content(self.results_splitter))
 
         def task() -> tuple[str, object | None]:
             validation = fold_path / "validation"
@@ -1393,6 +1413,7 @@ class DatasetWorkspace(QWidget):
         tree.clear(); tree.addTopLevelItem(QTreeWidgetItem([message]))
 
     @staticmethod
-    def _set_equal_sizes(splitter: QSplitter) -> None:
-        half_width = splitter.width() // 2
-        splitter.setSizes((half_width, half_width))
+    def _prioritize_content(splitter: QSplitter) -> None:
+        """Keep navigation compact and reserve most space for the selected content."""
+        navigation_width = max(280, splitter.width() // 3)
+        splitter.setSizes((navigation_width, max(1, splitter.width() - navigation_width)))

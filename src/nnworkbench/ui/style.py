@@ -389,6 +389,13 @@ QTableCornerButton::section {
 QAbstractScrollArea::corner {
     background: #ffffff;
 }
+QScrollArea#rawStatisticsScroll {
+    background: #ffffff;
+    border: 0;
+}
+QScrollArea#rawStatisticsScroll > QWidget > QWidget {
+    background: #ffffff;
+}
 QScrollBar:vertical {
     background: #f7f7f7;
     width: 10px;
