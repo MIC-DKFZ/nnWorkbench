@@ -365,10 +365,11 @@ QTableWidget::item:selected {
 }
 QTableWidget QLineEdit, QTableWidget QLineEdit:focus {
     background: #ffffff;
-    border: 1px solid #2f6fca;
+    border: 0;
     border-radius: 3px;
     color: #252525;
-    padding: 1px 4px;
+    min-height: 22px;
+    padding: 0 4px;
     selection-background-color: #dceaff;
     selection-color: #0a4697;
 }

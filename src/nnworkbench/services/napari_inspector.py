@@ -273,6 +273,23 @@ def _read_prediction_case(prediction_folder: Path, image_folder: Path | None, re
     return _CaseData(tuple(layers), ())
 
 
+def _read_validation_case(validation_folder: Path, raw_dataset: Path | None, identifier: str) -> _CaseData:
+    """Load one validation prediction with its matching raw image and reference label."""
+    layers: list[_LayerData] = []
+    if raw_dataset is not None and raw_dataset.is_dir():
+        files = related_files_for_case(raw_dataset, identifier)
+        for path in files.images:
+            data, affine = _read_nifti(path)
+            layers.append(_LayerData(f"Image — {path.name}", "image", data, affine))
+        for path in files.labels:
+            data, affine = _read_nifti(path)
+            layers.append(_LayerData(f"Label — {path.name}", "labels", data, affine))
+    for path in _matching_case_files(validation_folder, identifier):
+        data, affine = _read_nifti(path)
+        layers.append(_LayerData(f"Validation prediction — {path.name}", "prediction", data, affine))
+    return _CaseData(tuple(layers), ())
+
+
 def _read_preprocessed_case(session_folder: Path, identifier: str) -> _CaseData:
     """Load nnU-Net's preprocessed B2ND data through nnU-Net's Blosc2 dataset reader."""
     import numpy as np
@@ -730,26 +747,25 @@ def open_preprocessed_case(selected: Path, prefetch_previous: bool = True, prefe
     napari.run()
 
 
-def open_validation_prediction(prediction_path: Path, raw_dataset: Path | None = None) -> None:
-    """Inspect a validation prediction, with matching raw image and label when available."""
+def open_validation_prediction(prediction_path: Path, raw_dataset: Path | None = None,
+                               prefetch_previous: bool = True, prefetch_next: bool = True,
+                               prefetch_radius: int = 1) -> None:
+    """Inspect and navigate validation predictions with matching raw images and labels."""
     import napari
 
-    identifier = case_id(prediction_path)
+    validation_folder, identifier = prediction_path.parent, case_id(prediction_path)
+    cases = prediction_case_ids(validation_folder)
+    if identifier not in cases:
+        raise ValueError(f"No validation prediction found for {prediction_path.name}.")
+    loader = lambda case: _read_validation_case(validation_folder, raw_dataset, case)
     viewer = napari.Viewer(title=f"nnWorkbench validation — {identifier}")
-    if raw_dataset is not None and raw_dataset.is_dir():
-        files = related_files_for_case(raw_dataset, identifier)
-        for image_path in files.images:
-            data, affine = _read_nifti(image_path)
-            viewer.add_image(data, name=f"Image — {image_path.name}", affine=affine)
-        for label_path in files.labels:
-            data, affine = _read_nifti(label_path)
-            viewer.add_labels(data, name=f"Label — {label_path.name}", affine=affine)
-    prediction_data, prediction_affine = _read_nifti(prediction_path)
-    viewer.add_labels(prediction_data, name=f"Validation prediction — {prediction_path.name}", affine=prediction_affine)
-    _reset_middle_slice(
-        viewer, _CaseData((_LayerData(prediction_path.name, "image", prediction_data, prediction_affine),), ())
-    )
-    viewer.reset_view()
+    current_data = loader(identifier)
+    _display_case(viewer, current_data)
+    navigator = CaseNavigator(viewer, loader, cases, identifier, current_data,
+                              prefetch_previous, prefetch_next, prefetch_radius)
+    viewer.window.add_dock_widget(navigator, name="Case navigation", area="right")
+    viewer.bind_key("a", lambda *_: navigator.previous(), overwrite=True)
+    viewer.bind_key("d", lambda *_: navigator.next(), overwrite=True)
     napari.run()
 
 
@@ -783,7 +799,9 @@ def main() -> None:
         elif arguments.annotate:
             open_annotation(selected)
         elif arguments.validation_prediction:
-            open_validation_prediction(selected, arguments.raw_dataset)
+            open_validation_prediction(selected, arguments.raw_dataset,
+                                       not arguments.no_prefetch_previous, not arguments.no_prefetch_next,
+                                       arguments.prefetch_radius)
         else:
             open_case(selected, not arguments.no_prefetch_previous, not arguments.no_prefetch_next,
                       arguments.prefetch_radius)

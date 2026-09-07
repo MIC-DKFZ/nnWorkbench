@@ -647,13 +647,11 @@ class DatasetWorkspace(QWidget):
             actions = ("Inspect",)
         widget, layout = self._file_row(path)
         for action in actions:
-            button = QPushButton(action)
-            button.setObjectName("rawActionButton")
             if action == "Inspect":
-                button.clicked.connect(lambda _=False, selected=path: self._inspect_file(selected))
+                callback = lambda _=False, selected=path: self._inspect_file(selected)
             elif action in {"Annotate", "Edit"}:
-                button.clicked.connect(lambda _=False, selected=path: self._annotate_file(selected))
-            layout.addWidget(button)
+                callback = lambda _=False, selected=path: self._annotate_file(selected)
+            layout.addWidget(self._file_action_button(action, callback))
         return widget
 
     @staticmethod
@@ -665,6 +663,14 @@ class DatasetWorkspace(QWidget):
         filename.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout.addWidget(filename, 1)
         return widget, layout
+
+    @staticmethod
+    def _file_action_button(label: str, callback: Callable[..., None]) -> QPushButton:
+        """Create uniformly sized inline actions for all file trees."""
+        button = QPushButton(label); button.setObjectName("rawActionButton")
+        button.setFixedWidth(QPushButton("Annotate").sizeHint().width())
+        button.clicked.connect(callback)
+        return button
 
     def _inspect_file(self, path: Path) -> None:
         command = ["-m", "nnworkbench.services.napari_inspector", str(path),
@@ -682,6 +688,11 @@ class DatasetWorkspace(QWidget):
         command = ["-m", "nnworkbench.services.napari_inspector", str(path), "--validation-prediction"]
         if self._record is not None and self._record.raw_path is not None:
             command.extend(("--raw-dataset", str(self._record.raw_path)))
+        if not self._napari_prefetch_previous:
+            command.append("--no-prefetch-previous")
+        if not self._napari_prefetch_next:
+            command.append("--no-prefetch-next")
+        command.extend(("--prefetch-radius", str(self._napari_prefetch_radius)))
         self._start_napari(command, path)
 
     def _inspect_preprocessed_file(self, path: Path) -> None:
@@ -1244,9 +1255,8 @@ class DatasetWorkspace(QWidget):
     def _preprocessed_file_row(self, path: Path) -> QWidget:
         """Offer inspection for a B2ND data file; the matching segmentation loads automatically."""
         widget, layout = self._file_row(path)
-        inspect = QPushButton("Inspect"); inspect.setObjectName("rawActionButton")
-        inspect.clicked.connect(lambda _=False, selected=path: self._inspect_preprocessed_file(selected))
-        layout.addWidget(inspect)
+        layout.addWidget(self._file_action_button(
+            "Inspect", lambda _=False, selected=path: self._inspect_preprocessed_file(selected)))
         return widget
 
     def _render_results(self, data: object) -> None:
@@ -1301,9 +1311,8 @@ class DatasetWorkspace(QWidget):
     def _validation_file_row(self, path: Path) -> QWidget:
         """Match labelsTr's Inspect-button layout in the Results tree."""
         widget, layout = self._file_row(path)
-        inspect = QPushButton("Inspect"); inspect.setObjectName("rawActionButton")
-        inspect.clicked.connect(lambda _=False, selected=path: self._inspect_validation_file(selected))
-        layout.addWidget(inspect)
+        layout.addWidget(self._file_action_button(
+            "Inspect", lambda _=False, selected=path: self._inspect_validation_file(selected)))
         return widget
 
     def _show_json_content(self, item: QTreeWidgetItem | None, previous: QTreeWidgetItem | None) -> None:

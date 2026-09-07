@@ -93,7 +93,9 @@ class MetadataEditor(QWidget):
         header.setVisible(False)
         table.setColumnWidth(0, 56)
         table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
+        vertical_header = table.verticalHeader()
+        vertical_header.setVisible(False)
+        vertical_header.setDefaultSectionSize(32)
         return table
 
     def _table_controls(self, table: QTableWidget, *, channel_ids: bool) -> QWidget:
