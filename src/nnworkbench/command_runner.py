@@ -12,6 +12,7 @@ from .path_setup import configured_paths
 from .services.annotation_conversion import convert_annotations
 from .services.dataset_scanner import discover
 from .services.label_analysis import analyse_label_distribution
+from .services.image_stack import stack_image_folder
 
 
 def run_with_configured_paths(command: Sequence[str]) -> int:
@@ -52,6 +53,25 @@ def run_annotation_conversion(dataset_id: int, workers: int | None = None) -> in
     return 0
 
 
+def run_image_stack(input_directory: Path, *, file_type: str, output_path: Path | None = None,
+                    workers: int | None = None, scale_factor: int = 1,
+                    spacing: tuple[float, float, float] | None = None, overwrite: bool = False,
+                    show_mitk_output: bool = False) -> int:
+    """Stack 2D image slices into one NIfTI volume and print concise progress."""
+    stack_image_folder(
+        input_directory,
+        file_type=file_type,
+        output_path=output_path,
+        workers=workers,
+        scale_factor=scale_factor,
+        spacing=spacing,
+        overwrite=overwrite,
+        quiet=not show_mitk_output,
+        progress=print,
+    )
+    return 0
+
+
 def _run_builtin_command(command: Sequence[str]) -> int | None:
     """Run an nnWorkbench data-management command, or return ``None`` for nnU-Net."""
     if not command:
@@ -69,6 +89,35 @@ def _run_builtin_command(command: Sequence[str]) -> int | None:
         parser.add_argument("--workers", type=int, default=None, help="Maximum worker processes")
         options = parser.parse_args(arguments)
         return run_annotation_conversion(options.dataset, options.workers)
+    if name == "stack-images":
+        parser = argparse.ArgumentParser(prog=f"nnworkbench-run {name}")
+        parser.add_argument("input_directory", type=Path,
+                            help="Directory containing ordered 2D image slices")
+        parser.add_argument("--file-type", required=True,
+                            help="MITK-readable slice extension, for example .tif or .png")
+        parser.add_argument("-o", "--output", type=Path,
+                            help="Output image path (default: beside the input folder)")
+        parser.add_argument("--workers", type=int, default=None,
+                            help="Slice-loading worker threads (default: up to 4)")
+        parser.add_argument("--scale-factor", type=int, default=1,
+                            help="Integer downsampling factor for X, Y, and Z (default: 1)")
+        parser.add_argument("--spacing", type=float, nargs=3, metavar=("X", "Y", "Z"),
+                            help="Output voxel spacing in X Y Z order (default: 1 1 1)")
+        parser.add_argument("--overwrite", action="store_true",
+                            help="Replace an existing output file")
+        parser.add_argument("--show-mitk-output", action="store_true",
+                            help="Show MITK/ITK messages emitted while slices are loaded")
+        options = parser.parse_args(arguments)
+        return run_image_stack(
+            options.input_directory,
+            file_type=options.file_type,
+            output_path=options.output,
+            workers=options.workers,
+            scale_factor=options.scale_factor,
+            spacing=tuple(options.spacing) if options.spacing is not None else None,
+            overwrite=options.overwrite,
+            show_mitk_output=options.show_mitk_output,
+        )
     return None
 
 

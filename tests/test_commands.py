@@ -92,3 +92,30 @@ def test_command_runner_builtin_tools(monkeypatch, tmp_path) -> None:
         ("analysis", (dataset, 3, {"progress": print})),
         ("conversion", (dataset, 2, {"progress": print})),
     ]
+
+
+def test_stack_images_command(monkeypatch, tmp_path) -> None:
+    captured: dict[str, object] = {}
+    input_directory = tmp_path / "slices"; input_directory.mkdir()
+    output = tmp_path / "volume.nii.gz"
+    monkeypatch.setattr(
+        command_runner,
+        "stack_image_folder",
+        lambda directory, **kwargs: captured.update(directory=directory, **kwargs) or output,
+    )
+
+    assert command_runner._run_builtin_command([
+        "stack-images", str(input_directory), "--file-type", ".png", "-o", str(output),
+        "--workers", "2", "--scale-factor", "2", "--spacing", "0.5", "0.5", "1.0", "--overwrite",
+    ]) == 0
+    assert captured == {
+        "directory": input_directory,
+        "file_type": ".png",
+        "output_path": output,
+        "workers": 2,
+        "scale_factor": 2,
+        "spacing": (0.5, 0.5, 1.0),
+        "overwrite": True,
+        "quiet": True,
+        "progress": print,
+    }

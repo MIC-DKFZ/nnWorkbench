@@ -116,6 +116,17 @@ nnworkbench-run convert-annotations -d 1 --workers 4
 
 `-d` (or `--dataset`) specifies the numeric nnU-Net dataset ID under the saved `nnUNet_raw` path. For example, use `-d 10` for `Dataset010_MyDataset`. Annotation conversion requires a valid final `ignore` label in the dataset's `dataset.json`. Run `nnworkbench-get-paths` to view the saved path configuration.
 
+### Stack 2D image slices
+
+Create a 3D NIfTI image from naturally ordered 2D slices in a MITK-readable format, such as TIFF or PNG. All selected files must have the same shape and data type. The default output is saved beside the input folder as `<folder-name>.nii.gz`, or `<folder-name>_scale<factor>.nii.gz` when downsampling.
+
+```bash
+nnworkbench-run stack-images /path/to/image_slices --file-type .png \
+  --spacing 0.5 0.5 1.0 --scale-factor 2 --workers 4
+```
+
+`--spacing` uses X Y Z order and defaults to `1 1 1`. `--scale-factor` is an integer downsampling factor applied to all three volume axes. When `--spacing` is supplied, its written value is increased by the same factor; the default unit spacing is unchanged. Use `-o /path/to/output.nii.gz` to choose an output file and `--overwrite` to replace one. MITK/ITK's per-slice messages are hidden by default; pass `--show-mitk-output` for diagnostics.
+
 ## Further documentation
 
 - [nnU-Net workflow guide](docs/nnunet-workflow.md)
