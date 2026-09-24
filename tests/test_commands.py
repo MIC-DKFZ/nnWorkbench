@@ -119,3 +119,23 @@ def test_stack_images_command(monkeypatch, tmp_path) -> None:
         "quiet": True,
         "progress": print,
     }
+
+
+def test_reduce_checkpoints_command(monkeypatch, tmp_path) -> None:
+    captured: dict[str, object] = {}
+    model_directory = tmp_path / "trained_model"; model_directory.mkdir()
+    fold = model_directory / "fold_0"
+    monkeypatch.setattr(
+        command_runner,
+        "reduce_model_for_sharing",
+        lambda directory, **kwargs: captured.update(directory=directory, **kwargs) or [fold],
+    )
+
+    assert command_runner._run_builtin_command([
+        "reduce-checkpoints", str(model_directory), "--reset-trainer-name",
+    ]) == 0
+    assert captured == {
+        "directory": model_directory,
+        "reset_trainer_name": True,
+        "progress": print,
+    }

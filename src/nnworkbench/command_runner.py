@@ -10,9 +10,10 @@ from pathlib import Path
 
 from .path_setup import configured_paths
 from .services.annotation_conversion import convert_annotations
+from .services.checkpoint_reduction import reduce_model_for_sharing
 from .services.dataset_scanner import discover
-from .services.label_analysis import analyse_label_distribution
 from .services.image_stack import stack_image_folder
+from .services.label_analysis import analyse_label_distribution
 
 
 def run_with_configured_paths(command: Sequence[str]) -> int:
@@ -72,6 +73,15 @@ def run_image_stack(input_directory: Path, *, file_type: str, output_path: Path 
     return 0
 
 
+def run_checkpoint_reduction(model_directory: Path, *, reset_trainer_name: bool = False) -> int:
+    """Strip a trained model folder down to inference-only files and print progress."""
+    folds = reduce_model_for_sharing(
+        model_directory, reset_trainer_name=reset_trainer_name, progress=print,
+    )
+    print(f"Reduced {len(folds)} fold(s) in {model_directory} for sharing.")
+    return 0
+
+
 def _run_builtin_command(command: Sequence[str]) -> int | None:
     """Run an nnWorkbench data-management command, or return ``None`` for nnU-Net."""
     if not command:
@@ -117,6 +127,16 @@ def _run_builtin_command(command: Sequence[str]) -> int | None:
             spacing=tuple(options.spacing) if options.spacing is not None else None,
             overwrite=options.overwrite,
             show_mitk_output=options.show_mitk_output,
+        )
+    if name == "reduce-checkpoints":
+        parser = argparse.ArgumentParser(prog=f"nnworkbench-run {name}")
+        parser.add_argument("model_directory", type=Path,
+                            help="Trained model folder containing fold_* subdirectories")
+        parser.add_argument("--reset-trainer-name", action="store_true",
+                            help="Rewrite each checkpoint's trainer_name to nnUNetTrainer")
+        options = parser.parse_args(arguments)
+        return run_checkpoint_reduction(
+            options.model_directory, reset_trainer_name=options.reset_trainer_name,
         )
     return None
 

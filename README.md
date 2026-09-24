@@ -127,6 +127,16 @@ nnworkbench-run stack-images /path/to/image_slices --file-type .png \
 
 `--spacing` uses X Y Z order and defaults to `1 1 1`. `--scale-factor` is an integer downsampling factor applied to all three volume axes. When `--spacing` is supplied, its written value is increased by the same factor; the default unit spacing is unchanged. Use `-o /path/to/output.nii.gz` to choose an output file and `--overwrite` to replace one. MITK/ITK's per-slice messages are hidden by default; pass `--show-mitk-output` for diagnostics.
 
+### Reduce a trained model for sharing
+
+Strip a trained model folder down to what inference needs, for every fold in place. Each fold's `checkpoint_final.pth` has its optimizer state removed, `checkpoint_best.pth` is deleted, and the `validation` folder is deleted.
+
+```bash
+nnworkbench-run reduce-checkpoints /path/to/nnUNet_results/Dataset001_.../nnUNetTrainer__nnUNetPlans__3d_fullres
+```
+
+Pass `--reset-trainer-name` to also rewrite each checkpoint's `trainer_name` to `nnUNetTrainer`, so a custom trainer class is not required to run inference. This is destructive and edits the model folder in place; keep a copy if you need the optimizer state, best checkpoint, or validation results later.
+
 ## Further documentation
 
 - [nnU-Net workflow guide](docs/nnunet-workflow.md)
