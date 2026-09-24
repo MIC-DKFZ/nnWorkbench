@@ -16,9 +16,13 @@ def training_command(dataset_id: int, plans_file: str, configuration: str, train
 
 
 def prediction_command(dataset_id: int, input_directory: str, output_directory: str, plans: str,
-                       configuration: str, additional_arguments: str = "") -> str:
-    return shlex.join(("nnUNetv2_predict", "-i", input_directory, "-o", output_directory, "-d",
-                       str(dataset_id), "-c", configuration, "-p", plans, *shlex.split(additional_arguments)))
+                       configuration: str, additional_arguments: str = "", trainer: str = "nnUNetTrainer",
+                       folds: str = "0 1 2 3 4") -> str:
+    arguments = ["nnUNetv2_predict", "-i", input_directory, "-o", output_directory, "-d",
+                 str(dataset_id), "-c", configuration, "-p", plans, "-tr", trainer]
+    if selected_folds := shlex.split(folds):
+        arguments.extend(("-f", *selected_folds))
+    return shlex.join((*arguments, *shlex.split(additional_arguments)))
 
 
 def wrapped_command(command: str) -> str:

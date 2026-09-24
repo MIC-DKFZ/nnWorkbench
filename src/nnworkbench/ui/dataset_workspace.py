@@ -59,7 +59,7 @@ from nnworkbench.services.dataset_contents import (
     fold_training_status,
     json_value,
     model_folds,
-    model_plan_configuration,
+    model_trainer_plan_configuration,
     preprocessed_files,
     raw_files,
     trained_models,
@@ -1105,10 +1105,11 @@ class DatasetWorkspace(QWidget):
             print(f"Could not load training plans: {error}")
 
     def _configure_prediction(self) -> None:
-        options = [option for path in self._trained_model_paths if (option := model_plan_configuration(path))]
+        options = [option for path in self._trained_model_paths
+                   if (option := model_trainer_plan_configuration(path))]
         has_local_models = bool(options)
         if not options:
-            options = [("nnUNetPlans", configuration)
+            options = [("nnUNetTrainer", "nnUNetPlans", configuration)
                        for configuration in ("2d", "3d_fullres", "3d_lowres", "3d_cascade_fullres")]
         dialog = PredictionDialog(
             self._record.dataset_id,

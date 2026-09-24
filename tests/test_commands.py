@@ -19,9 +19,13 @@ def test_nnunet_command_generation() -> None:
     assert training_command(1, "nnUNetPlans.json", "3d_fullres", "nnUNetTrainer", "0", "--npz") == (
         "nnUNetv2_train 1 3d_fullres 0 -tr nnUNetTrainer -p nnUNetPlans --npz")
     assert prediction_command(1, "/input path", "/output path", "nnUNetPlans", "3d_fullres") == (
-        "nnUNetv2_predict -i '/input path' -o '/output path' -d 1 -c 3d_fullres -p nnUNetPlans")
+        "nnUNetv2_predict -i '/input path' -o '/output path' -d 1 -c 3d_fullres -p nnUNetPlans -tr nnUNetTrainer -f 0 1 2 3 4")
     assert prediction_command(1, "/input", "/output", "nnUNetPlans", "2d", "--save_probabilities") == (
-        "nnUNetv2_predict -i /input -o /output -d 1 -c 2d -p nnUNetPlans --save_probabilities")
+        "nnUNetv2_predict -i /input -o /output -d 1 -c 2d -p nnUNetPlans -tr nnUNetTrainer -f 0 1 2 3 4 --save_probabilities")
+    assert prediction_command(1, "/input", "/output", "nnUNetPlans", "2d", trainer="CustomTrainer") == (
+        "nnUNetv2_predict -i /input -o /output -d 1 -c 2d -p nnUNetPlans -tr CustomTrainer -f 0 1 2 3 4")
+    assert prediction_command(1, "/input", "/output", "nnUNetPlans", "2d", folds="0 2") == (
+        "nnUNetv2_predict -i /input -o /output -d 1 -c 2d -p nnUNetPlans -tr nnUNetTrainer -f 0 2")
     assert wrapped_command("nnUNetv2_train 1 2d 0") == "nnworkbench-run nnUNetv2_train 1 2d 0"
 
 

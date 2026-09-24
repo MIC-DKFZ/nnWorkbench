@@ -7,6 +7,7 @@ from nnworkbench.services.dataset_contents import (
     json_value,
     model_folds,
     model_plan_configuration,
+    model_trainer_plan_configuration,
     plan_files,
     preprocessed_files,
     raw_files,
@@ -49,6 +50,8 @@ def test_plan_and_model_discovery(tmp_path: Path) -> None:
     assert [str(path) for path in preprocessed_files(dataset)] == ["configuration/custom_plans.json", "dataset.json", "nnUNetPlans.json"]
     assert [str(path) for path in trained_models(dataset)] == ["nnUNetTrainer__nnUNetPlans__3d_fullres"]
     assert model_plan_configuration(dataset / "nnUNetTrainer__nnUNetPlans__3d_fullres") == ("nnUNetPlans", "3d_fullres")
+    assert model_trainer_plan_configuration(dataset / "nnUNetTrainer__nnUNetPlans__3d_fullres") == (
+        "nnUNetTrainer", "nnUNetPlans", "3d_fullres")
 
 
 def test_model_folds_and_validation_summary(tmp_path: Path) -> None:

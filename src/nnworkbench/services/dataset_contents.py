@@ -59,6 +59,12 @@ def model_plan_configuration(model_path: Path) -> tuple[str, str] | None:
     return (parts[-2], parts[-1]) if len(parts) >= 3 else None
 
 
+def model_trainer_plan_configuration(model_path: Path) -> tuple[str, str, str] | None:
+    """Extract trainer, plans identifier, and configuration from a model folder name."""
+    parts = model_path.name.split("__")
+    return (parts[-3], parts[-2], parts[-1]) if len(parts) >= 3 else None
+
+
 def model_folds(model_path: Path) -> list[Path]:
     """Return the fold directories for an nnU-Net trained model."""
     if not model_path.is_dir():
