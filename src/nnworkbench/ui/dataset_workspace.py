@@ -66,6 +66,7 @@ from nnworkbench.services.dataset_contents import (
     validation_files,
 )
 from nnworkbench.services.dataset_json import ImageCountCheck, image_count_check
+from nnworkbench.services.image_files import has_image_suffix
 from nnworkbench.services.label_analysis import (
     analysis_path,
     label_files,
@@ -78,6 +79,7 @@ from .prediction_dialog import PredictionDialog
 from .prediction_inspection_dialog import PredictionInspectionDialog
 from .preprocessing_dialog import PreprocessingDialog
 from .training_dialog import TrainingDialog
+from .workflow_guide import AnnotationWorkflowGuide
 
 
 class _WorkerSignals(QObject):
@@ -322,29 +324,10 @@ class DatasetWorkspace(QWidget):
         self._preload_nnunet_extensions()
 
     def show_annotation_documentation(self) -> None:
-        """Show the bundled annotation-workflow PDF in the main workspace."""
+        """Show the bundled annotation-workflow guide in the main workspace."""
         if self.documentation_content_layout.count() == 0:
-            pdf_path = Path(__file__).parent.parent / "assets" / "Annotation_Workflow.pdf"
-            try:
-                from PySide6.QtPdf import QPdfDocument
-                from PySide6.QtPdfWidgets import QPdfView
-
-                document = QPdfDocument(self.documentation_content)
-                document.load(str(pdf_path))
-                view = QPdfView(self.documentation_content)
-                view.setObjectName("annotationDocumentationView")
-                view.setStyleSheet("background: #ffffff; border: 0;")
-                view.setDocument(document)
-                multi_page = getattr(QPdfView.PageMode, "MultiPage", None)
-                if multi_page is not None:
-                    view.setPageMode(multi_page)
-                fit_to_width = getattr(QPdfView.ZoomMode, "FitToWidth", None)
-                if fit_to_width is not None:
-                    view.setZoomMode(fit_to_width)
-                self.documentation_content_layout.addWidget(view)
-            except ImportError:
-                message = QLabel("PDF preview is unavailable in this PySide6 installation.")
-                message.setWordWrap(True); self.documentation_content_layout.addWidget(message)
+            self.annotation_guide = AnnotationWorkflowGuide(parent=self.documentation_content)
+            self.documentation_content_layout.addWidget(self.annotation_guide)
 
         self.summary.hide(); self.metadata_warning.hide(); self.consistency_warning.hide(); self.tabs.hide(); self.console_panel.hide()
         self.documentation_panel.show()
@@ -807,7 +790,7 @@ class DatasetWorkspace(QWidget):
             return
         files = label_files(self._record.raw_path)
         if not files:
-            QMessageBox.information(self, "No labels found", "No NIfTI files were found in labelsTr.")
+            QMessageBox.information(self, "No labels found", "No label images were found in labelsTr.")
             return
         raw_path, workers = self._record.raw_path, self._analysis_workers
         self._analysis_running = True; self.analyze_labels.setEnabled(False); self.analyze_labels.setText("Analyzing labels…")
@@ -834,7 +817,7 @@ class DatasetWorkspace(QWidget):
         raw_path, workers = self._record.raw_path, self._analysis_workers
         files = annotation_files(raw_path)
         if not files:
-            QMessageBox.information(self, "No annotations found", "No NIfTI files were found in annotationsTr.")
+            QMessageBox.information(self, "No annotations found", "No annotation images were found in annotationsTr.")
             return
         self._conversion_request += 1; request, version = self._conversion_request, self._dataset_version
         self._conversion_running = True
@@ -1088,7 +1071,7 @@ class DatasetWorkspace(QWidget):
                 plans.append((str(path), names))
         has_local_plans = bool(plans)
         if not plans:
-            plans = [("nnUNetPlans.json", ("2d", "3d_fullres", "3d_lowres", "3d_cascade_fullres"))]
+            plans = [("nnUNetResEncUNetLPlans.json", ("2d", "3d_fullres", "3d_lowres", "3d_cascade_fullres"))]
         default_trainer = ("nnUNetTrainerBetterIgnoreSampling" if self._annotation_workflow_enabled
                            else "nnUNetTrainer")
         dialog = TrainingDialog(self._record.dataset_id, plans, self._available_trainers,
@@ -1109,7 +1092,9 @@ class DatasetWorkspace(QWidget):
                    if (option := model_trainer_plan_configuration(path))]
         has_local_models = bool(options)
         if not options:
-            options = [("nnUNetTrainer", "nnUNetPlans", configuration)
+            trainer = ("nnUNetTrainerBetterIgnoreSampling" if self._annotation_workflow_enabled
+                       else "nnUNetTrainer")
+            options = [(trainer, "nnUNetResEncUNetLPlans", configuration)
                        for configuration in ("2d", "3d_fullres", "3d_lowres", "3d_cascade_fullres")]
         dialog = PredictionDialog(
             self._record.dataset_id,
@@ -1305,7 +1290,7 @@ class DatasetWorkspace(QWidget):
             item.setData(0, Qt.ItemDataRole.UserRole, str(target))
             item.setData(0, self._VALIDATION_FILE_ROLE, True)
             container.addChild(item)
-            if target.name.endswith((".nii", ".nii.gz")):
+            if has_image_suffix(target):
                 item.setText(0, "")
                 self.models.setItemWidget(item, 0, self._validation_file_row(target))
 

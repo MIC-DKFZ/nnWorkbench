@@ -1,3 +1,7 @@
+from pathlib import Path
+
+import pytest
+
 from nnworkbench import command_runner, path_setup
 from nnworkbench.path_setup import set_paths_command, trainer_directory
 from nnworkbench.services.commands import (
@@ -143,3 +147,33 @@ def test_reduce_checkpoints_command(monkeypatch, tmp_path) -> None:
         "reset_trainer_name": True,
         "progress": print,
     }
+
+
+def test_inspect_command(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        command_runner,
+        "run_dataset_inspection",
+        lambda dataset, index: captured.update(dataset=dataset, index=index) or 0,
+    )
+
+    assert command_runner._run_builtin_command(["inspect", "-d", "42", "-i", "12"]) == 0
+    assert captured == {"dataset": 42, "index": 12}
+    assert command_runner._run_builtin_command(["inspect", "-d", "42"]) == 0
+    assert captured == {"dataset": 42, "index": 1}
+
+
+def test_dataset_inspection_opens_selected_image(monkeypatch, tmp_path) -> None:
+    from nnworkbench.services import napari_inspector
+
+    images = tmp_path / "imagesTr"; images.mkdir()
+    for case in ("case_001", "case_002", "case_003"):
+        (images / f"{case}_0000.nii.gz").touch()
+    opened: list[Path] = []
+    monkeypatch.setattr(command_runner, "raw_dataset_directory", lambda _dataset: tmp_path)
+    monkeypatch.setattr(napari_inspector, "open_case", lambda image: opened.append(image))
+
+    assert command_runner.run_dataset_inspection(42, 2) == 0
+    assert opened == [images / "case_002_0000.nii.gz"]
+    with pytest.raises(ValueError, match="between 1 and 3"):
+        command_runner.run_dataset_inspection(42, 4)

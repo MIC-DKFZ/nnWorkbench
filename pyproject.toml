@@ -28,7 +28,12 @@ nnworkbench-get-paths = "nnworkbench.path_setup:get_paths_main"
 nnworkbench-run = "nnworkbench.command_runner:main"
 
 [tool.setuptools.package-data]
-nnworkbench = ["assets/*.svg", "assets/*.pdf"]
+nnworkbench = [
+    "assets/*.svg",
+    "assets/*.png",
+    "assets/annotation_workflow/*.md",
+    "assets/annotation_workflow/images/*.png",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

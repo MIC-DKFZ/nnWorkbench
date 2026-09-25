@@ -286,6 +286,13 @@ QTabBar::tab:selected {
     background: #ffffff;
     color: #0a4697;
 }
+QTextBrowser#annotationGuide {
+    background: #ffffff;
+    border: 1px solid #d7d7d7;
+    border-radius: 6px;
+    color: #252525;
+    font-size: 14px;
+}
 QTabBar QToolButton {
     background: #ffffff;
     border: 1px solid #c9c9c9;

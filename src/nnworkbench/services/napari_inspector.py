@@ -24,7 +24,8 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-_NIFTI_SUFFIXES = (".nii.gz", ".nii")
+from .image_files import has_image_suffix, image_suffix, strip_image_suffix
+
 _CHANNEL_SUFFIX = re.compile(r"_\d{4}$")
 _B2ND_SUFFIX = ".b2nd"
 _B2ND_SEGMENTATION_SUFFIX = "_seg.b2nd"
@@ -89,14 +90,7 @@ class PrefetchStatusBar(QWidget):
 
 def case_id(path: Path) -> str:
     """Derive the nnU-Net case ID, stripping an image-channel suffix when present."""
-    name = path.name
-    for suffix in _NIFTI_SUFFIXES:
-        if name.endswith(suffix):
-            name = name[:-len(suffix)]
-            break
-    else:
-        name = path.stem
-    return _CHANNEL_SUFFIX.sub("", name)
+    return _CHANNEL_SUFFIX.sub("", strip_image_suffix(path))
 
 
 def related_files(selected: Path) -> InspectionFiles:
@@ -107,12 +101,12 @@ def related_files(selected: Path) -> InspectionFiles:
 def related_files_for_case(dataset: Path, identifier: str) -> InspectionFiles:
     """Find all raw files for a known nnU-Net case ID."""
 
-    def matching(folder: str, nifti_only: bool = False) -> tuple[Path, ...]:
+    def matching(folder: str, images_only: bool = False) -> tuple[Path, ...]:
         directory = dataset / folder
         if not directory.is_dir():
             return ()
         paths = (path for path in directory.iterdir() if path.is_file() and case_id(path) == identifier
-                 and (not nifti_only or path.name.endswith(_NIFTI_SUFFIXES)))
+                 and (not images_only or has_image_suffix(path)))
         return tuple(sorted(paths, key=lambda path: path.name.casefold()))
 
     return InspectionFiles(matching("imagesTr", True), matching("labelsTr", True), matching("annotationsTr"))
@@ -124,7 +118,7 @@ def image_case_ids(dataset: Path) -> tuple[str, ...]:
     if not images.is_dir():
         return ()
     return tuple(sorted({case_id(path) for path in images.iterdir()
-                         if path.is_file() and path.name.endswith(_NIFTI_SUFFIXES)}, key=str.casefold))
+                         if path.is_file() and has_image_suffix(path)}, key=str.casefold))
 
 
 def prediction_case_ids(prediction_folder: Path) -> tuple[str, ...]:
@@ -132,7 +126,7 @@ def prediction_case_ids(prediction_folder: Path) -> tuple[str, ...]:
     if not prediction_folder.is_dir():
         return ()
     return tuple(sorted({case_id(path) for path in prediction_folder.iterdir()
-                         if path.is_file() and path.name.endswith(_NIFTI_SUFFIXES)}, key=str.casefold))
+                         if path.is_file() and has_image_suffix(path)}, key=str.casefold))
 
 
 def preprocessed_case_id(path: Path) -> str:
@@ -155,7 +149,7 @@ def _matching_case_files(directory: Path | None, identifier: str) -> tuple[Path,
     if directory is None or not directory.is_dir():
         return ()
     return tuple(sorted((path for path in directory.iterdir()
-                         if path.is_file() and path.name.endswith(_NIFTI_SUFFIXES) and case_id(path) == identifier),
+                         if path.is_file() and has_image_suffix(path) and case_id(path) == identifier),
                         key=lambda path: path.name.casefold()))
 
 
@@ -172,16 +166,12 @@ def prefetch_indices(index: int, count: int, previous: bool, following: bool, ra
 
 def image_layer_name(path: Path) -> str:
     """Return the image-layer name expected by napari-nninteractive."""
-    name = path.name
-    for suffix in _NIFTI_SUFFIXES:
-        if name.endswith(suffix):
-            return name[:-len(suffix)]
-    return path.stem
+    return strip_image_suffix(path)
 
 
 def file_ending(path: Path) -> str:
-    """Keep a compound NIfTI suffix intact, or use the image's normal suffix."""
-    return ".nii.gz" if path.name.endswith(".nii.gz") else path.suffix
+    """Keep a compound suffix such as ``.nii.gz`` intact, or use the image's normal suffix."""
+    return image_suffix(path) or path.suffix
 
 
 def annotation_target_path(image_path: Path) -> Path:
@@ -203,7 +193,7 @@ def semantic_map_name(image_path: Path) -> str:
     return f"semantic map - {image_layer_name(image_path)}"
 
 
-def _read_nifti(path: Path) -> tuple[object, object]:
+def _read_image(path: Path) -> tuple[object, object]:
     """Read image data and a Napari affine transform from MITK-Python."""
     import mitk
     import numpy as np
@@ -214,9 +204,11 @@ def _read_nifti(path: Path) -> tuple[object, object]:
     # Reverse both coordinate axes to produce Napari's data-coordinate affine.
     reverse = np.flipud(np.eye(3))
     linear = reverse @ np.asarray(image.direction) @ reverse @ np.diag(np.asarray(image.spacing)[::-1])
+    # MITK always reports 3D geometry; a 2D image uses only its last two (Y, X) axes.
+    spatial = min(data.ndim, 3)
     affine = np.eye(data.ndim + 1)
-    affine[-4:-1, -4:-1] = linear
-    affine[-4:-1, -1] = np.asarray(image.origin)[::-1]
+    affine[-spatial - 1:-1, -spatial - 1:-1] = linear[-spatial:, -spatial:]
+    affine[-spatial - 1:-1, -1] = np.asarray(image.origin)[::-1][-spatial:]
     return data, affine
 
 
@@ -238,15 +230,15 @@ def _read_case(dataset: Path, identifier: str) -> _CaseData:
     files = related_files_for_case(dataset, identifier)
     layers: list[_LayerData] = []
     for path in files.images:
-        data, affine = _read_nifti(path)
+        data, affine = _read_image(path)
         layers.append(_LayerData(path.name, "image", data, affine))
     for path in files.labels:
-        data, affine = _read_nifti(path)
+        data, affine = _read_image(path)
         layers.append(_LayerData(path.name, "labels", data, affine))
     skipped: list[Path] = []
     for path in files.annotations:
-        if path.name.endswith(_NIFTI_SUFFIXES):
-            data, affine = _read_nifti(path)
+        if has_image_suffix(path):
+            data, affine = _read_image(path)
             layers.append(_LayerData(path.name, "annotation_labels", data, affine))
         elif path.suffix.casefold() == ".json":
             points = _read_json_points(path)
@@ -262,13 +254,13 @@ def _read_prediction_case(prediction_folder: Path, image_folder: Path | None, re
     """Load one prediction-led case and any matching optional comparison files."""
     layers: list[_LayerData] = []
     for path in _matching_case_files(image_folder, identifier):
-        data, affine = _read_nifti(path)
+        data, affine = _read_image(path)
         layers.append(_LayerData(f"Image — {path.name}", "image", data, affine))
     for path in _matching_case_files(prediction_folder, identifier):
-        data, affine = _read_nifti(path)
+        data, affine = _read_image(path)
         layers.append(_LayerData(f"Prediction — {path.name}", "prediction", data, affine))
     for path in _matching_case_files(reference_folder, identifier):
-        data, affine = _read_nifti(path)
+        data, affine = _read_image(path)
         layers.append(_LayerData(f"Reference — {path.name}", "reference", data, affine))
     return _CaseData(tuple(layers), ())
 
@@ -279,13 +271,13 @@ def _read_validation_case(validation_folder: Path, raw_dataset: Path | None, ide
     if raw_dataset is not None and raw_dataset.is_dir():
         files = related_files_for_case(raw_dataset, identifier)
         for path in files.images:
-            data, affine = _read_nifti(path)
+            data, affine = _read_image(path)
             layers.append(_LayerData(f"Image — {path.name}", "image", data, affine))
         for path in files.labels:
-            data, affine = _read_nifti(path)
+            data, affine = _read_image(path)
             layers.append(_LayerData(f"Label — {path.name}", "labels", data, affine))
     for path in _matching_case_files(validation_folder, identifier):
-        data, affine = _read_nifti(path)
+        data, affine = _read_image(path)
         layers.append(_LayerData(f"Validation prediction — {path.name}", "prediction", data, affine))
     return _CaseData(tuple(layers), ())
 
@@ -526,13 +518,13 @@ def open_annotation(selected_path: Path) -> None:
     import numpy as np
 
     image_path = annotation_source_image(selected_path)
-    data, affine = _read_nifti(image_path)
+    data, affine = _read_image(image_path)
     viewer = napari.Viewer(title=f"nnWorkbench annotation — {case_id(image_path)}")
     viewer.add_image(data, name=image_layer_name(image_path), affine=affine)
     target = (selected_path if selected_path.parent.name == "annotationsTr"
-              and selected_path.name.endswith(_NIFTI_SUFFIXES) else annotation_target_path(image_path))
+              and has_image_suffix(selected_path) else annotation_target_path(image_path))
     if target.is_file():
-        annotation_data, annotation_affine = _read_nifti(target)
+        annotation_data, annotation_affine = _read_image(target)
         # MITK exposes an efficient, read-only NumPy view. nnInteractive updates the
         # semantic map in place, so an existing annotation must be copied first.
         viewer.add_labels(annotation_data.copy(), name=semantic_map_name(image_path), affine=annotation_affine)
@@ -712,7 +704,7 @@ def open_prediction_folder(prediction_folder: Path, image_folder: Path | None = 
 
     cases = prediction_case_ids(prediction_folder)
     if not cases:
-        raise ValueError(f"No NIfTI prediction files found in {prediction_folder}.")
+        raise ValueError(f"No prediction images found in {prediction_folder}.")
     identifier = cases[0]
     loader = lambda case: _read_prediction_case(prediction_folder, image_folder, reference_folder, case)
     viewer = napari.Viewer(title=f"nnWorkbench predictions — {identifier}")

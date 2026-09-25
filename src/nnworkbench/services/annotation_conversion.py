@@ -10,8 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .dataset_json import read_manifest
-
-_NIFTI_SUFFIXES = (".nii.gz", ".nii")
+from .image_files import has_image_suffix, image_suffix
 
 
 @dataclass(frozen=True)
@@ -24,19 +23,19 @@ class AnnotationConversionResult:
 
 
 def annotation_files(dataset_directory: Path) -> list[Path]:
-    """Return NIfTI semantic annotations in stable filename order."""
+    """Return semantic annotation images in stable filename order."""
     directory = dataset_directory / "annotationsTr"
     if not directory.is_dir():
         return []
-    return sorted((path for path in directory.iterdir() if path.is_file() and path.name.endswith(_NIFTI_SUFFIXES)),
+    return sorted((path for path in directory.iterdir() if path.is_file() and has_image_suffix(path)),
                   key=lambda path: path.name.casefold())
 
 
 def has_annotation_files(dataset_directory: Path) -> bool:
-    """Return whether annotationsTr contains at least one convertible NIfTI map."""
+    """Return whether annotationsTr contains at least one convertible annotation image."""
     directory = dataset_directory / "annotationsTr"
     return directory.is_dir() and any(
-        path.is_file() and path.name.endswith(_NIFTI_SUFFIXES) for path in directory.iterdir()
+        path.is_file() and has_image_suffix(path) for path in directory.iterdir()
     )
 
 
@@ -59,7 +58,7 @@ def _ignore_label_id(dataset_directory: Path) -> int:
 
 
 def _temporary_target(target: Path) -> Path:
-    suffix = ".nii.gz" if target.name.endswith(".nii.gz") else target.suffix
+    suffix = image_suffix(target) or target.suffix
     stem = target.name[:-len(suffix)]
     return target.with_name(f".{stem}.conversion{suffix}")
 

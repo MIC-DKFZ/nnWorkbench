@@ -15,9 +15,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .dataset_json import read_manifest
+from .image_files import has_image_suffix, strip_image_suffix
 
 ANALYSIS_FILENAME = "class_distribution.json"
-_NIFTI_SUFFIXES = (".nii.gz", ".nii")
 _CHANNEL_SUFFIX = re.compile(r"_\d{4}$")
 
 
@@ -27,23 +27,18 @@ def analysis_path(dataset_directory: Path) -> Path:
 
 
 def label_files(dataset_directory: Path) -> list[Path]:
-    """Return NIfTI training label files, in a stable order."""
+    """Return training label images, in a stable order."""
     labels_directory = dataset_directory / "labelsTr"
     if not labels_directory.is_dir():
         return []
     return sorted((path for path in labels_directory.iterdir()
-                   if path.is_file() and (path.name.endswith(".nii") or path.name.endswith(".nii.gz"))),
+                   if path.is_file() and has_image_suffix(path)),
                   key=lambda path: path.name.casefold())
 
 
 def _case_id(path: Path) -> str:
     """Return an nnU-Net case ID from an image or label filename."""
-    name = path.name
-    for suffix in _NIFTI_SUFFIXES:
-        if name.endswith(suffix):
-            name = name[:-len(suffix)]
-            break
-    return _CHANNEL_SUFFIX.sub("", name)
+    return _CHANNEL_SUFFIX.sub("", strip_image_suffix(path))
 
 
 def _image_case_ids(dataset_directory: Path) -> set[str]:
@@ -52,7 +47,7 @@ def _image_case_ids(dataset_directory: Path) -> set[str]:
         return set()
     return {
         _case_id(path) for path in images_directory.iterdir()
-        if path.is_file() and path.name.endswith(_NIFTI_SUFFIXES)
+        if path.is_file() and has_image_suffix(path)
     }
 
 
@@ -146,7 +141,7 @@ def analyse_label_distribution(dataset_directory: Path, workers: int | None = No
     """
     files = label_files(dataset_directory)
     if not files:
-        raise ValueError("No NIfTI label files were found in labelsTr.")
+        raise ValueError("No label images were found in labelsTr.")
     available = os.cpu_count() or 1
     worker_count = max(1, min(workers or available, available, len(files)))
     # Spawn avoids forking a running Qt process from its background worker thread.

@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from nnworkbench.services.image_files import has_image_suffix
+
 
 class PredictionInspectionDialog(QDialog):
     """Choose folders used to compare externally produced predictions."""
@@ -74,8 +76,7 @@ class PredictionInspectionDialog(QDialog):
         if not prediction_directory.is_dir():
             QMessageBox.warning(self, "Prediction folder required", "Choose an existing prediction folder.")
             return
-        if not any(path.is_file() and path.name.endswith((".nii", ".nii.gz"))
-                   for path in prediction_directory.iterdir()):
-            QMessageBox.warning(self, "No predictions found", "The prediction folder must contain NIfTI prediction files.")
+        if not any(path.is_file() and has_image_suffix(path) for path in prediction_directory.iterdir()):
+            QMessageBox.warning(self, "No predictions found", "The prediction folder must contain prediction images.")
             return
         self.accept()

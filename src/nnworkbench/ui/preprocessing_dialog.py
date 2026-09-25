@@ -14,6 +14,8 @@ from nnworkbench.services.commands import preprocessing_command, wrapped_command
 
 from .editable_dropdown import EditableDropdownComboBox
 
+DEFAULT_PLANNER = "nnUNetPlannerResEncL"
+
 
 class PreprocessingDialog(QDialog):
     """Collect the parameters required to start nnU-Net preprocessing."""
@@ -31,7 +33,7 @@ class PreprocessingDialog(QDialog):
         self.planner.addItems(planners)
         self.planner.setEditable(True)
         self.planner.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self.planner.setCurrentText("ExperimentPlanner")
+        self.planner.setCurrentText(DEFAULT_PLANNER)
         self.planner.setToolTip("Type a custom planner name, or use the arrow on the right to choose an installed planner.")
         self.additional_arguments = QLineEdit()
         self.additional_arguments.setPlaceholderText("Optional, e.g. --np 8")

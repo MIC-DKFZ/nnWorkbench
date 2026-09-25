@@ -200,3 +200,33 @@ def test_case_display_resets_z_slider_to_middle_slice() -> None:
     _display_case(viewer, _CaseData((_LayerData("case.nii.gz", "image", np.zeros((9, 4, 4))),), ()))
 
     assert (viewer.dims.axis, viewer.dims.value) == (0, 4)
+
+
+def test_read_image_supports_2d_images(tmp_path: Path) -> None:
+    mitk = pytest.importorskip("mitk")
+    import numpy as np
+
+    from nnworkbench.services.napari_inspector import _read_image
+
+    path = tmp_path / "case_001_0000.nii.gz"
+    mitk.Image(np.zeros((3, 4), dtype=np.float32), spacing=(0.5, 0.25, 1.0), origin=(3, 4, 0)).save(path)
+
+    data, affine = _read_image(path)
+
+    assert data.shape == (3, 4)
+    assert affine.shape == (3, 3)
+    assert np.allclose(np.diag(affine)[:2], (0.25, 0.5))
+    assert np.allclose(affine[:2, -1], (4, 3))
+
+
+def test_related_files_accept_non_nifti_images(tmp_path: Path) -> None:
+    images = tmp_path / "imagesTr"; images.mkdir()
+    annotations = tmp_path / "annotationsTr"; annotations.mkdir()
+    (images / "case_001_0000.png").touch()
+    (annotations / "case_001.png").touch()
+
+    files = related_files(images / "case_001_0000.png")
+
+    assert case_id(images / "case_001_0000.png") == "case_001"
+    assert [path.name for path in files.images] == ["case_001_0000.png"]
+    assert [path.name for path in files.annotations] == ["case_001.png"]

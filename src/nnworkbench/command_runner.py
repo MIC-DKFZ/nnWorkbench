@@ -82,6 +82,25 @@ def run_checkpoint_reduction(model_directory: Path, *, reset_trainer_name: bool 
     return 0
 
 
+def run_dataset_inspection(dataset_id: int, index: int = 1) -> int:
+    """Open a Raw dataset's images, labels and annotations in Napari, starting at the index-th image."""
+    try:
+        # Imported lazily: the lightweight remote installation has no Qt or Napari.
+        from .services.napari_inspector import image_case_ids, open_case, related_files_for_case
+    except ImportError as error:
+        raise RuntimeError("Napari is not installed. Use the local installation to inspect datasets.") from error
+    dataset_directory = raw_dataset_directory(dataset_id)
+    cases = image_case_ids(dataset_directory)
+    if not cases:
+        raise ValueError(f"No images were found in {dataset_directory / 'imagesTr'}.")
+    if not 1 <= index <= len(cases):
+        raise ValueError(f"Image index must be between 1 and {len(cases)}.")
+    image = related_files_for_case(dataset_directory, cases[index - 1]).images[0]
+    print(f"Inspecting {image.name} ({index} of {len(cases)}) in {dataset_directory.name}")
+    open_case(image)
+    return 0
+
+
 def _run_builtin_command(command: Sequence[str]) -> int | None:
     """Run an nnWorkbench data-management command, or return ``None`` for nnU-Net."""
     if not command:
@@ -99,6 +118,15 @@ def _run_builtin_command(command: Sequence[str]) -> int | None:
         parser.add_argument("--workers", type=int, default=None, help="Maximum worker processes")
         options = parser.parse_args(arguments)
         return run_annotation_conversion(options.dataset, options.workers)
+    if name == "inspect":
+        parser = argparse.ArgumentParser(
+            prog=f"nnworkbench-run {name}",
+            description="Open a dataset's images, labels and annotations in Napari.")
+        parser.add_argument("-d", "--dataset", type=int, required=True, help="Dataset ID")
+        parser.add_argument("-i", "--index", type=int, default=1,
+                            help="Image to start with, counting from 1 in filename order (default: 1)")
+        options = parser.parse_args(arguments)
+        return run_dataset_inspection(options.dataset, options.index)
     if name == "stack-images":
         parser = argparse.ArgumentParser(prog=f"nnworkbench-run {name}")
         parser.add_argument("input_directory", type=Path,

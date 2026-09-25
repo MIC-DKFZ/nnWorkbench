@@ -23,3 +23,17 @@ def test_main_window_can_be_created_offscreen() -> None:
     finally:
         window.close()
         application.processEvents()
+
+
+def test_preprocessing_dialog_defaults_to_resenc_l_planner() -> None:
+    from nnworkbench.ui.preprocessing_dialog import PreprocessingDialog
+
+    application = QApplication.instance() or QApplication([])
+    dialog = PreprocessingDialog(42, ("ExperimentPlanner", "nnUNetPlannerResEncL"))
+
+    try:
+        assert dialog.planner.currentText() == "nnUNetPlannerResEncL"
+        assert "-pl nnUNetPlannerResEncL" in dialog.command()
+    finally:
+        dialog.close()
+        application.processEvents()

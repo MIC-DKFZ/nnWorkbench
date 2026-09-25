@@ -3,7 +3,7 @@
 > A GUI for nnU-Net workflows and nnInteractive-powered annotation.
 
 From the first image to a trained segmentation model, nnWorkbench keeps the entire workflow in one place. It provides researchers and domain scientists with a clear workspace to inspect images in Napari, prepare or create labels, and guide an nnU-Net model from dataset preparation to prediction.
-Existing labels can be imported directly into an nnU-Net workflow, while unlabeled images can be annotated with nnInteractive before continuing to model training and inference.
+Existing labels can be used directly in the **nnU-Net Workflow**, while the **Annotation Workflow** lets you annotate unlabeled images with nnInteractive before continuing to model training and inference.
 
 ## Why nnWorkbench
 
@@ -13,7 +13,7 @@ Existing labels can be imported directly into an nnU-Net workflow, while unlabel
 - **Connect nnInteractive and nnU-Net:** Use nnInteractive in Napari to create annotations, convert them into training labels, and continue directly to nnU-Net preprocessing and training.
 - **Annotation Workflow:** Follow a documented, guided workflow designed to create high-quality labels that support model performance while minimizing manual annotation effort.
 
-![Annotation Workflow](/src/nnworkbench/assets/AnnotationWorkflowHeader.png)
+![Annotation Workflow](src/nnworkbench/assets/AnnotationWorkflowHeader.png)
 
 # Installation
 
@@ -46,7 +46,7 @@ Local interactive inference additionally needs a compatible PyTorch installation
 
 ## Remote installation — lightweight execution
 
-For clusters or remote machines: nnU-Net, custom trainers, and remote commands only—no GUI, Napari or nnInteractive.
+For clusters or remote machines: nnU-Net, custom trainers, and remote commands only—no GUI, Napari or nnInteractive. To run nnInteractive on a remote GPU instead, see the [napari-nninteractive documentation](https://github.com/MIC-DKFZ/napari-nninteractive).
 
 ```bash
 pip install -e .
@@ -62,35 +62,33 @@ You can also create a Remote profile in the GUI and use **Export** to copy this 
 
 # Quick start
 
-## Set up paths
+nnWorkbench supports two workflows. The **nnU-Net Workflow** trains and applies nnU-Net on images that already have labels. The **Annotation Workflow** extends it for images without labels: you create the labels first, then continue with the same steps.
 
-Start the GUI:
-
-```bash
-nnworkbench-gui
-```
-
-Then select the directories containing your `DatasetNNN_Name` folders for `nnUNet_raw`, `nnUNet_preprocessed`, and `nnUNet_results`. For remote or terminal use, save the same paths with `nnworkbench-set-paths` as shown above.
+Start the GUI with `nnworkbench-gui`.
 
 ## nnU-Net Workflow
 
-1. **Prepare and inspect:** Select an existing dataset—or create one from the Raw root—then review its `dataset.json`. Use **Inspect** beside a Raw image to open the case in Napari with its available matching files.
-2. **Preprocess:** In **Raw**, choose **Run Preprocessing**, select a configuration and planner, then run the command.
-3. **Train:** In **Preprocessed**, choose **Run Training**, select the plans file, configuration, trainer, and fold, then run the command.
-4. **Predict:** In **Results**, choose **Run Predict**, select a trained plan/configuration and the input/output directories, then run the command.
-
-Read the full [nnU-Net workflow guide](docs/nnunet-workflow.md).
+1. **Set the paths:** In the header, select the folders for `nnUNet_raw`, `nnUNet_preprocessed` and `nnUNet_results`. The three folders are independent: nnWorkbench combines the datasets found across all of them. For remote or terminal use, save the same paths with `nnworkbench-set-paths` as shown above.
+2. **Create a dataset:** Click **New dataset**, or select an existing one. Copy your images into `imagesTr` and your labels into `labelsTr`, and fill in `dataset.json` in the editor on the right.
+3. **Preprocess:** In **Raw**, click **Run Preprocessing** (`nnUNetPlannerResEncL` is preselected).
+4. **Train:** In **Preprocessed**, click **Run Training** (`nnUNetTrainer` is preselected).
+5. **Validate:** In **Results**, expand a fold's `validation` folder and click **Inspect** to compare the predictions with your labels.
+6. **Predict:** In **Results**, click **Run Predict**, then **Inspect predictions**.
 
 ## Annotation Workflow
 
-1. **Enable the workflow:** Turn on **Annotation workflow** in the header and select a Raw dataset with `imagesTr`.
-2. **Prepare label IDs:** In Raw `dataset.json`, add an integer `ignore` label as the highest label ID. The editor highlights this requirement while Annotation Workflow is enabled.
-3. **Annotate in Napari:** In `imagesTr`, choose **Annotate** for a new case; choose **Edit** in `annotationsTr` to continue an existing annotation. This opens Napari directly with nnInteractive and a writable semantic annotation layer.
-4. **Save:** Use **Save annotation** in Napari to write the semantic map to `annotationsTr`.
-5. **Convert:** Back in **Raw**, choose **Convert Annotations** to create matching nnU-Net labels in `labelsTr`.
-6. **Train a model:** Continue with **Run Preprocessing**, **Run Training**, and **Run Predict** as described in the nnU-Net workflow above.
+The Annotation Workflow extends the nnU-Net Workflow: it adds the annotation steps and uses a trainer made for sparse labels. Steps marked *(as in the nnU-Net Workflow)* are unchanged.
 
-Read the full [Annotation Workflow guide](docs/annotation-workflow.md), including label-ID mapping and conversion requirements.
+1. **Set the paths** *(as in the nnU-Net Workflow)*.
+2. **Create a dataset:** Turn on the **Annotation workflow** switch in the header first, then click **New dataset**, so that `annotationsTr` is created too. Copy only your images into `imagesTr`, and add an `ignore` class with the highest ID to `dataset.json`.
+3. **Annotate:** In **Raw**, click **Annotate** next to an image in `imagesTr` (or **Edit** in `annotationsTr`), annotate in Napari and click **Save annotation**.
+4. **Convert:** In **Raw**, click **Convert Annotations** to create the training labels in `labelsTr`.
+5. **Preprocess** *(as in the nnU-Net Workflow)*.
+6. **Train:** In **Preprocessed**, click **Run Training** (`nnUNetTrainerBetterIgnoreSampling` is preselected).
+7. **Validate:** Inspect the predictions as in the nnU-Net Workflow, including the unlabeled regions. For another annotation round, click **Create next iteration** in **Raw** and continue with step 3 in the new dataset.
+8. **Predict** *(as in the nnU-Net Workflow)*.
+
+The [nnWorkbench guide](src/nnworkbench/assets/annotation_workflow/README.md) explains both workflows step by step, with command-line alternatives; its overview shows which stages each workflow uses. It is also shown in the GUI via the **ⓘ** button next to the Annotation workflow switch.
 
 ## CLI overview
 
@@ -99,49 +97,37 @@ nnWorkbench can be used entirely through the GUI. If you prefer not to use the G
 After configuring the paths with `nnworkbench-set-paths`, use `nnworkbench-run` to run any nnU-Net command with those saved paths:
 
 ```bash
-nnworkbench-run nnUNetv2_plan_and_preprocess -d 1 -c 3d_fullres --verify_dataset_integrity
-nnworkbench-run nnUNetv2_train 1 3d_fullres 0
-nnworkbench-run nnUNetv2_predict -i /path/to/input -o /path/to/output -d 1 -c 3d_fullres
+nnworkbench-run nnUNetv2_plan_and_preprocess -d 42 -c 3d_fullres -pl nnUNetPlannerResEncL --verify_dataset_integrity
+nnworkbench-run nnUNetv2_train 42 3d_fullres 0 -p nnUNetResEncUNetLPlans
+nnworkbench-run nnUNetv2_predict -i /path/to/input -o /path/to/output -d 42 -c 3d_fullres -p nnUNetResEncUNetLPlans
 ```
+
+These use the recommended `nnUNetPlannerResEncL`, which the GUI also preselects. For sparse annotations from the Annotation Workflow, add `-tr nnUNetTrainerBetterIgnoreSampling` to training and prediction.
 
 It also provides the following dataset tools:
 
 ```bash
+# Open a dataset's images, labels and annotations in Napari, starting at the 12th image
+nnworkbench-run inspect -d 42 -i 12
+
 # Analyse labelsTr and save class_distribution.json
-nnworkbench-run label-analysis -d 1 --workers 4
+nnworkbench-run label-analysis -d 42 --workers 4
 
 # Convert annotationsTr semantic maps into labelsTr training labels
-nnworkbench-run convert-annotations -d 1 --workers 4
+nnworkbench-run convert-annotations -d 42 --workers 4
+
+# Stack naturally ordered 2D slices (e.g. TIFF or PNG) into one 3D NIfTI volume
+nnworkbench-run stack-images /path/to/image_slices --file-type .tif --spacing 1 1 1
+
+# Remove everything a trained model folder does not need for prediction, e.g. before sharing (in place, cannot be undone)
+nnworkbench-run reduce-checkpoints /path/to/nnUNet_results/Dataset042_CellSegmentation/MODEL_FOLDER
 ```
 
-`-d` (or `--dataset`) specifies the numeric nnU-Net dataset ID under the saved `nnUNet_raw` path. For example, use `-d 10` for `Dataset010_MyDataset`. Annotation conversion requires a valid final `ignore` label in the dataset's `dataset.json`. Run `nnworkbench-get-paths` to view the saved path configuration.
-
-### Stack 2D image slices
-
-Create a 3D NIfTI image from naturally ordered 2D slices in a MITK-readable format, such as TIFF or PNG. All selected files must have the same shape and data type. The default output is saved beside the input folder as `<folder-name>.nii.gz`, or `<folder-name>_scale<factor>.nii.gz` when downsampling.
-
-```bash
-nnworkbench-run stack-images /path/to/image_slices --file-type .png \
-  --spacing 0.5 0.5 1.0 --scale-factor 2 --workers 4
-```
-
-`--spacing` uses X Y Z order and defaults to `1 1 1`. `--scale-factor` is an integer downsampling factor applied to all three volume axes. When `--spacing` is supplied, its written value is increased by the same factor; the default unit spacing is unchanged. Use `-o /path/to/output.nii.gz` to choose an output file and `--overwrite` to replace one. MITK/ITK's per-slice messages are hidden by default; pass `--show-mitk-output` for diagnostics.
-
-### Reduce a trained model for sharing
-
-Strip a trained model folder down to what inference needs, for every fold in place. Each fold's `checkpoint_final.pth` has its optimizer state removed, `checkpoint_best.pth` is deleted, and the `validation` folder is deleted.
-
-```bash
-nnworkbench-run reduce-checkpoints /path/to/nnUNet_results/Dataset001_.../nnUNetTrainer__nnUNetPlans__3d_fullres
-```
-
-Pass `--reset-trainer-name` to also rewrite each checkpoint's `trainer_name` to `nnUNetTrainer`, so a custom trainer class is not required to run inference. This is destructive and edits the model folder in place; keep a copy if you need the optimizer state, best checkpoint, or validation results later.
+`-d` (or `--dataset`) specifies the numeric nnU-Net dataset ID under the saved `nnUNet_raw` path. For example, use `-d 42` for `Dataset042_CellSegmentation`. Annotation conversion requires a valid final `ignore` label in the dataset's `dataset.json`. Run `nnworkbench-get-paths` to view the saved path configuration, and add `--help` to any tool to see all its options.
 
 ## Further documentation
 
-- [nnU-Net workflow guide](docs/nnunet-workflow.md)
-- [Annotation Workflow guide](docs/annotation-workflow.md)
-- [GUI documentation overview](docs/GUI.md)
+- [nnWorkbench guide](src/nnworkbench/assets/annotation_workflow/README.md): the nnU-Net Workflow and the Annotation Workflow step by step; also shown in the GUI via the **ⓘ** button.
 
 
 # Acknowledgements
