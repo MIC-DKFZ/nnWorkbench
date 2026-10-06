@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from math import ceil, floor, prod
 
-from qtpy.QtCore import Qt
-from qtpy.QtGui import QColor, QFontMetrics, QPainter
+from qtpy.QtCore import QPointF, Qt
+from qtpy.QtGui import QColor, QFontMetrics, QPainter, QPen, QPolygonF
 from qtpy.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
@@ -120,20 +120,32 @@ class _AxisScatterChart(QWidget):
             painter.drawText(26, y - metrics.height() // 2, 46, metrics.height(),
                              Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                              self._AXIS_NAMES[axis])
-        point_colour = QColor("#2f6fca"); point_colour.setAlpha(145)
-        painter.setBrush(point_colour); painter.setPen(Qt.PenStyle.NoPen)
+        image_points: list[list[QPointF]] = []
         for image_index, item in enumerate(self._per_image):
             item_values = item.get(self._metric)
             if not isinstance(item_values, list):
                 continue
+            # A tiny deterministic offset keeps coincident image values visible.
+            jitter = ((image_index % 5) - 2) * 2
+            points = []
             for axis, value in enumerate(item_values[:axis_count]):
                 if not isinstance(value, (int, float)):
                     continue
                 y = plot.top() + (plot.height() * axis / max(1, axis_count - 1))
-                # A tiny deterministic offset keeps coincident image values visible.
-                jitter = ((image_index % 5) - 2) * 2
                 x = plot.left() + (float(value) - minimum) * plot.width() / (maximum - minimum)
-                painter.drawEllipse(int(x) - 6, int(y + jitter) - 6, 12, 12)
+                points.append(QPointF(x, y + jitter))
+            image_points.append(points)
+        # Connect each image's X, Y and Z values, so the values belonging together stay visible.
+        line_colour = QColor("#2f6fca"); line_colour.setAlpha(70)
+        painter.setPen(QPen(line_colour, 1.5)); painter.setBrush(Qt.BrushStyle.NoBrush)
+        for points in image_points:
+            if len(points) > 1:
+                painter.drawPolyline(QPolygonF(points))
+        point_colour = QColor("#2f6fca"); point_colour.setAlpha(145)
+        painter.setBrush(point_colour); painter.setPen(Qt.PenStyle.NoPen)
+        for points in image_points:
+            for point in points:
+                painter.drawEllipse(point, 6, 6)
         painter.setPen(QColor("#64748b"))
         if self._metric == "shape":
             step = max(1, ceil((maximum - minimum) / 4))

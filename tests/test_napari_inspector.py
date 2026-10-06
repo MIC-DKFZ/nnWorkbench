@@ -96,7 +96,22 @@ def test_read_case_uses_mitk_for_nifti_layers(tmp_path: Path) -> None:
 
     case = _read_case(tmp_path, "case_001")
 
-    assert [(layer.name, layer.kind) for layer in case.layers] == [("case_001_0000.nii.gz", "image")]
+    assert [(layer.name, layer.kind) for layer in case.layers] == [("Image — case_001_0000.nii.gz", "image")]
+
+
+def test_read_case_names_layers_by_role(tmp_path: Path) -> None:
+    mitk = pytest.importorskip("mitk")
+    np = pytest.importorskip("numpy")
+    for folder, name in (("imagesTr", "case_001_0000.nii.gz"), ("labelsTr", "case_001.nii.gz"),
+                         ("annotationsTr", "case_001.nii.gz")):
+        (tmp_path / folder).mkdir()
+        mitk.Image(np.ones((2, 2, 2), dtype=np.uint8)).save(tmp_path / folder / name)
+
+    case = _read_case(tmp_path, "case_001")
+
+    assert [layer.name for layer in case.layers] == [
+        "Image — case_001_0000.nii.gz", "Label — case_001.nii.gz", "Annotation — case_001.nii.gz",
+    ]
 
 
 def test_save_semantic_annotation_uses_case_name_and_source_geometry(tmp_path: Path) -> None:

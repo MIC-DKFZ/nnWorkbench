@@ -14,6 +14,7 @@ from pathlib import Path
 from qtpy.QtCore import QObject, QSize, Qt, QTimer, Signal
 from qtpy.QtGui import QColor, QKeySequence, QPainter, QShortcut
 from qtpy.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -225,27 +226,36 @@ def _read_json_points(path: Path) -> list | None:
     return points
 
 
+def _layer_name(role: str, path: Path) -> str:
+    """Name a layer by what it shows, e.g. "Label — case_001.nii.gz", so layers are easy to tell apart.
+
+    Annotation sessions keep plain names: napari-nninteractive requires its image layer and the
+    matching "semantic map - <image>" layer to be named exactly like that (see open_annotation).
+    """
+    return f"{role} — {path.name}"
+
+
 def _read_case(dataset: Path, identifier: str) -> _CaseData:
     """Load a complete case off the Napari GUI thread for display or prefetching."""
     files = related_files_for_case(dataset, identifier)
     layers: list[_LayerData] = []
     for path in files.images:
         data, affine = _read_image(path)
-        layers.append(_LayerData(path.name, "image", data, affine))
+        layers.append(_LayerData(_layer_name("Image", path), "image", data, affine))
     for path in files.labels:
         data, affine = _read_image(path)
-        layers.append(_LayerData(path.name, "labels", data, affine))
+        layers.append(_LayerData(_layer_name("Label", path), "labels", data, affine))
     skipped: list[Path] = []
     for path in files.annotations:
         if has_image_suffix(path):
             data, affine = _read_image(path)
-            layers.append(_LayerData(path.name, "annotation_labels", data, affine))
+            layers.append(_LayerData(_layer_name("Annotation", path), "annotation_labels", data, affine))
         elif path.suffix.casefold() == ".json":
             points = _read_json_points(path)
             if points is None:
                 skipped.append(path)
             else:
-                layers.append(_LayerData(path.name, "annotation_points", points))
+                layers.append(_LayerData(_layer_name("Annotation points", path), "annotation_points", points))
     return _CaseData(tuple(layers), tuple(skipped))
 
 
@@ -255,13 +265,13 @@ def _read_prediction_case(prediction_folder: Path, image_folder: Path | None, re
     layers: list[_LayerData] = []
     for path in _matching_case_files(image_folder, identifier):
         data, affine = _read_image(path)
-        layers.append(_LayerData(f"Image — {path.name}", "image", data, affine))
+        layers.append(_LayerData(_layer_name("Image", path), "image", data, affine))
     for path in _matching_case_files(prediction_folder, identifier):
         data, affine = _read_image(path)
-        layers.append(_LayerData(f"Prediction — {path.name}", "prediction", data, affine))
+        layers.append(_LayerData(_layer_name("Prediction", path), "prediction", data, affine))
     for path in _matching_case_files(reference_folder, identifier):
         data, affine = _read_image(path)
-        layers.append(_LayerData(f"Reference — {path.name}", "reference", data, affine))
+        layers.append(_LayerData(_layer_name("Label", path), "reference", data, affine))
     return _CaseData(tuple(layers), ())
 
 
@@ -272,13 +282,13 @@ def _read_validation_case(validation_folder: Path, raw_dataset: Path | None, ide
         files = related_files_for_case(raw_dataset, identifier)
         for path in files.images:
             data, affine = _read_image(path)
-            layers.append(_LayerData(f"Image — {path.name}", "image", data, affine))
+            layers.append(_LayerData(_layer_name("Image", path), "image", data, affine))
         for path in files.labels:
             data, affine = _read_image(path)
-            layers.append(_LayerData(f"Label — {path.name}", "labels", data, affine))
+            layers.append(_LayerData(_layer_name("Label", path), "labels", data, affine))
     for path in _matching_case_files(validation_folder, identifier):
         data, affine = _read_image(path)
-        layers.append(_LayerData(f"Validation prediction — {path.name}", "prediction", data, affine))
+        layers.append(_LayerData(_layer_name("Prediction", path), "prediction", data, affine))
     return _CaseData(tuple(layers), ())
 
 
@@ -299,14 +309,16 @@ def _read_preprocessed_case(session_folder: Path, identifier: str) -> _CaseData:
     if data_array.ndim < 3:
         raise ValueError(f"Unexpected preprocessed data shape for {data_path.name}: {data_array.shape}")
     channels = data_array if data_array.ndim > 3 else (data_array,)
+    # Name the channels only if there are several, so their layers stay distinguishable.
     layers = [
-        _LayerData(f"Preprocessed data — {data_path.name} (channel {index})", "image", channel)
+        _LayerData(_layer_name("Image", data_path) + (f" (channel {index})" if len(channels) > 1 else ""),
+                   "image", channel)
         for index, channel in enumerate(channels)
     ]
     segmentation_array = np.asarray(segmentation)
     if segmentation_array.ndim > 3 and segmentation_array.shape[0] == 1:
         segmentation_array = segmentation_array[0]
-    layers.append(_LayerData(f"Preprocessed segmentation — {segmentation_path.name}", "labels", segmentation_array))
+    layers.append(_LayerData(_layer_name("Label", segmentation_path), "labels", segmentation_array))
     return _CaseData(tuple(layers), ())
 
 
@@ -512,19 +524,70 @@ def _expand_nninteractive_dock(viewer, save_dock, nninteractive_dock) -> None:
         print(f"Could not expand nnInteractive controls: {error}")
 
 
+def _show_message(viewer, text: str) -> None:
+    """Show a short message in the middle of the canvas, e.g. while data is loading."""
+    overlay = viewer.text_overlay
+    overlay.text, overlay.position, overlay.font_size, overlay.visible = text, "middle_center", 14, True
+    viewer.status = text
+    # An empty viewer shows napari's welcome screen on top of the canvas; hide it so the message is visible.
+    hide_welcome = getattr(getattr(viewer.window, "_qt_viewer", None), "_set_welcome_visible", None)
+    if callable(hide_welcome):
+        hide_welcome(False)
+
+
+def _hide_message(viewer) -> None:
+    viewer.text_overlay.visible = False
+    viewer.status = "Ready"
+
+
+def _load_in_background(viewer, description: str, load: Callable[[], object],
+                        on_loaded: Callable[[object], None]) -> None:
+    """Load data in a worker thread so the viewer appears immediately and shows the progress."""
+    from napari.qt.threading import create_worker
+
+    _show_message(viewer, f"Loading {description} …")
+    worker = create_worker(load)
+
+    def loaded(data: object) -> None:
+        _hide_message(viewer)
+        on_loaded(data)
+
+    def failed(error: Exception) -> None:
+        _show_message(viewer, f"Could not load {description}: {error}")
+        print(f"Could not load {description}: {error}")
+
+    worker.returned.connect(loaded)
+    worker.errored.connect(failed)
+    viewer._nnworkbench_loader = worker  # Keep the worker alive until it finishes.
+    worker.start()
+
+
 def open_annotation(selected_path: Path) -> None:
     """Open an image in Napari for nnInteractive annotation and optional semantic-map reuse."""
     import napari
-    import numpy as np
 
     image_path = annotation_source_image(selected_path)
-    data, affine = _read_image(image_path)
-    viewer = napari.Viewer(title=f"nnWorkbench annotation — {case_id(image_path)}")
-    viewer.add_image(data, name=image_layer_name(image_path), affine=affine)
     target = (selected_path if selected_path.parent.name == "annotationsTr"
               and has_image_suffix(selected_path) else annotation_target_path(image_path))
-    if target.is_file():
-        annotation_data, annotation_affine = _read_image(target)
+    viewer = napari.Viewer(title=f"nnWorkbench annotation — {case_id(image_path)}")
+
+    def load() -> tuple:
+        image = _read_image(image_path)
+        return image, (_read_image(target) if target.is_file() else None)
+
+    _load_in_background(viewer, case_id(image_path), load,
+                        lambda loaded: _set_up_annotation(viewer, image_path, target, *loaded))
+    napari.run()
+
+
+def _set_up_annotation(viewer, image_path: Path, target: Path, image: tuple, annotation: tuple | None) -> None:
+    """Add the image, its semantic map and the annotation panels once the data is loaded."""
+    import numpy as np
+
+    data, affine = image
+    viewer.add_image(data, name=image_layer_name(image_path), affine=affine)
+    if annotation is not None:
+        annotation_data, annotation_affine = annotation
         # MITK exposes an efficient, read-only NumPy view. nnInteractive updates the
         # semantic map in place, so an existing annotation must be copied first.
         viewer.add_labels(annotation_data.copy(), name=semantic_map_name(image_path), affine=annotation_affine)
@@ -567,7 +630,6 @@ def open_annotation(selected_path: Path) -> None:
     save_dock.setFixedHeight(save_widget.sizeHint().height() + 36)
     if nninteractive_dock is not None:
         QTimer.singleShot(100, lambda: _expand_nninteractive_dock(viewer, save_dock, nninteractive_dock))
-    napari.run()
 
 
 class CaseNavigator(QWidget):
@@ -623,7 +685,13 @@ class CaseNavigator(QWidget):
         identifier = self._cases[self._index]
         case_data = self._cache.get(identifier)
         if case_data is None:
-            case_data = self._case_loader(identifier)
+            # Not prefetched yet: show that something is happening while the case loads.
+            _show_message(self._viewer, f"Loading {identifier} …")
+            QApplication.processEvents()
+            try:
+                case_data = self._case_loader(identifier)
+            finally:
+                _hide_message(self._viewer)
             self._cache[identifier] = case_data
         _display_case(self._viewer, case_data)
         self._update_controls()
@@ -650,9 +718,15 @@ class CaseNavigator(QWidget):
 
     def _finish_prefetch(self, identifier: str, future: Future) -> None:
         try:
-            self._signals.completed.emit(identifier, future.result())
+            result = future.result()
         except Exception as error:
-            self._signals.failed.emit(identifier, str(error))
+            signal, value = "failed", str(error)
+        else:
+            signal, value = "completed", result
+        try:
+            getattr(self._signals, signal).emit(identifier, value)
+        except RuntimeError:
+            pass  # The viewer was closed while the case was still being prefetched.
 
     def _prefetch_completed(self, identifier: str, data: object) -> None:
         self._prefetching.discard(identifier)
@@ -677,88 +751,72 @@ class CaseNavigator(QWidget):
         self._executor.shutdown(wait=False, cancel_futures=True)
 
 
-def open_case(selected: Path, prefetch_previous: bool = True, prefetch_next: bool = True,
-              prefetch_radius: int = 1) -> None:
-    """Start Napari and add all supported raw files related to the selected case."""
+def _open_navigated_viewer(title: str, identifier: str, cases: tuple[str, ...],
+                           loader: Callable[[str], _CaseData], prefetch_previous: bool, prefetch_next: bool,
+                           prefetch_radius: int) -> None:
+    """Open Napari immediately, load the selected case in the background, then add case navigation."""
     import napari
 
-    dataset, identifier = selected.parent.parent, case_id(selected)
-    viewer = napari.Viewer(title=f"nnWorkbench — {identifier}")
-    current_data = _read_case(dataset, identifier)
-    _display_case(viewer, current_data)
-    cases = image_case_ids(dataset)
-    if cases:
-        navigator = CaseNavigator(viewer, lambda case: _read_case(dataset, case), cases, identifier, current_data,
+    viewer = napari.Viewer(title=title)
+
+    def show(current_data: _CaseData) -> None:
+        _display_case(viewer, current_data)
+        if not cases:
+            return
+        navigator = CaseNavigator(viewer, loader, cases, identifier, current_data,
                                   prefetch_previous, prefetch_next, prefetch_radius)
         viewer.window.add_dock_widget(navigator, name="Case navigation", area="right")
         viewer.bind_key("a", lambda *_: navigator.previous(), overwrite=True)
         viewer.bind_key("d", lambda *_: navigator.next(), overwrite=True)
+
+    _load_in_background(viewer, identifier, lambda: loader(identifier), show)
     napari.run()
+
+
+def open_case(selected: Path, prefetch_previous: bool = True, prefetch_next: bool = True,
+              prefetch_radius: int = 1) -> None:
+    """Start Napari and add all supported raw files related to the selected case."""
+    dataset, identifier = selected.parent.parent, case_id(selected)
+    _open_navigated_viewer(f"nnWorkbench — {identifier}", identifier, image_case_ids(dataset),
+                           lambda case: _read_case(dataset, case), prefetch_previous, prefetch_next, prefetch_radius)
 
 
 def open_prediction_folder(prediction_folder: Path, image_folder: Path | None = None,
                            reference_folder: Path | None = None, prefetch_previous: bool = True,
                            prefetch_next: bool = True, prefetch_radius: int = 1) -> None:
     """Inspect prediction cases, with optional matching images and reference labels."""
-    import napari
-
     cases = prediction_case_ids(prediction_folder)
     if not cases:
         raise ValueError(f"No prediction images found in {prediction_folder}.")
     identifier = cases[0]
     loader = lambda case: _read_prediction_case(prediction_folder, image_folder, reference_folder, case)
-    viewer = napari.Viewer(title=f"nnWorkbench predictions — {identifier}")
-    current_data = loader(identifier)
-    _display_case(viewer, current_data)
-    navigator = CaseNavigator(viewer, loader, cases, identifier, current_data,
-                              prefetch_previous, prefetch_next, prefetch_radius)
-    viewer.window.add_dock_widget(navigator, name="Case navigation", area="right")
-    viewer.bind_key("a", lambda *_: navigator.previous(), overwrite=True)
-    viewer.bind_key("d", lambda *_: navigator.next(), overwrite=True)
-    napari.run()
+    _open_navigated_viewer(f"nnWorkbench predictions — {identifier}", identifier, cases, loader,
+                           prefetch_previous, prefetch_next, prefetch_radius)
 
 
 def open_preprocessed_case(selected: Path, prefetch_previous: bool = True, prefetch_next: bool = True,
                            prefetch_radius: int = 1) -> None:
     """Inspect a preprocessed nnU-Net B2ND session with the standard case navigator."""
-    import napari
-
     session_folder, identifier = selected.parent, preprocessed_case_id(selected)
     cases = preprocessed_case_ids(session_folder)
     if identifier not in cases:
         raise ValueError(f"No preprocessed data case found for {selected.name}.")
     loader = lambda case: _read_preprocessed_case(session_folder, case)
-    viewer = napari.Viewer(title=f"nnWorkbench preprocessed — {identifier}")
-    current_data = loader(identifier)
-    _display_case(viewer, current_data)
-    navigator = CaseNavigator(viewer, loader, cases, identifier, current_data,
-                              prefetch_previous, prefetch_next, prefetch_radius)
-    viewer.window.add_dock_widget(navigator, name="Case navigation", area="right")
-    viewer.bind_key("a", lambda *_: navigator.previous(), overwrite=True)
-    viewer.bind_key("d", lambda *_: navigator.next(), overwrite=True)
-    napari.run()
+    _open_navigated_viewer(f"nnWorkbench preprocessed — {identifier}", identifier, cases, loader,
+                           prefetch_previous, prefetch_next, prefetch_radius)
 
 
 def open_validation_prediction(prediction_path: Path, raw_dataset: Path | None = None,
                                prefetch_previous: bool = True, prefetch_next: bool = True,
                                prefetch_radius: int = 1) -> None:
     """Inspect and navigate validation predictions with matching raw images and labels."""
-    import napari
-
     validation_folder, identifier = prediction_path.parent, case_id(prediction_path)
     cases = prediction_case_ids(validation_folder)
     if identifier not in cases:
         raise ValueError(f"No validation prediction found for {prediction_path.name}.")
     loader = lambda case: _read_validation_case(validation_folder, raw_dataset, case)
-    viewer = napari.Viewer(title=f"nnWorkbench validation — {identifier}")
-    current_data = loader(identifier)
-    _display_case(viewer, current_data)
-    navigator = CaseNavigator(viewer, loader, cases, identifier, current_data,
-                              prefetch_previous, prefetch_next, prefetch_radius)
-    viewer.window.add_dock_widget(navigator, name="Case navigation", area="right")
-    viewer.bind_key("a", lambda *_: navigator.previous(), overwrite=True)
-    viewer.bind_key("d", lambda *_: navigator.next(), overwrite=True)
-    napari.run()
+    _open_navigated_viewer(f"nnWorkbench validation — {identifier}", identifier, cases, loader,
+                           prefetch_previous, prefetch_next, prefetch_radius)
 
 
 def main() -> None:
