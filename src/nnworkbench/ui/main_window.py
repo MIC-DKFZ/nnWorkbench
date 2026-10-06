@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QSignalBlocker, QSize, QTimer
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import (
+from qtpy.QtCore import QSettings, QSignalBlocker, QSize, QTimer
+from qtpy.QtGui import QIcon
+from qtpy.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,

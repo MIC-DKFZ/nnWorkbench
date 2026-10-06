@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QSpinBox
+from qtpy.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QSpinBox
 
 
 class NewDatasetDialog(QDialog):

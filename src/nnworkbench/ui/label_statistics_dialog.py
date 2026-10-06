@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from math import ceil, floor, prod
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFontMetrics, QPainter
-from PySide6.QtWidgets import (
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor, QFontMetrics, QPainter
+from qtpy.QtWidgets import (
     QCheckBox,
     QHBoxLayout,
     QHeaderView,

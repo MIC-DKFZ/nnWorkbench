@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QSignalBlocker, QSize, Signal
-from PySide6.QtGui import QGuiApplication, QIcon
-from PySide6.QtWidgets import (
+from qtpy.QtCore import QSignalBlocker, QSize, Signal
+from qtpy.QtGui import QGuiApplication, QIcon
+from qtpy.QtWidgets import (
     QFileDialog,
     QGridLayout,
     QHBoxLayout,

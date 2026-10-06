@@ -1,9 +1,11 @@
 # nnWorkbench
 
 > A GUI for nnU-Net workflows and nnInteractive-powered annotation.
+> - **nnU-Net Workflow:** Train, validate and apply nnU-Net on images that already have labels.
+> - **Annotation Workflow:** Extends the nnU-Net Workflow for images without labels: create the labels efficiently with nnInteractive and scribbles, then train, validate and improve the model in iterative annotation rounds.
+
 
 From the first image to a trained segmentation model, nnWorkbench keeps the entire workflow in one place. It provides researchers and domain scientists with a clear workspace to inspect images in Napari, prepare or create labels, and guide an nnU-Net model from dataset preparation to prediction.
-Existing labels can be used directly in the **nnU-Net Workflow**, while the **Annotation Workflow** lets you annotate unlabeled images with nnInteractive before continuing to model training and inference.
 
 ## Why nnWorkbench
 
@@ -24,7 +26,7 @@ Requirements:
 
 ![nnWorkbench local and remote installation overview](src/nnworkbench/assets/AnnotationWorkflowInstall.png)
 
-Create an environment and clone the repository once:
+Create an environment and clone the repository:
 
 ```bash
 conda create -n nnworkbench python=3.12

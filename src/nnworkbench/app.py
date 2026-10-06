@@ -3,8 +3,8 @@ from __future__ import annotations
 import signal
 import sys
 
-from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QApplication
+from qtpy.QtCore import QTimer
+from qtpy.QtWidgets import QApplication
 
 from .ui.main_window import MainWindow
 from .ui.style import apply_application_style

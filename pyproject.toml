@@ -12,14 +12,16 @@ authors = [{name = "Lars Krämer"}, {email = "lars.kraemer@dkfz-heidelberg.de"},
 dependencies = ["nnunetv2>=2.8.1,<3"]
 
 [project.optional-dependencies]
-local = [
-    "PySide6>=6.6,<7",
+# GUI dependencies without a Qt binding. qtpy also works with Qt 5 (PyQt5), e.g. if napari brought it.
+gui = [
+    "qtpy>=2.4,<3",
     "mitk-python>=2026.06,<2027",
     "napari>=0.5,<1",
     "napari-layer-statistics>=1,<2",
     "napari-nninteractive[local]>=2.5.3,<3",
 ]
-dev = ["PySide6>=6.6,<7", "pytest>=8.0,<9", "ruff>=0.6,<1", "build>=1,<2"]
+local = ["nnworkbench[gui]", "PySide6>=6.6,<7"]
+dev = ["qtpy>=2.4,<3", "PySide6>=6.6,<7", "pytest>=8.0,<9", "ruff>=0.6,<1", "build>=1,<2"]
 
 [project.scripts]
 nnworkbench-gui = "nnworkbench.app:main"
@@ -30,7 +32,6 @@ nnworkbench-run = "nnworkbench.command_runner:main"
 [tool.setuptools.package-data]
 nnworkbench = [
     "assets/*.svg",
-    "assets/*.png",
     "assets/annotation_workflow/*.md",
     "assets/annotation_workflow/images/*.png",
 ]

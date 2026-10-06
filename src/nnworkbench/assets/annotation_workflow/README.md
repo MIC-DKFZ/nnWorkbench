@@ -35,7 +35,7 @@ In the Annotation Workflow, stages 3 to 5 form a loop: based on the validation r
 
 ### nnU-Net Workflow
 
-**Labels.** A semantic segmentation mask for each training image: an image of the same size in which every pixel or voxel holds its class ID, numbered continuously from 0. Each mask is named like its image, without the channel postfic (`_0000`).
+**Labels.** A semantic segmentation mask for each training image: an image of the same size in which every pixel or voxel holds its class ID, numbered continuously from 0. Each mask is named like its image, without the channel postfix (`_0000`).
 
 ### Annotation Workflow
 

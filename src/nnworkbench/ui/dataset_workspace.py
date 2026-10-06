@@ -9,7 +9,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import (
+from qtpy.QtCore import (
     QObject,
     QPoint,
     QProcess,
@@ -22,8 +22,8 @@ from PySide6.QtCore import (
     QUrl,
     Signal,
 )
-from PySide6.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPixmap, QPolygon, QTextCursor
-from PySide6.QtWidgets import (
+from qtpy.QtGui import QColor, QDesktopServices, QIcon, QPainter, QPixmap, QPolygon, QTextCursor
+from qtpy.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
@@ -100,11 +100,19 @@ class _LoadWorker(QRunnable):
             return
         try:
             result = self.task()
-            if not self.cancelled():
-                self.signals.completed.emit(result)
         except Exception as error:
-            if not self.cancelled():
-                self.signals.failed.emit(str(error))
+            self._emit("failed", str(error))
+        else:
+            self._emit("completed", result)
+
+    def _emit(self, signal_name: str, value: object) -> None:
+        if self.cancelled():
+            return
+        try:
+            getattr(self.signals, signal_name).emit(value)
+        except RuntimeError:
+            # The workspace was closed while the task ran; PyQt raises where PySide ignores it.
+            pass
 
 
 class _SettingsSpinBox(QSpinBox):

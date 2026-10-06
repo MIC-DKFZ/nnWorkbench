@@ -5,11 +5,12 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import (
+from qtpy.QtCore import Qt, QTimer, QUrl
+from qtpy.QtGui import (
     QColor,
     QDesktopServices,
     QFont,
+    QFontDatabase,
     QFontInfo,
     QImage,
     QTextBlock,
@@ -17,8 +18,9 @@ from PySide6.QtGui import (
     QTextCursor,
     QTextDocument,
     QTextFormat,
+    QTextTable,
 )
-from PySide6.QtWidgets import QTabBar, QTextBrowser, QVBoxLayout, QWidget
+from qtpy.QtWidgets import QTabBar, QTextBrowser, QVBoxLayout, QWidget
 
 GUIDE_DIRECTORY = Path(__file__).parent.parent / "assets" / "annotation_workflow"
 GUIDE_STAGES = (
@@ -34,6 +36,20 @@ GUIDE_STAGES = (
 CODE_BLOCK_BACKGROUND = QColor("#f3f5f8")
 TAGLINE_COLOR = QColor("#0a4697")
 DOCUMENT_MARGIN = 20
+
+
+def _monospace_font() -> QFont:
+    """Return the system's fixed-width font, or a generic monospace font if the platform reports none."""
+    font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+    if not QFontInfo(font).fixedPitch():
+        font = QFont("monospace")
+        font.setStyleHint(QFont.StyleHint.TypeWriter)
+    return font
+
+
+def _enum_value(value) -> int:
+    """Return a Qt enum's integer value; Qt 6 bindings use Python enums, Qt 5 bindings plain ints."""
+    return int(getattr(value, "value", value))
 
 
 def heading_anchor(text: str) -> str:
@@ -55,9 +71,11 @@ class GuideBrowser(QTextBrowser):
         self._rendered_width = self._image_width()
         self.document().setDocumentMargin(DOCUMENT_MARGIN)
         self._format_blocks()
+        self._apply_code_font()
+        self._collapse_table_borders()
 
     def loadResource(self, resource_type: int, url: QUrl):
-        if resource_type == QTextDocument.ResourceType.ImageResource.value:
+        if _enum_value(resource_type) == _enum_value(QTextDocument.ResourceType.ImageResource):
             image = QImage(self.source().resolved(url).toLocalFile())
             if not image.isNull():
                 width = self._image_width()
@@ -120,6 +138,45 @@ class GuideBrowser(QTextBrowser):
                 block_format.setBottomMargin(10)
             cursor.setPosition(block.position()); cursor.setBlockFormat(block_format)
             block = block.next()
+        self.document().setModified(False)
+
+    def _apply_code_font(self) -> None:
+        """Show code in a monospace font; Qt 5's Markdown import marks code but keeps the normal font."""
+        # Only change the family, so code keeps the size of the surrounding text.
+        code = QTextCharFormat()
+        family = QFontInfo(_monospace_font()).family()  # the resolved family, e.g. "DejaVu Sans Mono"
+        if hasattr(code, "setFontFamilies"):
+            code.setFontFamilies([family])
+        else:
+            code.setFontFamily(family)
+        code.setFontFixedPitch(True)
+        code.setFontStyleHint(QFont.StyleHint.TypeWriter)
+        block = self.document().begin()
+        while block.isValid():
+            if block.blockFormat().hasProperty(QTextFormat.Property.BlockCodeFence):
+                cursor = QTextCursor(block)
+                cursor.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                cursor.mergeCharFormat(code)
+            else:
+                fragments = block.begin()
+                while not fragments.atEnd():
+                    fragment = fragments.fragment()
+                    if fragment.charFormat().fontFixedPitch():
+                        cursor = QTextCursor(self.document())
+                        cursor.setPosition(fragment.position())
+                        cursor.setPosition(fragment.position() + fragment.length(), QTextCursor.MoveMode.KeepAnchor)
+                        cursor.mergeCharFormat(code)
+                    fragments += 1
+            block = block.next()
+        self.document().setModified(False)
+
+    def _collapse_table_borders(self) -> None:
+        """Draw single table borders; Qt 6 does this by default, Qt 5 draws double borders."""
+        for frame in self.document().rootFrame().childFrames():
+            if isinstance(frame, QTextTable):
+                table_format = frame.format()
+                table_format.setBorderCollapse(True)
+                frame.setFormat(table_format)
         self.document().setModified(False)
 
     def _style_tagline(self, block: QTextBlock) -> None:

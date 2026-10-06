@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QTimer, Signal
-from PySide6.QtGui import QIntValidator
-from PySide6.QtWidgets import (
+from qtpy.QtCore import QEvent, QTimer, Signal
+from qtpy.QtGui import QIntValidator
+from qtpy.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QHeaderView,

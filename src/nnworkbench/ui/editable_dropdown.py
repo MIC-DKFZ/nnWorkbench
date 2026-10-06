@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QColor, QPainter, QPolygon
-from PySide6.QtWidgets import QComboBox, QStyle, QStyleOptionComboBox
+from qtpy.QtCore import QPoint, Qt
+from qtpy.QtGui import QColor, QPainter, QPolygon
+from qtpy.QtWidgets import QComboBox, QStyle, QStyleOptionComboBox
 
 
 class EditableDropdownComboBox(QComboBox):

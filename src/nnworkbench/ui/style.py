@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QApplication
+from qtpy.QtGui import QFont
+from qtpy.QtWidgets import QApplication
 
 STYLESHEET = """
 QMainWindow, QDialog {

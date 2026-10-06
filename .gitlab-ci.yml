@@ -1,0 +1,66 @@
+# Tests nnWorkbench with both supported Qt bindings (PySide6 / Qt 6 and PyQt5 / Qt 5).
+stages:
+  - test
+
+variables:
+  QT_QPA_PLATFORM: offscreen
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+.test-script: &test-script
+  - python -m pip install --upgrade pip
+  - python -m pip install '.[dev]'
+  - if [ "$QT_API" = "pyqt5" ]; then python -m pip install 'PyQt5>=5.15,<6'; fi
+  - python -m build --wheel
+  - python -m pip install --force-reinstall --no-deps dist/nnworkbench-0.1.0-py3-none-any.whl
+  - nnworkbench-set-paths --help
+  - nnworkbench-run --help
+  - pytest -q
+
+lint:
+  stage: test
+  image: python:3.12
+  script:
+    - python -m pip install 'ruff>=0.6,<1'
+    - ruff check .
+  # Existing findings of newer ruff versions are not fixed yet; do not block the tests.
+  allow_failure: true
+
+test:linux:
+  stage: test
+  image: python:3.12
+  parallel:
+    matrix:
+      - QT_API: [pyside6, pyqt5]
+  before_script:
+    # System libraries Qt needs to run offscreen in a minimal container.
+    - apt-get update -qq
+    - apt-get install -y -qq libgl1 libegl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libglib2.0-0
+  script: *test-script
+  cache:
+    paths: [.cache/pip]
+
+# Windows and macOS need dedicated runners (the tags below are those of GitLab.com).
+# The jobs only start when triggered manually, so a missing runner does not block the pipeline.
+test:windows:
+  stage: test
+  tags: [saas-windows-medium-amd64]
+  when: manual
+  allow_failure: true
+  parallel:
+    matrix:
+      - QT_API: [pyside6, pyqt5]
+  script:
+    - python -m pip install '.[dev]'
+    - if ($env:QT_API -eq "pyqt5") { python -m pip install "PyQt5>=5.15,<6" }
+    - pytest -q
+
+test:macos:
+  stage: test
+  tags: [saas-macos-medium-m1]
+  image: macos-14-xcode-15
+  when: manual
+  allow_failure: true
+  parallel:
+    matrix:
+      - QT_API: [pyside6, pyqt5]
+  script: *test-script

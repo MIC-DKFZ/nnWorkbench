@@ -7,8 +7,8 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QUrl
-from PySide6.QtWidgets import QApplication
+from qtpy.QtCore import QUrl
+from qtpy.QtWidgets import QApplication
 
 from nnworkbench.ui.workflow_guide import (
     GUIDE_DIRECTORY,
