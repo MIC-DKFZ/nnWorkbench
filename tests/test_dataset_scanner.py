@@ -38,11 +38,11 @@ def test_creator_creates_raw_structure(tmp_path: Path):
     assert (created / "dataset.json").is_file()
 
 
-def test_next_iteration_copies_only_annotation_workflow_inputs(tmp_path: Path):
+def test_next_iteration_copies_images_labels_and_manifest(tmp_path: Path):
     raw = tmp_path / "raw"; raw.mkdir()
     source = raw / "Dataset203_Project_iter1"
-    for folder, filename in (("imagesTr", "case_001_0000.nii.gz"), ("annotationsTr", "case_001.nii.gz"),
-                             ("labelsTr", "case_001.nii.gz")):
+    for folder, filename in (("imagesTr", "case_001_0000.nii.gz"), ("labelsTr", "case_001.nii.gz"),
+                             ("predTr", "case_001.nii.gz")):
         directory = source / folder; directory.mkdir(parents=True)
         (directory / filename).touch()
     (source / "dataset.json").write_text('{"labels": {"background": 0}}', encoding="utf-8")
@@ -54,6 +54,6 @@ def test_next_iteration_copies_only_annotation_workflow_inputs(tmp_path: Path):
 
     assert created.name == "Dataset204_Project_iter2"
     assert (created / "imagesTr" / "case_001_0000.nii.gz").is_file()
-    assert (created / "annotationsTr" / "case_001.nii.gz").is_file()
+    assert (created / "labelsTr" / "case_001.nii.gz").is_file()
     assert (created / "dataset.json").read_text(encoding="utf-8") == '{"labels": {"background": 0}}'
-    assert not (created / "labelsTr").exists()
+    assert not (created / "predTr").exists()

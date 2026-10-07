@@ -28,7 +28,7 @@ When using cross-validation, repeat this review for all folds. Each image is use
 
 Open each validation prediction together with its image and your labels from `labelsTr`, overlay them, and compare the prediction with your labels.
 
-**In nnWorkbench:** In **Results**, expand the model, a fold and its `validation` folder, and click **Inspect** next to a case. Napari opens the image, your labels and the prediction together. Switch between cases with the **Case navigation** panel or the **A** and **D** keys. To inspect any other prediction folder, e.g. from [6. Predict](6-predict.md), use **Inspect predictions**.
+**In nnWorkbench:** On the **Validate** page, click a finished fold of a model, then **🔍** next to a case. Napari opens the image, your labels and the prediction together.
 
 ## What to Look For
 
@@ -40,7 +40,7 @@ Open each validation prediction together with its image and your labels from `la
 
 The `summary.json` file contains validation metrics for each case and class, together with average values across the validation set. The most common metric is the Dice score, which measures the overlap between prediction and labels (0 = no overlap, 1 = perfect). These values are useful for tracking progress and comparing training runs.
 
-**In nnWorkbench:** In **Results**, select a fold to view its `summary.json`.
+**In nnWorkbench:** On the **Validate** page, click a fold: the mean Dice per class is shown above the cases, and the right panel shows the `summary.json` values of the fold or of the selected case.
 
 ## Next Step
 
@@ -80,13 +80,13 @@ Based on these results, either return to [3. Annotate](3-annotate.md) for anothe
 
 Create a new dataset for each round. The previous dataset and its trained model stay unchanged, so you can compare the rounds later.
 
-1. **Create a new dataset** with a new, unused dataset ID, e.g. `Dataset043_CellSegmentation_iter1`, and copy `imagesTr`, `annotationsTr` and `dataset.json` from the previous round into it. `labelsTr` is not copied; it is generated again.
+1. **Create a new dataset** with a new, unused dataset ID, e.g. `Dataset043_CellSegmentation_iter1`, and copy `imagesTr`, `labelsTr` and `dataset.json` from the previous round into it.
 2. **Improve the training data** based on the validation outcome (see [Typical Errors and Next Steps](#typical-errors-and-next-steps)):
    - Add annotations to existing images where the model makes errors.
    - Add new images to `imagesTr` and annotate them if the errors occur in image types that are underrepresented, e.g. noisy images or one imaging session.
-3. **Train again:** [convert the annotations](3-annotate.md#convert-the-annotations), update `numTraining` in `dataset.json` if you added images, then preprocess and train the new dataset as described in [4. Train](4-train.md).
+3. **Train again:** update `numTraining` in `dataset.json` if you added images, then preprocess and train the new dataset as described in [4. Train](4-train.md).
 
-**In nnWorkbench:** Select the dataset and, in **Raw**, click **Create next iteration**. nnWorkbench suggests the next free dataset ID and a name ending in `_iter1` (then `_iter2`, …), and copies `imagesTr`, `annotationsTr` and `dataset.json` into the new dataset. In the new dataset, use **Edit** to extend existing annotations and **Annotate** for newly added images. Then click **Convert Annotations**, **Run Preprocessing** and **Run Training**.
+**In nnWorkbench:** On the **Validate** page, click **＋ Create next iteration**. nnWorkbench suggests the next free dataset ID and a name ending in `_iter1` (then `_iter2`, …), and copies `imagesTr`, `labelsTr` and `dataset.json` into the new dataset. In the new dataset, use **✎** to extend existing annotations and to annotate newly added images, then preprocess and train.
 
 ---
 

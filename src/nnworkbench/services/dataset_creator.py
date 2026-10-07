@@ -16,7 +16,7 @@ def normalise_name(name: str) -> str:
 
 
 def create_dataset(raw_root: Path | None, all_roots: list[Path | None], dataset_id: int,
-                   name: str, include_annotations: bool = False) -> Path:
+                   name: str) -> Path:
     if raw_root is None or not raw_root.is_dir():
         raise ValueError("Choose an existing nnUNet_raw directory before creating a dataset")
     if dataset_id <= 0:
@@ -29,7 +29,7 @@ def create_dataset(raw_root: Path | None, all_roots: list[Path | None], dataset_
         destination.mkdir()
     except FileExistsError as error:
         raise ValueError(f"{directory_name} already exists") from error
-    for child in ("imagesTr", "labelsTr", *(("annotationsTr",) if include_annotations else ())):
+    for child in ("imagesTr", "labelsTr"):
         (destination / child).mkdir()
     labels = {"background": 0, "": 1}
     manifest = {"channel_names": {"0": ""}, "labels": labels, "numTraining": 0,
@@ -56,7 +56,7 @@ def next_free_dataset_id(start: int, all_roots: list[Path | None]) -> int:
 
 def create_next_iteration(raw_root: Path | None, all_roots: list[Path | None], source: Path,
                           dataset_id: int, name: str) -> Path:
-    """Create a raw annotation-workflow iteration from its images, annotations and manifest."""
+    """Create a raw annotation-workflow iteration from its images, labels and manifest."""
     if raw_root is None or not raw_root.is_dir():
         raise ValueError("Choose an existing nnUNet_raw directory before creating an iteration")
     if not source.is_dir() or not (source / "imagesTr").is_dir() or not (source / "dataset.json").is_file():
@@ -71,11 +71,11 @@ def create_next_iteration(raw_root: Path | None, all_roots: list[Path | None], s
     try:
         destination.mkdir()
         shutil.copytree(source / "imagesTr", destination / "imagesTr")
-        annotations = source / "annotationsTr"
-        if annotations.is_dir():
-            shutil.copytree(annotations, destination / "annotationsTr")
+        labels = source / "labelsTr"
+        if labels.is_dir():
+            shutil.copytree(labels, destination / "labelsTr")
         else:
-            (destination / "annotationsTr").mkdir()
+            (destination / "labelsTr").mkdir()
         shutil.copy2(source / "dataset.json", destination / "dataset.json")
     except Exception:
         shutil.rmtree(destination, ignore_errors=True)

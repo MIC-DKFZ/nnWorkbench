@@ -17,7 +17,7 @@ def main() -> None:
     # Let Python process terminal signals while Qt owns the main event loop.
     sigint_timer = QTimer(app); sigint_timer.timeout.connect(lambda: None); sigint_timer.start(200)
     window = MainWindow(); window.show()
-    app.aboutToQuit.connect(window.workspace.shutdown)
+    app.aboutToQuit.connect(window.context.shutdown)
     sys.exit(app.exec())
 
 

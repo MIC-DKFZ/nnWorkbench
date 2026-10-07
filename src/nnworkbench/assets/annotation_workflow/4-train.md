@@ -31,7 +31,7 @@ imagesTr:  Case001_0000.nii.gz  (+ Case001_0001.nii.gz, … for more channels)
 labelsTr:  Case001.nii.gz
 ```
 
-**In nnWorkbench:** The workspace warns if the number of images does not match the number of labels and channels.
+**In nnWorkbench:** The **Data** page marks images without a label with a red ✗ and checks the file names and channels.
 
 ### 2. Inspect the Labels (Optional)
 
@@ -41,7 +41,7 @@ Open a few images together with their labels in a viewer such as Napari and chec
 nnworkbench-run inspect -d 42
 ```
 
-**In nnWorkbench:** In **Raw**, expand `labelsTr` and click **Inspect** next to a label. Napari opens the label together with its image.
+**In nnWorkbench:** On the **Data** page, click **🔍** next to a case. Napari opens the image together with its label.
 
 ### 3. Analyze the Labels (Optional)
 
@@ -51,7 +51,7 @@ Count in how many images each class occurs and how many voxels it covers, to spo
 nnworkbench-run label-analysis -d 42
 ```
 
-**In nnWorkbench:** In **Raw**, click **Analyze Labels**, then select **Label analysis** in the Raw tree to see the results.
+**In nnWorkbench:** On the **Data** page, click **Analyze dataset**, then switch the case table to **📊 Statistics** to see the results.
 
 ### 4. Preprocess
 
@@ -62,7 +62,7 @@ nnworkbench-run nnUNetv2_plan_and_preprocess -d 42 -c 3d_fullres \
     -pl nnUNetPlannerResEncL --verify_dataset_integrity
 ```
 
-**In nnWorkbench:** In **Raw**, click **Run Preprocessing** and choose a configuration and a planner (see [Planners and GPU Memory](#planners-and-gpu-memory)).
+**In nnWorkbench:** On the **Preprocess** page, choose a planner and the configurations, then click **▶ Run preprocessing** (see [Planners and GPU Memory](#planners-and-gpu-memory)).
 
 nnU-Net offers different model configurations. Two are relevant here:
 
@@ -95,13 +95,13 @@ nnworkbench-run nnUNetv2_train 42 3d_fullres 0 \
 
 To train a single model on all images instead, use fold `all` in place of `0`.
 
-**In nnWorkbench:** In **Preprocessed**, click **Run Training** and choose the plans file (e.g. `nnUNetResEncUNetLPlans`), the configuration, the trainer and the fold. `nnUNetTrainer` is preselected; with the **Annotation workflow** switch on, `nnUNetTrainerBetterIgnoreSampling` is preselected instead, and nnWorkbench warns you if you choose another trainer. Click **Run training** to train on this computer, or **Copy command** to run the same command on a remote machine or cluster (see [Work with a Remote Machine](setup.md#work-with-a-remote-machine-optional)).
+**In nnWorkbench:** On the **Train** page, choose the plans (e.g. `nnUNetResEncUNetLPlans`), the configuration, the trainer and one fold, then click **▶ Start training**. `nnUNetTrainer` is preselected; with an `ignore` label in `dataset.json`, `nnUNetTrainerBetterIgnoreSampling` is preselected instead.
 
 ### 6. Follow the Training
 
 Training runs unattended and can take hours. nnU-Net writes a log and a `progress.png` plot of the training curves into each fold folder in `nnUNet_results`.
 
-**In nnWorkbench:** **Results** shows each fold with its most recently logged epoch, e.g. `(epoch 123)`, and `(complete)` once training has finished.
+**In nnWorkbench:** The **Train** page lists every model with its folds and shows the current epoch and pseudo Dice of a running fold. The console at the bottom shows the training output.
 
 ## Options Explained
 

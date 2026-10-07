@@ -170,6 +170,7 @@ class LabelStatisticsView(QWidget):
     def __init__(self, analysis: dict, annotation_workflow_enabled: bool = False, parent=None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         classes = analysis["classes"]
         self._classes = classes
         per_image = analysis["per_image"]
@@ -184,8 +185,11 @@ class LabelStatisticsView(QWidget):
         summary_parts.append(f"{axis_count}D")
         summary = QLabel("Label analysis · " + " · ".join(summary_parts))
         summary.setObjectName("analysisSummary")
-        layout.addWidget(summary)
-        controls = QHBoxLayout(); controls.addStretch()
+        summary.setProperty("muted", True)
+        controls = QHBoxLayout(); controls.setContentsMargins(16, 8, 16, 4); controls.setSpacing(10)
+        controls.addWidget(summary)
+        self.header_row = controls  # pages can add status badges next to the summary
+        controls.addStretch()
         background = QCheckBox("Hide background")
         controls.addWidget(background); layout.addLayout(controls)
         views = QTabWidget(); layout.addWidget(views, 1)

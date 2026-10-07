@@ -37,7 +37,7 @@ nnworkbench-run nnUNetv2_predict -i imagesTs/ -o predictions/ \
     -p nnUNetResEncUNetLPlans -f all
 ```
 
-**In nnWorkbench:** In **Results**, click **Run Predict** and choose the input and output folders. Plans, configuration and trainer are offered from your trained models; enter the folds to use (default `0 1 2 3 4`, or `all`). Click **Run prediction** to predict on this computer, or **Copy command** to run the same command on a remote machine or cluster (see [Work with a Remote Machine](setup.md#work-with-a-remote-machine-optional)).
+**In nnWorkbench:** On the **Predict** page, choose the input and output folders, the model and its finished folds, and click **▶ Predict**. **🔍** next to a predicted image opens it in Napari.
 
 The output folder contains one segmentation file for each input case. Review the predictions before using them for further analysis; in nnWorkbench, use **Inspect predictions** in **Results**.
 

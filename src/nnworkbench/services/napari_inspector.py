@@ -176,13 +176,13 @@ def file_ending(path: Path) -> str:
 
 
 def annotation_target_path(image_path: Path) -> Path:
-    """Return the case-level annotationsTr output path corresponding to an image channel."""
-    return image_path.parent.parent / "annotationsTr" / f"{case_id(image_path)}{file_ending(image_path)}"
+    """Return the labelsTr file that annotations of an image channel are saved to."""
+    return image_path.parent.parent / "labelsTr" / f"{case_id(image_path)}{file_ending(image_path)}"
 
 
 def annotation_source_image(path: Path) -> Path:
-    """Return an imagesTr source for an annotation, preferring channel 0000."""
-    if path.parent.name != "annotationsTr":
+    """Return an imagesTr source for a label or annotation, preferring channel 0000."""
+    if path.parent.name not in {"annotationsTr", "labelsTr"}:
         return path
     images = related_files(path).images
     if not images:
@@ -379,10 +379,27 @@ def _reset_middle_slice(viewer, case_data: _CaseData) -> None:
         viewer.dims.set_current_step(axis, shape[-3] // 2)
 
 
+def _dataset_ignore_id(image_path: Path) -> int | None:
+    """Return the ignore label of the dataset an image belongs to (``None`` for dense labels)."""
+    from .workflow_status import ignore_label_id
+
+    try:
+        with (image_path.parent.parent / "dataset.json").open(encoding="utf-8") as file:
+            manifest = json.load(file)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    return ignore_label_id(manifest if isinstance(manifest, dict) else None)
+
+
 def save_semantic_annotation(viewer, image_path: Path, target: Path) -> None:
-    """Save nnInteractive's semantic-map layer with the source image geometry."""
+    """Save nnInteractive's semantic-map layer to labelsTr with the source image geometry.
+
+    The layer values are mapped back to nnU-Net label IDs (see ``label_mapping``).
+    """
     import mitk
     import numpy as np
+
+    from .label_mapping import annotation_to_label
 
     layer_name = semantic_map_name(image_path)
     try:
@@ -390,8 +407,8 @@ def save_semantic_annotation(viewer, image_path: Path, target: Path) -> None:
     except (KeyError, IndexError) as error:
         raise ValueError(f"No nnInteractive semantic-map layer named '{layer_name}' is available.") from error
     source = mitk.Image(image_path)
-    annotation = mitk.Image(np.asarray(layer.data), spacing=source.spacing, origin=source.origin,
-                            direction=source.direction)
+    values = annotation_to_label(np.asarray(layer.data), _dataset_ignore_id(image_path))
+    annotation = mitk.Image(values, spacing=source.spacing, origin=source.origin, direction=source.direction)
     target.parent.mkdir(parents=True, exist_ok=True)
     annotation.save(target)
 
@@ -411,11 +428,15 @@ def annotation_label_summary(image_path: Path) -> tuple[tuple[int, str], ...]:
     labels = manifest.get("labels", {}) if isinstance(manifest, dict) else {}
     if not isinstance(labels, dict):
         return ()
+    sparse = any(isinstance(name, str) and name.strip().casefold() == "ignore" for name in labels)
     translated: list[tuple[int, str]] = []
     for name, value in labels.items():
         if not isinstance(name, str) or isinstance(value, bool) or not isinstance(value, int):
             continue
-        translated.append((0 if name.strip().casefold() == "ignore" else value + 1, name))
+        if not sparse:
+            translated.append((value, name))
+        else:
+            translated.append((0 if name.strip().casefold() == "ignore" else value + 1, name))
     return tuple(sorted(translated, key=lambda entry: (entry[0], entry[1].casefold())))
 
 
@@ -439,7 +460,10 @@ class AnnotationSaveWidget(QWidget):
             if labels else "<b>Annotation IDs: </b> unavailable"
         )
         layout.addWidget(self._label_summary)
-        self._label_note = QLabel("<i>Note: During annotation, 0 is ignore; all other label IDs are shifted by +1.</i>")
+        note = ("<i>Sparse labels: 0 is ignore (not annotated); all other label IDs are shifted by +1. "
+                "Saving writes labelsTr with the original IDs.</i>" if _dataset_ignore_id(image_path) is not None
+                else "<i>Dense labels: 0 is background. Saving writes labelsTr.</i>")
+        self._label_note = QLabel(note)
         self._label_note.setWordWrap(True)
         layout.addWidget(self._label_note)
         self._status = QLabel(); self._status.hide(); layout.addWidget(self._status)
@@ -567,13 +591,18 @@ def open_annotation(selected_path: Path) -> None:
     import napari
 
     image_path = annotation_source_image(selected_path)
-    target = (selected_path if selected_path.parent.name == "annotationsTr"
+    target = (selected_path if selected_path.parent.name == "labelsTr"
               and has_image_suffix(selected_path) else annotation_target_path(image_path))
     viewer = napari.Viewer(title=f"nnWorkbench annotation — {case_id(image_path)}")
 
     def load() -> tuple:
+        from .label_mapping import label_to_annotation
+
         image = _read_image(image_path)
-        return image, (_read_image(target) if target.is_file() else None)
+        if not target.is_file():
+            return image, None
+        label, affine = _read_image(target)
+        return image, (label_to_annotation(label, _dataset_ignore_id(image_path)), affine)
 
     _load_in_background(viewer, case_id(image_path), load,
                         lambda loaded: _set_up_annotation(viewer, image_path, target, *loaded))

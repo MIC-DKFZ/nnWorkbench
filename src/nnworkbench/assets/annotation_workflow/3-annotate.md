@@ -7,7 +7,7 @@
 - Annotate small, representative regions in many different images rather than large regions in a few.
 - Label all classes, including the background, roughly balanced and next to each other.
 - Use [nnInteractive](#nninteractive) for 3D objects and [scribbles](#scribble-annotations) otherwise, but stick to one method per class.
-- **In nnWorkbench:** **Annotate** an image, click **Save annotation**, and finally **Convert Annotations**.
+- **In nnWorkbench:** Click **✎** next to a case on the **Data** page and click **Save annotation**. The annotation is saved directly to `labelsTr`; no conversion is needed.
 
 **nnInteractive:** An interactive segmentation method which can generate 3D instance segmentation masks from simple 2D user input like clicks, boxes, lasso or scribbles.
 
@@ -59,7 +59,7 @@ Napari and MITK support both nnInteractive and scribble annotations using the br
 
 Every voxel you have not labeled must stay recognizable as unlabeled. The ID 0 is the most convenient choice for this: it is displayed as transparent, so unlabeled areas stay clear and you keep a good overview of what you have already annotated. Therefore, while annotating, Ignore gets the annotation ID 0 and all class IDs from [2. Define](2-define.md) are shifted up by one. This applies to both annotation methods, nnInteractive and scribbles.
 
-| Class | Original ID (`dataset.json`, `labelsTr`) | Annotation ID (`annotationsTr`) |
+| Class | Original ID (`dataset.json`, `labelsTr`) | Annotation ID (while annotating) |
 | --- | --- | --- |
 | Ignore | 3 | 0 |
 | Background | 0 | 1 |
@@ -68,7 +68,7 @@ Every voxel you have not labeled must stay recognizable as unlabeled. The ID 0 i
 
 *(IDs for the Dataset042 example.)*
 
-Your annotations in `annotationsTr` use the annotation IDs. Before training, they are converted back to the original IDs and saved in `labelsTr`. nnWorkbench lists the annotation IDs in the **nnWorkbench — Annotation saving** panel while you annotate, and converts them with **Convert Annotations** (see [Convert the Annotations](#convert-the-annotations)).
+While annotating, you paint with the annotation IDs. Before training, they must be converted back to the original IDs and saved in `labelsTr`. nnWorkbench does this mapping for you: it shows the annotation IDs in the **nnWorkbench — Annotation saving** panel while you annotate, and writes the original IDs to `labelsTr` when you save. Outside nnWorkbench, convert them as described in [Convert the Annotations](#convert-the-annotations).
 
 ### nnInteractive
 
@@ -90,10 +90,10 @@ nnInteractive creates instance segmentations, meaning that individual objects ar
 
 **In nnWorkbench:**
 
-- Turn on the **Annotation workflow** switch. In **Raw**, expand `imagesTr` and click **Annotate** next to an image. To continue a saved annotation, expand `annotationsTr` and click **Edit**.
+- Turn on the **Annotation Workflow** switch in the top bar. On the **Data** page, click **✎** next to a case. The same button continues a saved annotation.
 - Napari opens with the image, its semantic map (empty or previously saved) and the nnInteractive controls, with the semantic map output already enabled.
 - Initialize nnInteractive and segment each object as described above. Use the [annotation IDs](#annotation-ids) listed in the **nnWorkbench — Annotation saving** panel.
-- Click **Save annotation**. The semantic map is saved to `annotationsTr` with the correct filename.
+- Click **Save annotation**. The semantic map is saved to `labelsTr` with the correct filename and the original IDs.
 
 ### Scribble Annotations
 
@@ -108,7 +108,7 @@ Besides the general annotation principles and selection strategies, follow these
 - **Be efficient.** Scribbles do not need pixel-perfect precision. A few well-placed strokes usually provide the best balance between annotation effort and segmentation quality.
 - **Don't forget the background.** This is also a class we have to label, so don't forget to add enough background annotations. Otherwise, the model may not learn boundaries of other classes accurately, resulting in fuzzy or imprecise borders.
 
-**In nnWorkbench:** Open the image with **Annotate** or **Edit** as described [above](#nninteractive), select the semantic map layer, paint with the brush tool using the [annotation IDs](#annotation-ids) from the saving panel, and click **Save annotation**.
+**In nnWorkbench:** Open the case with **✎** as described [above](#nninteractive), select the semantic map layer, paint with the brush tool using the [annotation IDs](#annotation-ids) from the saving panel, and click **Save annotation**.
 
 **Example scribble annotations:**
 
@@ -138,7 +138,7 @@ nnworkbench-run convert-annotations -d 42
 
 Empty annotations and annotations with invalid IDs are skipped and reported. Afterwards, check the class balance of the labels (see [Analyze the Labels](4-train.md#3-analyze-the-labels-optional)).
 
-**In nnWorkbench:** In **Raw**, click **Convert Annotations**. All annotations in `annotationsTr` are converted and saved to `labelsTr`.
+**In nnWorkbench:** Not needed. Annotations made with **✎** are saved directly to `labelsTr`.
 
 **Reference:** Isensee, F.\*, Rokuss, M.\*, Krämer, L.\*, Dinkelacker, S., Ravindran, A., Stritzke, F., Hamm, B., Wald, T., Langenberg, M., Ulrich, C., Deissler, J., Floca, R., & Maier-Hein, K. (2025). nnInteractive: Redefining 3D Promptable Segmentation. (\*: equal contribution)
 

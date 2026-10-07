@@ -22,7 +22,7 @@ nnworkbench-set-paths --raw /path/to/nnUNet_raw \
 
 Check the saved paths with `nnworkbench-get-paths`. The GUI and the command line share these settings, so setting them in one place is enough on the same computer.
 
-**In nnWorkbench:** In the header at the top, click **Browse…** next to `nnUNet_raw`, `nnUNet_preprocessed` and `nnUNet_results` and select each folder.
+**In nnWorkbench:** On the overview (the start screen), click **Browse…** next to `nnUNet_raw`, `nnUNet_preprocessed` and `nnUNet_results` and select each folder.
 
 To train on a remote machine or cluster, see [Work with a Remote Machine](#work-with-a-remote-machine-optional).
 
@@ -38,7 +38,7 @@ nnworkbench-set-paths --raw /remote/path/to/nnUNet_raw \
     --results /remote/path/to/nnUNet_results
 ```
 
-**In nnWorkbench:** Add a remote profile in the header (**+**), enter the remote paths, and click **Export** to copy this command.
+**In nnWorkbench:** On the overview, click **＋ Add remote profile**, enter the remote paths, and click **Export** to copy this command.
 
 **Run commands:** In the nnWorkbench dialogs, click **Copy command** and run the command in a terminal on the remote machine. The `nnworkbench-run` prefix makes it use the remote paths.
 
@@ -66,9 +66,6 @@ nnUNet_raw/
     ├── imagesTr/                # Training images
     │   ├── Case001_0000.nii.gz  # _0000 = channel 0 (more channels: _0001, …)
     │   └── ...
-    ├── annotationsTr/           # Annotation Workflow only:
-    │   ├── Case001.nii.gz       # your manual annotations
-    │   └── ...
     ├── labelsTr/                # Training labels, one per image
     │   ├── Case001.nii.gz
     │   └── ...
@@ -76,19 +73,19 @@ nnUNet_raw/
     └── dataset.json             # Describes channels, classes and file format
 ```
 
-**Annotation Workflow:** The format that works best for manual annotation differs slightly from the format nnU-Net requires for training. Therefore, human-created annotations are stored in `annotationsTr` and converted before training. The converted labels are saved in `labelsTr`, which is the folder nnU-Net uses during training.
+**Annotation Workflow:** In nnWorkbench you annotate the labels in `labelsTr` directly; nnWorkbench converts between the annotation IDs used in Napari and the label IDs nnU-Net needs when it loads and saves a case (see [Annotation IDs](3-annotate.md#annotation-ids)).
 
-**nnU-Net Workflow:** Copy your labels directly into `labelsTr`; `annotationsTr` is not needed.
+**nnU-Net Workflow:** Copy your labels directly into `labelsTr`.
 
-> **Note:** In the end, `imagesTr` and `labelsTr` (and `annotationsTr` in the Annotation Workflow) must contain the same cases. Each image, its corresponding annotation and label must also have the same filename. Images need a `_0000` postfix: it is the channel number (see [4. Train](4-train.md#1-check-the-filenames)).
+> **Note:** In the end, `imagesTr` and `labelsTr` must contain the same cases. Each image and its label must have the same filename. Images need a `_0000` postfix: it is the channel number (see [4. Train](4-train.md#1-check-the-filenames)).
 
 > **Note:** Put only images with labels, or images you are going to annotate, into `imagesTr`. An image without label file makes the counts no longer match. Keep all other images in a separate folder, e.g. `imagesTs`, to predict them later in [6. Predict](6-predict.md).
 
 > **Note:** We recommend storing images, annotations and labels as NIfTI files (`.nii.gz`). This format is supported by nnU-Net and by most nnInteractive integrations. But in general, other formats are also possible. See [Prepare Your Images](#prepare-your-images-optional) for supported formats and conversion.
 
-Create the dataset folder with the subfolders `imagesTr` and `labelsTr` (plus `annotationsTr` for the Annotation Workflow) in `nnUNet_raw` yourself, copy your images (and, in the nnU-Net Workflow, your labels) into them, and add a `dataset.json` as described [below](#create-datasetjson). Make sure no other dataset uses the same ID.
+Create the dataset folder with the subfolders `imagesTr` and `labelsTr` in `nnUNet_raw` yourself, copy your images (and, in the nnU-Net Workflow, your labels) into them, and add a `dataset.json` as described [below](#create-datasetjson). Make sure no other dataset uses the same ID.
 
-**In nnWorkbench:** Click **New dataset** in the Datasets panel and enter a dataset ID and a name. nnWorkbench creates the correctly named folder with `imagesTr`, `labelsTr` and a `dataset.json` template, and warns you if the ID is already in use. For the Annotation Workflow, turn on the **Annotation workflow** switch in the header first, so that `annotationsTr` is created too. Copy your images (and, in the nnU-Net Workflow, your labels) into the folders, and use **Inspect** next to a file in **Raw** to open the case in Napari.
+**In nnWorkbench:** Click **＋ New dataset** on the overview and enter a dataset ID and a name. nnWorkbench creates the correctly named folder with `imagesTr`, `labelsTr` and a `dataset.json` template, and warns you if the ID is already in use. Copy your images (and, in the nnU-Net Workflow, your labels) into the folders (**📁 Open**, then **⟳ Refresh**), and use **🔍** next to a case on the **Data** page to open it in Napari.
 
 ## Create dataset.json
 
@@ -115,7 +112,7 @@ The `dataset.json` file describes the channels, the classes and the file format;
   - **nnU-Net Workflow:** Use the IDs in your label files. Add `ignore` only if some voxels are not labeled.
 - **`numTraining`:** The number of cases in `labelsTr`.
 
-**In nnWorkbench:** **New dataset** creates a `dataset.json` template. Fill it in with the editor on the right. It highlights missing names, non-continuous IDs and a `numTraining` that does not match `labelsTr`; with the **Annotation workflow** switch on, also a missing or misplaced `ignore` class. The workspace also warns if the number of images in `imagesTr` does not match the number of labels and channels.
+**In nnWorkbench:** **＋ New dataset** creates a `dataset.json` template. Fill it in with **✎ Edit** on the **Data** page: the keys are fixed, and you can change the values, rename and renumber labels and channels, and add or remove them. Saving checks for missing names, non-continuous IDs and an `ignore` label that is not the highest ID.
 
 ## Prepare Your Images (Optional)
 

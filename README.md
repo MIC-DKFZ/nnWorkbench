@@ -60,7 +60,7 @@ Save the nnU-Net roots on the remote machine once. `nnworkbench-run` then uses t
 nnworkbench-set-paths --raw /path/to/nnUNet_raw --preprocessed /path/to/nnUNet_preprocessed --results /path/to/nnUNet_results
 ```
 
-You can also create a Remote profile in the GUI and use **Export** to copy this command with its configured paths.
+You can also add a remote path profile on the overview and use **Export** to copy this command with its configured paths.
 
 # Quick start
 
@@ -70,27 +70,26 @@ Start the GUI with `nnworkbench-gui`.
 
 ## nnU-Net Workflow
 
-1. **Set the paths:** In the header, select the folders for `nnUNet_raw`, `nnUNet_preprocessed` and `nnUNet_results`. The three folders are independent: nnWorkbench combines the datasets found across all of them. For remote or terminal use, save the same paths with `nnworkbench-set-paths` as shown above.
-2. **Create a dataset:** Click **New dataset**, or select an existing one. Copy your images into `imagesTr` and your labels into `labelsTr`, and fill in `dataset.json` in the editor on the right.
-3. **Preprocess:** In **Raw**, click **Run Preprocessing** (`nnUNetPlannerResEncL` is preselected).
-4. **Train:** In **Preprocessed**, click **Run Training** (`nnUNetTrainer` is preselected).
-5. **Validate:** In **Results**, expand a fold's `validation` folder and click **Inspect** to compare the predictions with your labels.
-6. **Predict:** In **Results**, click **Run Predict**, then **Inspect predictions**.
+1. **Set the paths:** On the overview (the start screen), select the folders for `nnUNet_raw`, `nnUNet_preprocessed` and `nnUNet_results`. The three folders are independent: nnWorkbench combines the datasets found across all of them. For remote or terminal use, save the same paths with `nnworkbench-set-paths` as shown above.
+2. **Create a dataset:** Click **New dataset**, or open an existing one from the list. Copy your images into `imagesTr` and your labels into `labelsTr` (**📁 Open**, then **⟳ Refresh**), and fill in `dataset.json` with **✎ Edit** on the **Data** page.
+3. **Preprocess:** On the **Preprocess** page, click **▶ Run preprocessing** (`nnUNetPlannerResEncL` is preselected).
+4. **Train:** On the **Train** page, choose the fold and click **▶ Start training** (`nnUNetTrainer` is preselected).
+5. **Validate:** On the **Validate** page, click a finished fold of a model and use **🔍** next to a case to compare the prediction with your label.
+6. **Predict:** On the **Predict** page, choose the input and output folders, the model and its finished folds, and click **▶ Predict**. **🔍** opens a prediction in Napari.
 
 ## Annotation Workflow
 
-The Annotation Workflow extends the nnU-Net Workflow: it adds the annotation steps and uses a trainer made for sparse labels. Steps marked *(as in the nnU-Net Workflow)* are unchanged.
+The Annotation Workflow extends the nnU-Net Workflow: it adds annotating in Napari and uses a trainer made for sparse labels. Turn it on with the **Annotation Workflow** switch in the top bar (it applies to all datasets). Steps marked *(as in the nnU-Net Workflow)* are unchanged.
 
 1. **Set the paths** *(as in the nnU-Net Workflow)*.
-2. **Create a dataset:** Turn on the **Annotation workflow** switch in the header first, then click **New dataset**, so that `annotationsTr` is created too. Copy only your images into `imagesTr`, and add an `ignore` class with the highest ID to `dataset.json`.
-3. **Annotate:** In **Raw**, click **Annotate** next to an image in `imagesTr` (or **Edit** in `annotationsTr`), annotate in Napari and click **Save annotation**.
-4. **Convert:** In **Raw**, click **Convert Annotations** to create the training labels in `labelsTr`.
-5. **Preprocess** *(as in the nnU-Net Workflow)*.
-6. **Train:** In **Preprocessed**, click **Run Training** (`nnUNetTrainerBetterIgnoreSampling` is preselected).
-7. **Validate:** Inspect the predictions as in the nnU-Net Workflow, including the unlabeled regions. For another annotation round, click **Create next iteration** in **Raw** and continue with step 3 in the new dataset.
-8. **Predict** *(as in the nnU-Net Workflow)*.
+2. **Create a dataset:** Click **New dataset**, copy only your images into `imagesTr`, and add an `ignore` class with the highest ID to `dataset.json` (this makes the labels *sparse*).
+3. **Annotate:** On the **Data** page, click **✎** next to a case, annotate in Napari and click **Save annotation**. The annotation is saved directly to `labelsTr`; a missing label starts as all *ignore*.
+4. **Preprocess** *(as in the nnU-Net Workflow)*.
+5. **Train:** As in the nnU-Net Workflow; `nnUNetTrainerBetterIgnoreSampling` is preselected because `dataset.json` has an `ignore` label.
+6. **Validate:** Inspect the predictions as in the nnU-Net Workflow, including the unlabeled regions. For another annotation round, click **＋ Create next iteration** on the **Validate** page and continue with step 3 in the new dataset.
+7. **Predict** *(as in the nnU-Net Workflow)*.
 
-The [nnWorkbench guide](src/nnworkbench/assets/annotation_workflow/README.md) explains both workflows step by step, with command-line alternatives; its overview shows which stages each workflow uses. It is also shown in the GUI via the **ⓘ** button next to the Annotation workflow switch.
+The [nnWorkbench guide](src/nnworkbench/assets/annotation_workflow/README.md) explains both workflows step by step, with command-line alternatives; its overview shows which stages each workflow uses. It is also shown in the GUI via **? Guide** in the top bar and the guide link on every page.
 
 ## CLI overview
 
@@ -115,7 +114,7 @@ nnworkbench-run inspect -d 42 -i 12
 # Analyse labelsTr and save class_distribution.json
 nnworkbench-run label-analysis -d 42 --workers 4
 
-# Convert annotationsTr semantic maps into labelsTr training labels
+# Convert annotations made outside nnWorkbench (annotationsTr, annotation IDs) into labelsTr
 nnworkbench-run convert-annotations -d 42 --workers 4
 
 # Stack naturally ordered 2D slices (e.g. TIFF or PNG) into one 3D NIfTI volume
