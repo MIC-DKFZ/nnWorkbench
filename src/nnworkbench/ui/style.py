@@ -154,9 +154,6 @@ QLabel#foldChip[state="done"] {{ background: #d6efdf; color: {GREEN}; }}
 QLabel#foldChip[state="training"] {{ background: #fbe0c4; color: #b8661c; }}
 QLabel#foldChip[state="stopped"] {{ background: #fff; border: 1px dashed {ORANGE}; color: #b8661c; }}
 QLabel#foldChip[state="reduced"] {{ background: #e2e8f0; color: #475569; }}
-QLabel#configChip {{ border-radius: 6px; padding: 2px 8px; font-family: "{MONO}"; font-size: 11px; font-weight: 700; }}
-QLabel#configChip[state="ok"] {{ background: #d6efdf; color: {GREEN}; }}
-QLabel#configChip[state="plan"] {{ border: 1px dashed #94a3b8; color: {MUTED}; font-weight: 500; }}
 QLabel#jobChip {{ border: 1px solid {LINE}; border-radius: 10px; padding: 2px 10px; font-size: 12px; font-weight: 600; color: {MUTED}; }}
 QLabel#jobChip[active="true"] {{ border-color: {BLUE}; background: {BLUE_SOFT}; color: {BLUE}; }}
 QFrame#infoBox {{ background: white; border: 1px solid {LINE}; border-radius: 8px; }}

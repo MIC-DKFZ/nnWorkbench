@@ -5,14 +5,23 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from datetime import datetime
 from pathlib import Path
+from typing import ClassVar
 
 from qtpy.QtCore import QByteArray, QPoint, QRect, QSize, Qt, Signal
-from qtpy.QtGui import QAction, QColor, QFont, QGuiApplication, QIcon, QKeySequence, QPainter, QPen, QPixmap
+from qtpy.QtGui import (
+    QAction,
+    QColor,
+    QFont,
+    QGuiApplication,
+    QIcon,
+    QKeySequence,
+    QPainter,
+    QPen,
+    QPixmap,
+)
 from qtpy.QtSvg import QSvgRenderer
 from qtpy.QtWidgets import (
     QAbstractButton,
-    QStyledItemDelegate,
-    QToolTip,
     QAbstractItemView,
     QButtonGroup,
     QFrame,
@@ -23,8 +32,10 @@ from qtpy.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -115,29 +126,26 @@ class ElidedLabel(QLabel):
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.setText(text)
 
-    def minimumSizeHint(self) -> QSize:  # noqa: N802
+    def minimumSizeHint(self) -> QSize:
         return QSize(40, super().minimumSizeHint().height())
 
-    def setText(self, text: str) -> None:  # noqa: N802 (Qt API)
+    def setText(self, text: str) -> None:
         self._full = text
         self.setToolTip(text)
         self._elide()
 
-    def full_text(self) -> str:
-        return self._full
-
-    def contextMenuEvent(self, event) -> None:  # noqa: N802
+    def contextMenuEvent(self, event) -> None:
         from qtpy.QtWidgets import QMenu
 
         menu = QMenu(self)
         menu.addAction("Copy", lambda: QGuiApplication.clipboard().setText(self._full))
         menu.exec(event.globalPos())
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
+    def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._elide()
 
-    def sizeHint(self) -> QSize:  # noqa: N802
+    def sizeHint(self) -> QSize:
         hint = super().sizeHint()
         return QSize(self.fontMetrics().horizontalAdvance(self._full) + 4, hint.height())
 
@@ -243,13 +251,6 @@ def availability(raw: bool, preprocessed: bool, results: bool) -> QWidget:
         row.addWidget(item, 0, Qt.AlignmentFlag.AlignVCenter)
     row.addStretch()
     return holder
-
-
-def status_mark(present: bool) -> QLabel:
-    widget = QLabel("✓" if present else "✗")
-    widget.setObjectName("statusYes" if present else "statusNo")
-    widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    return widget
 
 
 def format_time(timestamp: float | None) -> str:
@@ -409,7 +410,7 @@ class HowToCard(QFrame):
 class StageTab(QAbstractButton):
     """A stage tab with a round status icon and an underline when selected."""
 
-    _ICONS = {"ok": "✓", "warn": "!", "error": "!"}
+    _ICONS: ClassVar[dict[str, str]] = {"ok": "✓", "warn": "!", "error": "!"}
 
     def __init__(self, text: str, parent=None) -> None:
         super().__init__(parent)
@@ -520,9 +521,6 @@ class ToggleGroup(QFrame):
         self._group.button(0).setChecked(True)
         self._group.idClicked.connect(self.changed.emit)
 
-    def set_index(self, index: int) -> None:
-        self._group.button(index).setChecked(True)
-
     def set_tooltip(self, index: int, text: str) -> None:
         self._group.button(index).setToolTip(text)
 
@@ -601,7 +599,7 @@ class InfoIcon(QLabel):
         self.setToolTip(text)
         self._text = text
 
-    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+    def mouseReleaseEvent(self, event) -> None:
         QToolTip.hideText()
         box = QFrame(self, Qt.WindowType.Popup)
         box.setObjectName("infoBox")
@@ -813,7 +811,7 @@ class IconButtonsDelegate(QStyledItemDelegate):
         y = rect.center().y() - height // 2
         return [QRect(x + index * (width + self.GAP), y, width, height) for index in range(count)]
 
-    def paint(self, painter: QPainter, option, index) -> None:  # noqa: N802
+    def paint(self, painter: QPainter, option, index) -> None:
         buttons = self._buttons(index.row())
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -829,7 +827,7 @@ class IconButtonsDelegate(QStyledItemDelegate):
                 painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, icon)
         painter.restore()
 
-    def sizeHint(self, option, index) -> QSize:  # noqa: N802
+    def sizeHint(self, option, index) -> QSize:
         count = len(self._buttons(index.row()))
         return QSize(16 + count * self.SIZE[0] + (count - 1) * self.GAP, self.SIZE[1] + 8)
 
@@ -843,7 +841,7 @@ class IconButtonsDelegate(QStyledItemDelegate):
                 return index.row(), number
         return None
 
-    def eventFilter(self, watched, event) -> bool:  # noqa: N802
+    def eventFilter(self, watched, event) -> bool:
         from qtpy.QtCore import QEvent
 
         if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:

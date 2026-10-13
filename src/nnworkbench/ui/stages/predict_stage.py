@@ -21,34 +21,43 @@ from nnworkbench.services.workflow_status import ModelInfo, prediction_status
 from ..context import AppContext
 from ..dataset_state import DatasetState
 from ..widgets import (
-    breakable,
     Card,
     ChoiceGroup,
     HowToCard,
-    badge,
-    cell_widget,
     IconButtonsDelegate,
-    mark_item,
     ToggleGroup,
+    badge,
+    breakable,
     button,
+    cell_widget,
     empty_state,
     form_hint,
     form_row,
     icon_button,
     label,
     make_table,
+    mark_item,
     scroll,
     section_label,
     table_item,
     tip,
 )
-from .common import fold_chip, CommandBox, StagePage, arguments_field, mean_dice_item, model_name_cell, models_table, size_models_table
+from .common import (
+    CommandBox,
+    StagePage,
+    arguments_field,
+    fold_chip,
+    mean_dice_item,
+    model_name_cell,
+    models_table,
+    size_models_table,
+)
 
 
 def _howto() -> HowToCard:
     return HowToCard("How to predict", [
-        "Choose a folder with new images, named like in imagesTr (<span style='font-family:monospace'>_0000</span> "
-        "suffix).",
+        ("Choose a folder with new images, named like in imagesTr (<span style='font-family:monospace'>_0000</span> "
+        "suffix)."),
         "Choose the model and the folds. More folds usually give better predictions, but take longer.",
         "Results are label files with the same names in the output folder.",
     ], [], "Predict")
@@ -241,10 +250,10 @@ class PredictStage(StagePage):
         source = Path(self._input.text()) if self._input.text().strip() else None
         target = Path(self._output.text()) if self._output.text().strip() else None
         self.context.tasks.run("predict-status", lambda: prediction_status(source, target),
-                               lambda rows: self._fill_images(rows, source, target))
+                               self._fill_images)
         self._update_command()
 
-    def _fill_images(self, rows: object, source: Path | None, target: Path | None) -> None:
+    def _fill_images(self, rows: object) -> None:
         rows = rows if isinstance(rows, list) else []
         self._table.setVisible(bool(rows))
         self._images_empty.setVisible(not rows)

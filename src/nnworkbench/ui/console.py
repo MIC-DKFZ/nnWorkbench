@@ -68,10 +68,6 @@ class ConsolePanel(QFrame):
         self._expanded = not self._expanded
         self._apply_expanded()
 
-    def set_expanded(self, expanded: bool) -> None:
-        self._expanded = expanded
-        self._apply_expanded()
-
     def _apply_expanded(self) -> None:
         self._log_holder.setVisible(self._expanded)
         self._toggle.setText("▾ Collapse" if self._expanded else "▴ Expand")

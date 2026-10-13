@@ -8,7 +8,6 @@ from pathlib import Path
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QGuiApplication
 from qtpy.QtWidgets import (
-    QSizePolicy,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -20,6 +19,7 @@ from qtpy.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -32,21 +32,21 @@ from nnworkbench.services.dataset_json import manifest_source
 
 from .context import AppContext
 from .widgets import (
-    svg_icon,
     Card,
     FlowLayout,
     availability,
     badge,
     button,
     cell_widget,
-    fit_columns,
     dataset_id_label,
+    fit_columns,
     format_time,
     label,
     make_table,
     section_label,
     separator,
     set_badge,
+    svg_icon,
     table_item,
 )
 

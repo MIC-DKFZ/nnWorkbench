@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
-
 from qtpy.QtCore import Qt
-from qtpy.QtWidgets import (QCheckBox, QHeaderView, QGridLayout, QHBoxLayout, QLabel, QMessageBox, QVBoxLayout,
-                            QWidget)
+from qtpy.QtWidgets import (
+    QCheckBox,
+    QGridLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QVBoxLayout,
+    QWidget,
+)
 
 from nnworkbench.services.commands import training_command
 from nnworkbench.services.nnunet_discovery import available_trainers
@@ -15,27 +22,40 @@ from ..context import AppContext
 from ..dataset_state import DatasetState
 from ..editable_dropdown import EditableDropdownComboBox
 from ..widgets import (
-    icon_html,
-    breakable,
     Card,
     ChoiceGroup,
     HowToCard,
     IconButtonsDelegate,
     badge,
+    breakable,
     button,
     cell_widget,
     clear_layout,
-    fit_columns,
     empty_state,
+    fit_columns,
     form_hint,
     form_row,
+    icon_html,
     label,
     make_table,
     section_label,
     table_item,
     tip,
 )
-from .common import FOLD_ALL_NOTE, FOLD_STATUS, fold_chip, RunDialog, detail_row, model_name_cell, CommandBox, StagePage, arguments_field, mean_dice_item, models_table, size_models_table
+from .common import (
+    FOLD_ALL_NOTE,
+    FOLD_STATUS,
+    CommandBox,
+    RunDialog,
+    StagePage,
+    arguments_field,
+    detail_row,
+    fold_chip,
+    mean_dice_item,
+    model_name_cell,
+    models_table,
+    size_models_table,
+)
 
 SPARSE_TRAINER = "nnUNetTrainerBetterIgnoreSampling"
 DENSE_TRAINER = "nnUNetTrainer"
@@ -45,19 +65,15 @@ DEFAULT_PLANS = "nnUNetResEncUNetLPlans"  # written by the default planner (nnUN
 def _howto() -> HowToCard:
     return HowToCard("How training works", [
         "Pick a <b>trainer</b>, <b>plans</b> and <b>configuration</b> to define a model.",
-        "Train a <b>cross-validation</b>: each <b>fold</b> splits the cases into a training and a validation set "
+        ("Train a <b>cross-validation</b>: each <b>fold</b> splits the cases into a training and a validation set "
         "(5 folds by default, <span style='font-family:monospace'>splits_final.json</span>). Fold <b>all</b> uses "
-        "every case for training, without a dedicated validation set.",
-    ], [("blue", f"{icon_html('bulb')} <b>Dice</b>: model performance on the validation set after training.<br>"
+        "every case for training, without a dedicated validation set."),
+    ], [("blue", (f"{icon_html('bulb')} <b>Dice</b>: model performance on the validation set after training.<br>"
                  "<b>Pseudo Dice</b>: quick approximation during training on random patches of the validation set.<br>"
-                 "Fold <b>all</b>: its Dice is measured on training cases."),
-        ("blue", "<b>Training status</b>: <i>training</i> while the log was updated in the last 15 minutes, "
-                 "otherwise <i>stopped</i> (can be continued)."),
+                 "Fold <b>all</b>: its Dice is measured on training cases.")),
+        ("blue", ("<b>Training status</b>: <i>training</i> while the log was updated in the last 15 minutes, "
+                 "otherwise <i>stopped</i> (can be continued).")),
         ("purple", f"{icon_html('bulb')} Use <b>BetterIgnoreSampling</b> (or a variant) for sparse labels.")], "Train")
-
-
-def _short(value: float) -> str:
-    return f"{value / 1e6:.2f} M" if value >= 1e6 else f"{value / 1e3:.1f} k" if value >= 1e3 else f"{value:.0f}"
 
 
 class TrainStage(StagePage):

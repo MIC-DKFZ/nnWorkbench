@@ -14,7 +14,6 @@ from qtpy.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
-    QLabel,
     QPlainTextEdit,
     QSpinBox,
     QTreeWidget,
@@ -32,8 +31,6 @@ from ..context import AppContext
 from ..dataset_state import DatasetState
 from ..editable_dropdown import EditableDropdownComboBox
 from ..widgets import (
-    icon_html,
-    icon_label,
     Card,
     ChoiceGroup,
     HowToCard,
@@ -44,6 +41,8 @@ from ..widgets import (
     form_row,
     format_time,
     icon_button,
+    icon_html,
+    icon_label,
     label,
     make_table,
     section_label,
@@ -60,23 +59,16 @@ def _howto() -> HowToCard:
     return HowToCard("What preprocessing does", [
         "Analyses your images (<b>fingerprint</b>): sizes, spacing, intensities.",
         "Plans the network, patch size and preprocessing for your GPU (<b>plans</b>).",
-        "Resamples and normalises all cases and stores them in a <b>plans folder</b> (e.g. "
+        ("Resamples and normalises all cases and stores them in a <b>plans folder</b> (e.g. "
         "<span style='font-family:monospace'>nnUNetPlans_3d_fullres</span>). Training reads its data from "
-        "this folder.",
-    ], [("blue", f"{icon_html('bulb')} Select a suitable planner (GPU memory, training time per fold on an A100):<br>"
+        "this folder."),
+    ], [("blue", (f"{icon_html('bulb')} Select a suitable planner (GPU memory, training time per fold on an A100):<br>"
                  "<b>ExperimentPlanner</b> <span style='white-space:nowrap'>(~8 GB, ~9 h)</span><br>"
                  "<b>nnUNetPlannerResEncM</b> <span style='white-space:nowrap'>(9–11 GB, ~12 h)</span><br>"
                  "<b>nnUNetPlannerResEncL</b> <span style='white-space:nowrap'>(24 GB, ~35 h)</span> "
                  "<span style='background:#1f5fbf; color:white; font-weight:600'>&nbsp;default&nbsp;</span><br>"
                  "<b>nnUNetPlannerResEncXL</b> <span style='white-space:nowrap'>(40 GB, ~66 h)</span><br>"
-                 "or type a custom planner name.")], "Train · Preprocess")
-
-
-def _chip(text: str, state: str) -> QLabel:
-    chip = QLabel(text)
-    chip.setObjectName("configChip")
-    chip.setProperty("state", state)
-    return chip
+                 "or type a custom planner name."))], "Train · Preprocess")
 
 
 class PreprocessStage(StagePage):
@@ -321,11 +313,6 @@ class PreprocessStage(StagePage):
             self._planner.addItems(list(planners))
             self._planner.setCurrentText(current or DEFAULT_PLANNER)
             self._planner.blockSignals(False)
-
-    def _current_plans(self) -> PlansInfo | None:
-        if self.state is None:
-            return None
-        return next((plans for plans in self.state.plans if plans.name == (self._selected_plans or ("",))[0]), None)
 
     def _plans_selected(self) -> None:
         selected = self._plans_table.selectionModel().selectedRows()

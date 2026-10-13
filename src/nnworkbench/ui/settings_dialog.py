@@ -7,12 +7,12 @@ import os
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QAbstractSpinBox,
-    QLayout,
     QCheckBox,
     QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QLayout,
     QSpinBox,
     QVBoxLayout,
 )

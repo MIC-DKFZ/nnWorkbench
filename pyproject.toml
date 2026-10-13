@@ -45,3 +45,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.ruff.lint.per-file-ignores]
+# nnU-Net discovers trainers by this module name, and its trainers take torch.device("cuda") as default.
+"src/nnworkbench/nnunet_trainers/*.py" = ["N999", "B008"]

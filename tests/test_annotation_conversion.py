@@ -2,10 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from nnworkbench.services.annotation_conversion import (
-    convert_annotations,
-    has_annotation_files,
-)
+from nnworkbench.services.annotation_conversion import convert_annotations
 
 
 def _manifest(path: Path, labels: str = '{"background": 0, "tumour": 1, "organ": 2, "ignore": 3}') -> None:
@@ -52,12 +49,3 @@ def test_convert_annotations_requires_last_ignore_label_in_raw_manifest(tmp_path
 
     with pytest.raises(ValueError, match="last"):
         convert_annotations(tmp_path)
-
-
-def test_has_annotation_files_requires_a_nifti_annotation(tmp_path: Path) -> None:
-    annotations = tmp_path / "annotationsTr"; annotations.mkdir()
-    assert not has_annotation_files(tmp_path)
-    (annotations / "points.json").touch()
-    assert not has_annotation_files(tmp_path)
-    (annotations / "case_001.nii.gz").touch()
-    assert has_annotation_files(tmp_path)

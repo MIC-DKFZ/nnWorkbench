@@ -42,11 +42,6 @@ def ignore_label_id(manifest: dict | None) -> int | None:
     return None
 
 
-def label_mode(manifest: dict | None) -> str:
-    """Return ``"sparse"`` when dataset.json defines an ignore label, otherwise ``"dense"``."""
-    return "sparse" if ignore_label_id(manifest) is not None else "dense"
-
-
 def channel_count(manifest: dict | None) -> int:
     channels = manifest.get("channel_names") if isinstance(manifest, dict) else None
     return len(channels) if isinstance(channels, dict) and channels else 1
@@ -85,7 +80,6 @@ class RawOverview:
     label_files: int
     channels: int
     names_valid: bool
-    has_images_folder: bool
 
     @property
     def missing_labels(self) -> int:
@@ -136,8 +130,7 @@ def raw_overview(raw_path: Path | None, manifest: dict | None) -> RawOverview:
         except OSError:
             last_edit = None
         rows.append(CaseRow(case, files, expected <= found_channels, label, last_edit))
-    return RawOverview(tuple(rows), image_count, len(labels), channels, names_valid,
-                       images_dir is not None and images_dir.is_dir())
+    return RawOverview(tuple(rows), image_count, len(labels), channels, names_valid)
 
 
 def newest_label_time(raw_path: Path | None) -> float | None:
@@ -422,7 +415,7 @@ def read_geometry(path: Path) -> Geometry | None:
         reader.ReadImageInformation()
         return Geometry(tuple(reader.GetSize()), tuple(reader.GetSpacing()), tuple(reader.GetOrigin()),
                         tuple(reader.GetDirection()))
-    except Exception:
+    except Exception:  # noqa: BLE001  (unreadable image header: no geometry)
         return None
 
 

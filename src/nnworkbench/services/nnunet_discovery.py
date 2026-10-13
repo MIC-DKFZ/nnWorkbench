@@ -17,14 +17,14 @@ def available_planners() -> tuple[str, ...]:
         base_class = base_module.ExperimentPlanner
     # A partially installed or broken custom extension must not prevent the
     # default workflow from opening.
-    except Exception:
+    except Exception:  # noqa: BLE001  (a broken installed extension must not break the GUI)
         return (default,)
 
     names = {default}
     for module_info in pkgutil.walk_packages(package.__path__, f"{package.__name__}.", onerror=lambda _name: None):
         try:
             module = importlib.import_module(module_info.name)
-        except Exception:
+        except Exception:  # noqa: BLE001, S112  (a broken installed extension must not break the GUI)
             continue
         for _name, candidate in inspect.getmembers(module, inspect.isclass):
             try:
@@ -44,13 +44,13 @@ def available_trainers() -> tuple[str, ...]:
         base_class = base_module.nnUNetTrainer
     # A partially installed or broken custom extension must not prevent the
     # default workflow from opening.
-    except Exception:
+    except Exception:  # noqa: BLE001  (a broken installed extension must not break the GUI)
         return (default,)
 
     packages = [package]
     try:
         packages.append(importlib.import_module("nnworkbench.nnunet_trainers"))
-    except Exception:
+    except Exception:  # noqa: BLE001, S110  (a broken installed extension must not break the GUI)
         pass
     names = {default}
     for trainer_package in packages:
@@ -58,7 +58,7 @@ def available_trainers() -> tuple[str, ...]:
                                                  onerror=lambda _name: None):
             try:
                 module = importlib.import_module(module_info.name)
-            except Exception:
+            except Exception:  # noqa: BLE001, S112  (a broken installed extension must not break the GUI)
                 continue
             for _name, candidate in inspect.getmembers(module, inspect.isclass):
                 try:

@@ -11,7 +11,7 @@ import tempfile
 from collections import Counter
 from collections.abc import Callable, Iterable
 from concurrent.futures import ProcessPoolExecutor
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .dataset_json import read_manifest
@@ -176,7 +176,7 @@ def analyse_label_distribution(dataset_directory: Path, workers: int | None = No
         for path, file_analysis in zip(files, file_analyses, strict=True)
     ]
     analysis = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "labels_directory": "labelsTr",
         "files_analyzed": len(files),
         "workers": worker_count,

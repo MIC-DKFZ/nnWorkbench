@@ -7,8 +7,12 @@ from pathlib import Path
 
 from nnworkbench.models.dataset import DatasetRecord
 from nnworkbench.services.dataset_contents import json_object
-from nnworkbench.services.dataset_json import (definition_errors, file_ending_error, manifest_source,
-                                               num_training_error)
+from nnworkbench.services.dataset_json import (
+    definition_errors,
+    file_ending_error,
+    manifest_source,
+    num_training_error,
+)
 from nnworkbench.services.label_analysis import load_label_analysis
 from nnworkbench.services.workflow_status import (
     ModelInfo,

@@ -31,14 +31,6 @@ def annotation_files(dataset_directory: Path) -> list[Path]:
                   key=lambda path: path.name.casefold())
 
 
-def has_annotation_files(dataset_directory: Path) -> bool:
-    """Return whether annotationsTr contains at least one convertible annotation image."""
-    directory = dataset_directory / "annotationsTr"
-    return directory.is_dir() and any(
-        path.is_file() and has_image_suffix(path) for path in directory.iterdir()
-    )
-
-
 def _ignore_label_id(dataset_directory: Path) -> int:
     """Read and validate nnU-Net's final ignore label from the raw manifest."""
     manifest_path = dataset_directory / "dataset.json"
@@ -47,7 +39,7 @@ def _ignore_label_id(dataset_directory: Path) -> int:
     manifest = read_manifest(dataset_directory)
     labels = manifest.get("labels")
     if not isinstance(labels, dict):
-        raise ValueError("The raw dataset.json must contain a labels object.")
+        raise ValueError("The raw dataset.json must contain a labels object.")  # noqa: TRY004  (invalid dataset.json content; callers catch ValueError)
     ignore = labels.get("ignore")
     values = [value for value in labels.values() if isinstance(value, int)]
     if not isinstance(ignore, int) or not values:
@@ -91,7 +83,7 @@ def _convert_file(arguments: tuple[str, str, int]) -> tuple[str | None, str | No
             os.replace(temporary, target)
         finally:
             temporary.unlink(missing_ok=True)
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001  (one bad file must not stop the batch; it is reported as a warning)
         return None, f"{annotation_path.name}: skipped because conversion failed: {error}"
     return str(target), None
 

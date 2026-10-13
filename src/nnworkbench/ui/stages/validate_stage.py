@@ -8,9 +8,9 @@ from pathlib import Path
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QButtonGroup,
-    QHeaderView,
     QGridLayout,
     QHBoxLayout,
+    QHeaderView,
     QPlainTextEdit,
     QPushButton,
     QStackedWidget,
@@ -30,33 +30,41 @@ from nnworkbench.services.workflow_status import (
 from ..context import AppContext
 from ..dataset_state import DatasetState
 from ..widgets import (
-    icon_html,
     Bar,
-    badge,
     Card,
     HowToCard,
     IconButtonsDelegate,
+    badge,
     button,
     cell_widget,
     clear_layout,
     empty_state,
+    icon_html,
     label,
     make_table,
     section_label,
     table_item,
 )
-from .common import FOLD_ALL_NOTE, model_name_cell, FOLD_SIZE, StagePage, mean_dice_item, models_table, size_models_table
+from .common import (
+    FOLD_ALL_NOTE,
+    FOLD_SIZE,
+    StagePage,
+    mean_dice_item,
+    model_name_cell,
+    models_table,
+    size_models_table,
+)
 
 
 def _howto() -> HowToCard:
     return HowToCard("How to validate", [
         "Each fold predicts the cases it did <b>not</b> train on, so the Dice shows how well the model generalises.",
-        "<b>Mean Dice</b> per model is the mean over its finished folds; compare models with the same folds for a fair "
-        "comparison.",
-        f"Click a fold to see its results and cases. Always inspect predictions with {icon_html('search')}: metrics alone can hide "
-        "errors.",
-    ], [("purple", f"{icon_html('edit')} Annotation Workflow (optional): if another iteration is needed, annotate more images and "
-                    "train a new round. During annotation, focus on the weak classes.")], "Validate")
+        ("<b>Mean Dice</b> per model is the mean over its finished folds; compare models with the same folds for a fair "
+        "comparison."),
+        (f"Click a fold to see its results and cases. Always inspect predictions with {icon_html('search')}: metrics alone can hide "
+        "errors."),
+    ], [("purple", (f"{icon_html('edit')} Annotation Workflow (optional): if another iteration is needed, annotate more images and "
+                    "train a new round. During annotation, focus on the weak classes."))], "Validate")
 
 
 class ValidateStage(StagePage):
@@ -307,9 +315,9 @@ class ValidateStage(StagePage):
         paths = [fold.path for fold in folds if fold.name != "all"]
         self.context.tasks.run("validate-model", lambda: [json_object(path / "validation" / "summary.json")
                                                            for path in paths],
-                               lambda summaries: self._apply_model(model, folds, summaries))
+                               lambda summaries: self._apply_model(model, summaries))
 
-    def _apply_model(self, model: ModelInfo, folds: list, summaries: object) -> None:
+    def _apply_model(self, model: ModelInfo, summaries: object) -> None:
         if self._model is not model or self._fold is not None or self.state is None:
             return
         names = self.state.names

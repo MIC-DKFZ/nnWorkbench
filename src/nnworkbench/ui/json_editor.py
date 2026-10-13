@@ -22,7 +22,12 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from nnworkbench.services.dataset_json import definition_errors, file_ending_error, num_training_error, write_manifest
+from nnworkbench.services.dataset_json import (
+    definition_errors,
+    file_ending_error,
+    num_training_error,
+    write_manifest,
+)
 
 from .widgets import badge, button, label, scroll, set_badge
 

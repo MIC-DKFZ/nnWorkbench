@@ -5,7 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from qtpy.QtCore import Qt, QTimer
-from qtpy.QtWidgets import QFrame, QHeaderView, QGridLayout, QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
+from qtpy.QtWidgets import (
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from nnworkbench.services.workflow_status import CaseRow, geometries_match, read_geometry
 
@@ -14,11 +22,10 @@ from ..dataset_state import DatasetState
 from ..json_editor import DatasetJsonPanel
 from ..label_statistics_dialog import LabelStatisticsView
 from ..widgets import (
-    icon_html,
-    icon_label,
     Bar,
     Card,
     HowToCard,
+    IconButtonsDelegate,
     ToggleGroup,
     badge,
     button,
@@ -26,10 +33,11 @@ from ..widgets import (
     empty_state,
     format_size,
     format_time,
-    IconButtonsDelegate,
-    mark_item,
+    icon_html,
+    icon_label,
     label,
     make_table,
+    mark_item,
     polish,
     section_label,
     separator,
@@ -42,8 +50,8 @@ def _howto() -> HowToCard:
     return HowToCard("The raw dataset", [
         "Images go to <b>imagesTr</b>, one file per channel: <span style='font-family:monospace'>case_0000.nii.gz</span>.",
         "Labels go to <b>labelsTr</b> with the same case name, without the channel suffix.",
-        "<b>dataset.json</b> describes channels, labels and the file ending. An optional <b>ignore</b> label marks "
-        "voxels that are not annotated; it must have the highest label ID.",
+        ("<b>dataset.json</b> describes channels, labels and the file ending. An optional <b>ignore</b> label marks "
+        "voxels that are not annotated; it must have the highest label ID."),
         f"{icon_html('search')} inspects a case in Napari; {icon_html('edit')} annotates it (saved to <b>labelsTr</b>).",
     ], [], "Prepare your images")
 

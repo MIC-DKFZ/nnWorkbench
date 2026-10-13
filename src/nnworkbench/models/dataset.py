@@ -15,7 +15,3 @@ class DatasetRecord:
     @property
     def directory_name(self) -> str:
         return f"Dataset{self.dataset_id:03d}_{self.name}"
-
-    @property
-    def has_raw_metadata(self) -> bool:
-        return self.raw_path is not None and (self.raw_path / "dataset.json").is_file()

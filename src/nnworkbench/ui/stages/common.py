@@ -7,11 +7,11 @@ import shlex
 from qtpy.QtCore import Qt, QTimer, Signal
 from qtpy.QtGui import QGuiApplication
 from qtpy.QtWidgets import (
-    QSizePolicy,
-    QLabel,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,

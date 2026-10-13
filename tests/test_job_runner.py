@@ -1,9 +1,15 @@
 import sys
 import time
 
-from tests.test_ui_smoke import _application
+from qtpy.QtCore import QStandardPaths
+from qtpy.QtWidgets import QApplication
 
 from nnworkbench.ui.jobs import JobRunner
+
+
+def _application() -> QApplication:
+    QStandardPaths.setTestModeEnabled(True)
+    return QApplication.instance() or QApplication([])
 
 
 def _wait(application, runner: JobRunner, seconds: float = 20) -> None:

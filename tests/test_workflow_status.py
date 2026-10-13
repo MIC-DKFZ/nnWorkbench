@@ -9,12 +9,15 @@ from pathlib import Path
 
 import pytest
 
-from nnworkbench.services.commands import prediction_command, preprocessing_command, training_command
+from nnworkbench.services.commands import (
+    prediction_command,
+    preprocessing_command,
+    training_command,
+)
 from nnworkbench.services.label_mapping import annotation_to_label, label_to_annotation
 from nnworkbench.services.workflow_status import (
     fold_info,
     ignore_label_id,
-    label_mode,
     models_overview,
     plans_overview,
     prediction_status,
@@ -23,11 +26,10 @@ from nnworkbench.services.workflow_status import (
 )
 
 
-def test_label_mode_follows_ignore_label() -> None:
-    assert label_mode({"labels": {"background": 0, "cell": 1, "ignore": 2}}) == "sparse"
+def test_ignore_label_id() -> None:
     assert ignore_label_id({"labels": {"background": 0, "cell": 1, "ignore": 2}}) == 2
-    assert label_mode({"labels": {"background": 0, "cell": 1}}) == "dense"
-    assert label_mode(None) == "dense"
+    assert ignore_label_id({"labels": {"background": 0, "cell": 1}}) is None
+    assert ignore_label_id(None) is None
 
 
 def test_raw_overview_matches_cases_channels_and_labels(tmp_path: Path) -> None:

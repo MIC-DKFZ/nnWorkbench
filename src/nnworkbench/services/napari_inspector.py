@@ -519,11 +519,11 @@ def _activate_layer_statistics(viewer):
         dock_widget, _widget = viewer.window.add_plugin_dock_widget("napari-layer-statistics")
         dock_widget.setWindowTitle("Layer statistics")
         return dock_widget
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001  (optional Napari plugin; a failure only disables it)
         if dock_widget is not None:
             try:
                 dock_widget.close()
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
         print(f"Could not activate napari-layer-statistics: {error}")
         return None
@@ -544,7 +544,7 @@ def _expand_nninteractive_dock(viewer, save_dock, nninteractive_dock) -> None:
             [save_dock.height(), max(1, viewer.window._qt_window.height())],
             Qt.Vertical,
         )
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001  (optional nnInteractive plugin)
         print(f"Could not expand nnInteractive controls: {error}")
 
 
@@ -646,10 +646,10 @@ def _set_up_annotation(viewer, image_path: Path, target: Path, image: tuple, ann
                 # Layer statistics shares nnInteractive's dock area as a selectable tab.
                 viewer.window._qt_window.tabifyDockWidget(nninteractive_dock, statistics_dock)
                 nninteractive_dock.raise_()
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001  (optional Napari plugin; a failure only disables it)
                 try:
                     statistics_dock.close()
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
                 print(f"Could not dock napari-layer-statistics: {error}")
     # Keep the compact panel large enough for its two label lines. Without a
@@ -748,7 +748,7 @@ class CaseNavigator(QWidget):
     def _finish_prefetch(self, identifier: str, future: Future) -> None:
         try:
             result = future.result()
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001  (reported to the viewer instead of crashing the loader thread)
             signal, value = "failed", str(error)
         else:
             signal, value = "completed", result

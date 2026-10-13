@@ -68,11 +68,11 @@ class nnUNetDataLoaderBetterIgnoreSampling(nnUNetDataLoader):
                 # aggregate annotated-area key instead.
                 assert class_locations is not None, "if force_fg is set class_locations cannot be None"
                 if overwrite_class is not None:
-                    assert overwrite_class in class_locations.keys(), (
+                    assert overwrite_class in class_locations, (
                         'desired class ("overwrite_class") does not have class_locations (missing key)'
                     )
 
-                eligible_classes_or_regions = [i for i in class_locations.keys() if len(class_locations[i]) > 0]
+                eligible_classes_or_regions = [i for i in class_locations if len(class_locations[i]) > 0]
                 annotated_key_matches = [
                     i == self.annotated_classes_key if isinstance(i, tuple) else False
                     for i in eligible_classes_or_regions

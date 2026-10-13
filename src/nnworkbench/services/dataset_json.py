@@ -3,24 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
-
-
-@dataclass(frozen=True)
-class ImageCountCheck:
-    images: int
-    channels: int
-    labels: int
-    labels_directory_exists: bool
-
-    @property
-    def expected_images(self) -> int:
-        return self.channels * self.labels
-
-    @property
-    def matches(self) -> bool:
-        return self.images == self.expected_images
 
 
 def manifest_source(raw_directory: Path | None, preprocessed_directory: Path | None,
@@ -31,16 +14,6 @@ def manifest_source(raw_directory: Path | None, preprocessed_directory: Path | N
         if directory and (directory / "dataset.json").is_file():
             return kind, directory
     return None
-
-
-def labels_tr_count(dataset_directory: Path | None) -> int:
-    """Return the number of label images in a raw dataset (other files such as a labelsTr.csv are ignored)."""
-    from nnworkbench.services.image_files import has_image_suffix
-
-    labels_directory = dataset_directory / "labelsTr" if dataset_directory else None
-    if labels_directory is None or not labels_directory.is_dir():
-        return 0
-    return sum(path.is_file() and has_image_suffix(path) for path in labels_directory.iterdir())
 
 
 def num_training_error(manifest: dict, cases: int) -> str | None:
@@ -95,42 +68,21 @@ def file_ending_error(manifest: dict) -> str | None:
     return None
 
 
-def image_count_check(raw_directory: Path | None, preprocessed_directory: Path | None,
-                      results_directory: Path | None) -> ImageCountCheck | None:
-    """Compare raw image count with channels multiplied by accepted label count."""
-    if raw_directory is None or not raw_directory.is_dir():
-        return None
-    source = manifest_source(raw_directory, preprocessed_directory, results_directory)
-    if source is None:
-        return None
-    try:
-        manifest = read_manifest(source[1])
-    except (OSError, ValueError):
-        return None
-    if definition_errors(manifest):
-        return None
-    channels = manifest["channel_names"]
-    images_directory = raw_directory / "imagesTr"
-    images = sum(path.is_file() for path in images_directory.iterdir()) if images_directory.is_dir() else 0
-    labels_directory = raw_directory / "labelsTr"
-    return ImageCountCheck(images, len(channels), labels_tr_count(raw_directory), labels_directory.is_dir())
-
-
 def read_manifest(dataset_directory: Path) -> dict:
     with (dataset_directory / "dataset.json").open(encoding="utf-8") as file:
         data = json.load(file)
     if not isinstance(data, dict):
-        raise ValueError("dataset.json must contain a JSON object")
+        raise ValueError("dataset.json must contain a JSON object")  # noqa: TRY004  (invalid dataset.json content; callers catch ValueError)
     return data
 
 
 def validate_manifest(data: dict) -> None:
     if not isinstance(data.get("channel_names", {}), dict):
-        raise ValueError("channel_names must be an object")
+        raise ValueError("channel_names must be an object")  # noqa: TRY004  (invalid dataset.json content; callers catch ValueError)
     if not isinstance(data.get("labels", {}), dict):
-        raise ValueError("labels must be an object")
+        raise ValueError("labels must be an object")  # noqa: TRY004  (invalid dataset.json content; callers catch ValueError)
     if not isinstance(data.get("file_ending", ""), str):
-        raise ValueError("file_ending must be text")
+        raise ValueError("file_ending must be text")  # noqa: TRY004  (invalid dataset.json content; callers catch ValueError)
     for field in ("description", "licence"):
         if field in data and not isinstance(data[field], str):
             raise ValueError(f"{field} must be text")
