@@ -11,9 +11,9 @@ from qtpy.QtWidgets import (
     QHeaderView,
     QGridLayout,
     QHBoxLayout,
-    QLabel,
     QPlainTextEdit,
     QPushButton,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -30,6 +30,7 @@ from nnworkbench.services.workflow_status import (
 from ..context import AppContext
 from ..dataset_state import DatasetState
 from ..widgets import (
+    icon_html,
     Bar,
     badge,
     Card,
@@ -40,12 +41,11 @@ from ..widgets import (
     clear_layout,
     empty_state,
     label,
-    polish,
     make_table,
     section_label,
     table_item,
 )
-from .common import FOLD_BUTTON_HEIGHT, FOLD_SIZE, StagePage, mean_dice_item, models_table, size_models_table
+from .common import FOLD_ALL_NOTE, model_name_cell, FOLD_SIZE, StagePage, mean_dice_item, models_table, size_models_table
 
 
 def _howto() -> HowToCard:
@@ -53,33 +53,10 @@ def _howto() -> HowToCard:
         "Each fold predicts the cases it did <b>not</b> train on, so the Dice shows how well the model generalises.",
         "<b>Mean Dice</b> per model is the mean over its finished folds; compare models with the same folds for a fair "
         "comparison.",
-        "Click a fold to see its results and cases; open low-scoring cases with 🔍.",
-    ], [("purple", "✎ Annotation Workflow: annotate the weak classes in more images and train a new round.")], "Validate")
-
-
-def _fold_button(name: str, dice: str, muted_dice: bool) -> QPushButton:
-    """A fold button with the fold name and, below it, its Dice (grey for fold all, not a validation result)."""
-    widget = QPushButton()
-    column = QVBoxLayout(widget)
-    column.setContentsMargins(0, 3, 0, 3)
-    column.setSpacing(0)
-    labels = []
-    for text, role in ((name, "name"), (dice, "mutedDice" if muted_dice else "dice")):
-        part = QLabel(text)
-        part.setObjectName("foldButtonText")
-        part.setProperty("role", role)
-        part.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        part.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        column.addWidget(part)
-        labels.append(part)
-
-    def restyle(checked: bool) -> None:
-        for part in labels:
-            part.setProperty("checked", checked)
-            polish(part)
-
-    widget.toggled.connect(restyle)
-    return widget
+        f"Click a fold to see its results and cases. Always inspect predictions with {icon_html('search')}: metrics alone can hide "
+        "errors.",
+    ], [("purple", f"{icon_html('edit')} Annotation Workflow (optional): if another iteration is needed, annotate more images and "
+                    "train a new round. During annotation, focus on the weak classes.")], "Validate")
 
 
 class ValidateStage(StagePage):
@@ -94,13 +71,17 @@ class ValidateStage(StagePage):
         self._summary: dict | None = None
         self._cases: tuple[ValidationCase, ...] = ()
         self._case: ValidationCase | None = None
+        self._case_sort: tuple[int, bool] = (0, False)  # (column, descending): case name by default
         self._fold_buttons = QButtonGroup(self)
-        self._fold_buttons.setExclusive(True)
+        self._fold_buttons.setExclusive(False)  # a second click on the open fold goes back to the model
         models_card = Card()
         head = models_card.add_header("Models")
-        head.addWidget(label("mean Dice over the finished folds · click a fold for its results", muted=True, size=12))
+        self._models_hint = label("click a fold for its results, again to go back", muted=True, size=12)
+        head.addWidget(self._models_hint)
         head.addStretch()
-        self._models = models_table("Finished folds")
+        self._models = models_table("Folds")
+        self._models.cellClicked.connect(lambda row, _column: self._choose_model(self._model_rows[row]))
+        self._model_rows: list[ModelInfo] = []
         models_card.body.addWidget(self._models)
         self._empty = empty_state("No validation results yet. They appear here as soon as the first fold has finished "
                                   "training.")
@@ -113,16 +94,26 @@ class ValidateStage(StagePage):
         self._cases_note = label("", muted=True, size=12)
         cases_head.addWidget(self._cases_note)
         cases_head.addStretch()
-        self._cases_table = make_table(["Case", "Mean Dice", "Weakest class", ""], stretch=0)
+        self._cases_table = make_table(["Case", "Dice", "Weakest class", ""], stretch=0)
         self._cases_table.cellClicked.connect(lambda row, column: column != 3 and self._select_case(row))
         self._cases_table.setItemDelegateForColumn(3, IconButtonsDelegate(
-            self._cases_table, lambda _row: [("🔍", "Inspect in Napari · prediction and label", False)],
+            self._cases_table, lambda _row: [("search", "Open in Napari · prediction and label", False)],
             lambda row, _number: self._inspect(self._cases[row])))
         header = self._cases_table.horizontalHeader()
         for column, width in ((1, 110), (2, 220), (3, 60)):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
             self._cases_table.setColumnWidth(column, width)
-        self._cases_card.body.addWidget(self._cases_table, 1)
+        # Click "Case" or "Dice" to sort (again to reverse); the rows are re-filled, not sorted by Qt.
+        header.setSectionsClickable(True)
+        header.setSortIndicatorShown(True)
+        header.setSortIndicator(0, Qt.SortOrder.AscendingOrder)
+        header.sectionClicked.connect(self._sort_cases)
+        self._cases_table.horizontalHeaderItem(1).setToolTip("Click to sort by Dice (weakest first), again to reverse")
+        self._cases_table.horizontalHeaderItem(0).setToolTip("Click to sort by case name")
+        self._cases_stack = QStackedWidget()
+        self._cases_stack.addWidget(self._cases_table)
+        self._cases_stack.addWidget(empty_state("Select a fold above to see its validation cases."))
+        self._cases_card.body.addWidget(self._cases_stack, 1)
         self.center.addWidget(self._cases_card, 1)
         self.right.addWidget(self._build_panel())
         from .common import empty_panel
@@ -137,8 +128,11 @@ class ValidateStage(StagePage):
         layout.setSpacing(10)
         panel.body.addLayout(layout)
         head = QHBoxLayout()
-        head.addWidget(label("summary.json", name="h3"))
-        self._panel_subject = label("", muted=True, mono=True, size=11)
+        self._panel_title = label("summary.json", name="h3")  # "Model" at model level (no single file there)
+        head.addWidget(self._panel_title)
+        # Wraps instead of being cut off when the trainer or case name is long or the window is narrow.
+        self._panel_subject = label("", muted=True, mono=True, size=11, wrap=True, selectable=True)
+        self._panel_subject.setMinimumWidth(1)
         head.addWidget(self._panel_subject, 1)
         self._close_case = button("✕", ghost=True, small=True, clicked=lambda: self._select_case(-1))
         head.addWidget(self._close_case)
@@ -149,15 +143,26 @@ class ValidateStage(StagePage):
         mean.addWidget(self._foreground)
         mean_text = QVBoxLayout()
         mean_text.setSpacing(0)
-        mean_text.addWidget(section_label("Foreground mean"))
-        self._foreground_note = label("Dice", muted=True, size=12)
+        self._mean_title = section_label("Dice (foreground mean)")
+        mean_text.addWidget(self._mean_title)
+        self._foreground_note = label("Dice", muted=True, size=12, wrap=True)
         mean_text.addWidget(self._foreground_note)
         mean.addLayout(mean_text)
         mean.addStretch()
         layout.addLayout(mean)
+        self._fold_section = QWidget()
+        fold_section = QVBoxLayout(self._fold_section)
+        fold_section.setContentsMargins(0, 0, 0, 0)
+        fold_section.setSpacing(4)
+        fold_section.addWidget(label("Dice per fold", name="h3"))
+        self._fold_bars = QGridLayout()
+        self._fold_bars.setHorizontalSpacing(10)
+        self._fold_bars.setVerticalSpacing(3)
+        fold_section.addLayout(self._fold_bars)
+        layout.addWidget(self._fold_section)
         dice_head = QHBoxLayout()
         dice_head.addWidget(label("Dice per class", name="h3"))
-        self._dice_note = label("", muted=True, size=11)
+        self._dice_note = label("", muted=True, size=11, wrap=True)
         dice_head.addWidget(self._dice_note)
         dice_head.addStretch()
         layout.addLayout(dice_head)
@@ -165,12 +170,20 @@ class ValidateStage(StagePage):
         self._dice_bars.setHorizontalSpacing(10)
         self._dice_bars.setVerticalSpacing(3)
         layout.addLayout(self._dice_bars)
-        layout.addWidget(section_label("Details"))
+        # The real summary.json (fold) or its entry (case); hidden at model level, where the bars say it all.
+        self._details_label = section_label("Details")
+        layout.addWidget(self._details_label)
         self._details = QPlainTextEdit()
         self._details.setObjectName("codeView")
         self._details.setReadOnly(True)
         layout.addWidget(self._details, 1)
+        layout.addStretch()  # keeps the summary at the top while the details are hidden
         return panel
+
+    def _set_details_visible(self, visible: bool) -> None:
+        self._panel_title.setText("summary.json" if visible else "Model")
+        self._details_label.setVisible(visible)
+        self._details.setVisible(visible)
 
     # ------------------------------------------------------------ state
 
@@ -179,6 +192,8 @@ class ValidateStage(StagePage):
         annotation = self.context.settings.annotation_workflow
         self._annotation_tip.setVisible(annotation)
         models = [model for model in state.models if any(fold.has_validation for fold in model.folds)]
+        self._models_hint.setText("click a fold for its results, again or the model to go back" if len(models) > 1
+                                  else "click a fold for its results, again to go back")
         self._models.setVisible(bool(models))
         self._empty.setVisible(not models)
         self._cases_card.setVisible(bool(models))
@@ -186,50 +201,147 @@ class ValidateStage(StagePage):
         for button_widget in self._fold_buttons.buttons():
             self._fold_buttons.removeButton(button_widget)
         self._models.setRowCount(len(models))
-        first_button = None
+        self._model_rows = models
+        self._button_of: dict = {}
         keep_button = None
         for row, model in enumerate(models):
-            name = label(f"{model.trainer}<br><span style='color:#64748b'>{model.plans} · {model.configuration}</span>",
-                         mono=True, rich=True)
-            self._models.setCellWidget(row, 0, cell_widget(name))
+            self._models.setCellWidget(row, 0, model_name_cell(model))
             self._models.setItem(row, 1, mean_dice_item(model))
             buttons = []
             for fold in model.folds:
                 if not fold.has_validation:
                     continue
-                dice = f"{fold.dice:.2f}" if fold.dice is not None else "—"
-                fold_button = _fold_button(fold.name, dice, muted_dice=fold.name == "all")
+                fold_button = QPushButton(fold.name)  # the Dice per fold is shown in the right panel
                 fold_button.setObjectName("foldButton")
-                fold_button.setFixedSize(FOLD_SIZE[0], FOLD_BUTTON_HEIGHT)
+                fold_button.setFixedSize(*FOLD_SIZE)
                 fold_button.setCheckable(True)
                 fold_button.setCursor(Qt.CursorShape.PointingHandCursor)
                 tip = f"Fold {fold.name} · Dice {fold.dice:.3f}" if fold.dice is not None else f"Fold {fold.name}"
                 if fold.name == "all":
-                    tip += ("\nFold all is validated on its own training cases, so this is not a validation result "
-                            "and it is not included in the mean Dice.")
+                    tip += "\n" + FOLD_ALL_NOTE
                 fold_button.setToolTip(tip)
-                fold_button.clicked.connect(lambda _=False, m=model, f=fold: self._show_fold(m, f))
+                fold_button.clicked.connect(lambda _=False, m=model, f=fold: self._fold_clicked(m, f))
                 self._fold_buttons.addButton(fold_button)
+                self._button_of[fold.path] = fold_button
                 buttons.append(fold_button)
-                first_button = first_button or (fold_button, model, fold)
                 if self._fold is not None and fold.path == self._fold.path:
-                    keep_button = (fold_button, model, fold)
+                    keep_button = (model, fold)
             self._models.setCellWidget(row, 2, cell_widget(*buttons))
         size_models_table(self._models, models)
-        chosen = keep_button or first_button
-        if chosen:
-            chosen[0].setChecked(True)
-            self._show_fold(chosen[1], chosen[2])
+        if keep_button:
+            self._show_fold(*keep_button)
+        elif models:
+            previous = self.context.model_label or (self._model.label if self._model else None)
+            self._show_model(next((model for model in models if model.label == previous), models[0]))
 
     def header_badges(self, state: DatasetState) -> list:
         validated = sum(1 for model in state.models if any(fold.has_validation for fold in model.folds))
         items = [badge(f"✓ {validated} model{'s' if validated != 1 else ''} with validation results", "green")
                  if validated else badge("no validation results yet", "gray")]
-        return items + super().header_badges(state)
+        # finished cross-validation folds without validation/summary.json (e.g. stopped before the validation step)
+        missing = sum(1 for model in state.models for fold in model.folds
+                      if fold.finished and fold.name != "all" and not fold.has_validation)
+        if missing:
+            items.append(badge(f"{missing} finished fold{'s' if missing != 1 else ''} without validation results",
+                               "gray", "These folds have a final checkpoint but no validation/summary.json, e.g. "
+                               "because the run ended before the validation step or the folder was reduced. "
+                               "nnUNetv2_train … --val runs only the validation."))
+        return items
+
+    def _check_only(self, fold: FoldInfo | None) -> None:
+        for path, fold_button in self._button_of.items():
+            fold_button.setChecked(fold is not None and path == fold.path)
+
+    def _choose_model(self, model: ModelInfo) -> None:
+        self.context.model_label = model.label
+        self._show_model(model)
+
+    def follow_model(self, label: str) -> None:
+        if self._model is not None and self._model.label == label:
+            return
+        model = next((item for item in self._model_rows if item.label == label), None)
+        if model is not None:
+            self._show_model(model)
+
+    def _fold_clicked(self, model: ModelInfo, fold: FoldInfo) -> None:
+        self.context.model_label = model.label
+        if self._fold is not None and self._fold.path == fold.path:
+            self._show_model(model)  # second click on the open fold: back to the model overview
+        else:
+            self._show_fold(model, fold)
+
+    def _show_model(self, model: ModelInfo) -> None:
+        """Model level: mean Dice, Dice per fold and the per-class Dice averaged over the folds."""
+        self._model, self._fold, self._case, self._summary, self._cases = model, None, None, None, ()
+        self._check_only(None)
+        row = self._model_rows.index(model) if model in self._model_rows else -1
+        self._models.selectRow(row) if row >= 0 else self._models.clearSelection()
+        self._cases_title.setText("Cases")
+        self._cases_note.setText("")
+        self._cases_stack.setCurrentIndex(1)
+        self._close_case.setVisible(False)
+        self._fold_section.setVisible(True)
+        mean = model.mean_dice
+        self._foreground.setText(f"{mean:.2f}" if mean is not None else "—")
+        self._mean_title.setText("MEAN DICE")
+        self._foreground_note.setText("over the folds · fold all excluded")
+        self._panel_subject.setText(f"{model.trainer} · {model.configuration}")
+        clear_layout(self._fold_bars)
+        folds = [fold for fold in model.folds if fold.has_validation and fold.dice is not None]
+        for index, fold in enumerate(folds):
+            name = label(f"fold {fold.name}", size=12, muted=fold.name == "all")
+            if fold.name == "all":
+                name.setToolTip(FOLD_ALL_NOTE)
+            name.setFixedWidth(130)
+            self._fold_bars.addWidget(name, index, 0)
+            self._fold_bars.addWidget(Bar(fold.dice, "#94a3b8" if fold.name == "all" else "#1f5fbf"), index, 1)
+            value = label(f"{fold.dice:.2f}" + ("  (trained on these cases)" if fold.name == "all" else ""),
+                          muted=True, size=12)
+            if fold.name == "all":
+                value.setToolTip(FOLD_ALL_NOTE)
+            self._fold_bars.addWidget(value, index, 2)
+        self._fold_bars.setColumnStretch(1, 1)
+        self._dice_note.setText("mean over the folds")
+        clear_layout(self._dice_bars)
+        self._set_details_visible(False)
+        paths = [fold.path for fold in folds if fold.name != "all"]
+        self.context.tasks.run("validate-model", lambda: [json_object(path / "validation" / "summary.json")
+                                                           for path in paths],
+                               lambda summaries: self._apply_model(model, folds, summaries))
+
+    def _apply_model(self, model: ModelInfo, folds: list, summaries: object) -> None:
+        if self._model is not model or self._fold is not None or self.state is None:
+            return
+        names = self.state.names
+        per_class: dict[str, list[float]] = {}
+        for summary in summaries if isinstance(summaries, list) else []:
+            for name, dice in mean_class_dice(summary, names):
+                per_class.setdefault(name, []).append(dice)
+        rows = [(name, sum(values) / len(values)) for name, values in per_class.items()]
+        self._fill_bars(self._dice_bars, rows)
+
+    def _fill_bars(self, grid: QGridLayout, rows: list) -> None:
+        clear_layout(grid)
+        for index, (name, dice) in enumerate(rows):
+            name_label = label(str(name), size=12)
+            name_label.setFixedWidth(130)
+            grid.addWidget(name_label, index, 0)
+            grid.addWidget(Bar(dice), index, 1)
+            grid.addWidget(label(f"{dice:.2f}", muted=True, size=12), index, 2)
+        grid.setColumnStretch(1, 1)
 
     def _show_fold(self, model: ModelInfo, fold: FoldInfo) -> None:
         self._model, self._fold = model, fold
-        self._cases_title.setText(f"Fold {fold.name} · cases")
+        self._set_details_visible(True)
+        self._details.setPlainText("Loading…")
+        self._check_only(fold)
+        row = self._model_rows.index(model) if model in self._model_rows else -1
+        if row >= 0:
+            self._models.selectRow(row)
+        self._cases_stack.setCurrentIndex(0)
+        self._fold_section.setVisible(False)
+        self._mean_title.setText("DICE (FOREGROUND MEAN)")
+        self._cases_title.setText(f"Cases · fold {fold.name}")
         path = fold.path / "validation" / "summary.json"
         self.context.tasks.run("validate-summary", lambda: json_object(path), lambda data: self._apply_summary(fold, data))
 
@@ -238,8 +350,38 @@ class ValidateStage(StagePage):
             return
         self._summary = summary if isinstance(summary, dict) else None
         names = self.state.names
-        self._cases = validation_cases(self._summary, names)
+        self._cases = self._sorted_cases(validation_cases(self._summary, names))
         self._cases_note.setText(f"{len(self._cases)} validation cases · click a case for its metrics")
+        self._fill_cases()
+        self._select_case(-1)
+
+    def _sorted_cases(self, cases) -> tuple[ValidationCase, ...]:
+        column, descending = self._case_sort
+        if column == 1:  # Dice; cases without a Dice stay at the end
+            known = sorted((case for case in cases if case.mean_dice is not None), key=lambda case: case.mean_dice,
+                           reverse=descending)
+            return (*known, *(case for case in cases if case.mean_dice is None))
+        return tuple(sorted(cases, key=lambda case: case.case_id.casefold(), reverse=descending))
+
+    def _sort_cases(self, column: int) -> None:
+        header = self._cases_table.horizontalHeader()
+        if column not in (0, 1):
+            header.setSortIndicator(self._case_sort[0], Qt.SortOrder.DescendingOrder if self._case_sort[1]
+                                    else Qt.SortOrder.AscendingOrder)
+            return
+        previous_column, descending = self._case_sort
+        self._case_sort = (column, not descending if column == previous_column else False)
+        header.setSortIndicator(column, Qt.SortOrder.DescendingOrder if self._case_sort[1]
+                                else Qt.SortOrder.AscendingOrder)
+        selected = self._case
+        self._cases = self._sorted_cases(self._cases)
+        self._fill_cases()
+        if selected is not None and selected in self._cases:
+            row = self._cases.index(selected)
+            self._cases_table.selectRow(row)
+            self._select_case(row)
+
+    def _fill_cases(self) -> None:
         self._cases_table.setRowCount(len(self._cases))
         for row, case in enumerate(self._cases):
             self._cases_table.setItem(row, 0, table_item(case.case_id, mono=True))
@@ -248,15 +390,14 @@ class ValidateStage(StagePage):
             weakest = f"{case.weakest[0]} {case.weakest[1]:.2f}" if case.weakest else "—"
             self._cases_table.setItem(row, 2, table_item(weakest, muted=True))
 
-        self._select_case(-1)
-
     def _select_case(self, row: int) -> None:
+        if self._fold is None:
+            return
         self._case = self._cases[row] if 0 <= row < len(self._cases) else None
         if self._case is None:
             self._cases_table.clearSelection()
         self._close_case.setVisible(self._case is not None)
         names = self.state.names if self.state else {}
-        clear_layout(self._dice_bars)
         if self._case is not None:
             self._panel_subject.setText(self._case.case_id)
             self._dice_note.setText("")
@@ -284,13 +425,7 @@ class ValidateStage(StagePage):
             summary = self._summary or {}
             self._details.setPlainText(json.dumps({"foreground_mean": summary.get("foreground_mean"),
                                                    "mean": summary.get("mean")}, indent=2))
-        for index, (name, dice) in enumerate(rows):
-            name_label = label(str(name), size=12)
-            name_label.setFixedWidth(130)
-            self._dice_bars.addWidget(name_label, index, 0)
-            self._dice_bars.addWidget(Bar(dice), index, 1)
-            self._dice_bars.addWidget(label(f"{dice:.2f}", muted=True, size=12), index, 2)
-        self._dice_bars.setColumnStretch(1, 1)
+        self._fill_bars(self._dice_bars, rows)
 
     def _inspect(self, case: ValidationCase) -> None:
         if self._fold is None:

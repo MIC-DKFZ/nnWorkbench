@@ -1,10 +1,13 @@
-"""Settings: Annotation Workflow (global), analysis workers and Napari prefetching."""
+"""Settings: analysis workers and Napari prefetching (the Annotation Workflow is switched in the top bar)."""
 
 from __future__ import annotations
 
 import os
 
+from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
+    QAbstractSpinBox,
+    QLayout,
     QCheckBox,
     QDialog,
     QFrame,
@@ -15,15 +18,26 @@ from qtpy.QtWidgets import (
 )
 
 from .context import Settings
-from .widgets import ToggleSwitch, button, label, section_label, separator
+from .widgets import button, label, section_label, separator
+
+
+def _number_field() -> QSpinBox:
+    """A plain number field: the styled spin-box arrows rendered as stray lines, so type or scroll instead."""
+    field = QSpinBox()
+    field.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+    field.setFixedWidth(100)
+    field.setMinimumHeight(32)
+    return field
 
 
 class SettingsDialog(QDialog):
     def __init__(self, settings: Settings, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(620)
+        self.setFixedWidth(620)  # a fixed width lets the wrapped hints compute their height correctly
         layout = QVBoxLayout(self)
+        # Grow with the wrapped hint texts instead of letting them overlap the next section.
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         head = QHBoxLayout()
@@ -39,28 +53,25 @@ class SettingsDialog(QDialog):
             body.addWidget(section_label(title))
             grid = QGridLayout()
             grid.setHorizontalSpacing(16)
-            grid.setVerticalSpacing(8)
+            grid.setVerticalSpacing(12)
             for row, (name, widget) in enumerate(rows):
                 grid.addWidget(label(name), row, 0)
-                grid.addWidget(widget, row, 1)
+                grid.addWidget(widget, row, 1, Qt.AlignmentFlag.AlignLeft)
+                grid.setRowMinimumHeight(row, 34)
             grid.setColumnMinimumWidth(0, 200)
             grid.setColumnStretch(2, 1)
             body.addLayout(grid)
-            body.addWidget(label(hint, muted=True, wrap=True, size=12))
+            text = label(hint, muted=True, wrap=True, size=12)
+            text.setMinimumHeight(text.heightForWidth(420))  # reserve the wrapped height (generously), so nothing overlaps
+            body.addWidget(text)
             layout.addLayout(body)
             layout.addWidget(separator())
 
-        self.annotation = ToggleSwitch("On")
-        self.annotation.setChecked(settings.annotation_workflow)
-        self.annotation.toggled.connect(lambda on: self.annotation.setText("On" if on else "Off"))
-        self.annotation.setText("On" if settings.annotation_workflow else "Off")
-        section("Workflow", [("Annotation Workflow", self.annotation)],
-                "Applies to all datasets. Adds ✎ to annotate cases in Napari (saved directly to labelsTr) and the "
-                "annotation hints. Also available as the switch in the top bar.")
-        self.workers = QSpinBox()
+        self._annotation = settings.annotation_workflow  # switched in the top bar, kept unchanged here
+        self.workers = _number_field()
         self.workers.setRange(1, os.cpu_count() or 1)
         self.workers.setValue(min(settings.workers, os.cpu_count() or 1))
-        section("Label analysis", [("Worker processes", self.workers)], "Used by Analyze dataset.")
+        section("Statistics", [("Worker processes", self.workers)], "Used by Compute statistics.")
         self.previous = QCheckBox("Previous cases")
         self.previous.setChecked(settings.prefetch_previous)
         self.following = QCheckBox("Next cases")
@@ -70,18 +81,12 @@ class SettingsDialog(QDialog):
         prefetch_row.setContentsMargins(0, 0, 0, 0)
         prefetch_row.addWidget(self.previous)
         prefetch_row.addWidget(self.following)
-        self.radius = QSpinBox()
+        self.radius = _number_field()
         self.radius.setRange(1, 20)
         self.radius.setValue(settings.prefetch_radius)
         section("Napari", [("Prefetch", prefetch), ("Prefetch radius", self.radius)],
                 "Loads neighbouring cases in the background so stepping through cases in Napari is faster. Uses more "
                 "memory.")
-        folders = QVBoxLayout()
-        folders.setContentsMargins(20, 14, 20, 14)
-        folders.addWidget(section_label("nnU-Net folders"))
-        folders.addWidget(label("The nnUNet_raw, nnUNet_preprocessed and nnUNet_results paths are set on the overview "
-                                "(← All datasets).", muted=True, wrap=True, size=12))
-        layout.addLayout(folders)
         actions = QHBoxLayout()
         actions.setContentsMargins(20, 12, 20, 16)
         actions.addStretch()
@@ -90,5 +95,5 @@ class SettingsDialog(QDialog):
         layout.addLayout(actions)
 
     def settings(self) -> Settings:
-        return Settings(self.annotation.isChecked(), self.workers.value(), self.previous.isChecked(),
+        return Settings(self._annotation, self.workers.value(), self.previous.isChecked(),
                         self.following.isChecked(), self.radius.value())

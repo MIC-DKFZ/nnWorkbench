@@ -31,6 +31,9 @@ class ConsolePanel(QFrame):
         self._chips = QHBoxLayout()
         self._chips.setSpacing(6)
         row.addLayout(self._chips)
+        self._progress = label("", bold=True, size=12)
+        self._progress.setStyleSheet("color: #1f5fbf;")
+        row.addWidget(self._progress)
         self._last_line = label("No commands have been run in this session.", muted=True, mono=True)
         self._last_line.setMinimumWidth(50)
         row.addWidget(self._last_line, 1)
@@ -48,6 +51,7 @@ class ConsolePanel(QFrame):
         self._log.setObjectName("consoleLog")
         self._log.setReadOnly(True)
         self._log.setMaximumBlockCount(20_000)
+        self._log.setPlaceholderText("No commands have been run in this session.")
         log_holder = QWidget()
         holder_layout = QVBoxLayout(log_holder)
         holder_layout.setContentsMargins(24, 0, 24, 12)
@@ -92,6 +96,8 @@ class ConsolePanel(QFrame):
             self._log.verticalScrollBar().setValue(self._log.verticalScrollBar().maximum())
         if job is self._runner.current:
             self._last_line.setText(job.last_line)
+            self._progress.setText(job.progress)
+            self._progress.setVisible(bool(job.progress))
 
     def _show_job(self, job: Job) -> None:
         self._log.setPlainText("".join(job.output))
@@ -114,17 +120,27 @@ class ConsolePanel(QFrame):
             chip.setObjectName("jobChip")
             chip.setFixedHeight(24)
             chip.setProperty("active", job is (self._selected if self._expanded else current or job))
+            chip.setProperty("failed", job.status == "failed")
             chip.setCursor(Qt.CursorShape.PointingHandCursor)
             chip.mousePressEvent = lambda _event, selected=job: self._select(selected)  # type: ignore[assignment]
             polish(chip)
             self._chips.addWidget(chip)
-        earlier = len(jobs) - (1 if current else 0)
-        self._summary.setText(f"{earlier} earlier job{'s' if earlier != 1 else ''}" if jobs else "")
+        earlier = max(len(jobs) - 1, 0)  # the bar shows one job (the running or the last one)
+        self._summary.setText(f"{earlier} earlier job{'s' if earlier != 1 else ''}" if earlier else "")
         if current:
             self._last_line.setText(current.last_line or current.command)
         elif jobs:
-            self._last_line.setText(f"{jobs[-1].label} {jobs[-1].status}")
+            last = jobs[-1]
+            if last.status == "failed":
+                code = f" (exit code {last.exit_code})" if last.exit_code is not None else ""
+                self._last_line.setText(f"✗ failed{code} · {last.last_line or 'expand to see the output'}")
+            else:
+                self._last_line.setText(f"{last.label} {last.status}")
+        self._last_line.setProperty("failed", bool(jobs and not current and jobs[-1].status == "failed"))
+        polish(self._last_line)
         self._terminate.setVisible(current is not None)
+        self._progress.setText(current.progress if current else "")
+        self._progress.setVisible(bool(current and current.progress))
 
     def _copy_output(self) -> None:
         QGuiApplication.clipboard().setText(self._log.toPlainText())

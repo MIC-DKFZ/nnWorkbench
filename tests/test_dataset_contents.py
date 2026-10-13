@@ -20,6 +20,8 @@ from nnworkbench.services.dataset_json import (
     image_count_check,
     labels_tr_count,
     manifest_source,
+    num_training_error,
+    file_ending_error,
     write_manifest,
 )
 
@@ -121,8 +123,16 @@ def test_labels_tr_count_counts_only_files(tmp_path: Path) -> None:
     labels = tmp_path / "labelsTr"; labels.mkdir()
     (labels / "case_001.nii.gz").touch(); (labels / "case_002.nii.gz").touch()
     (labels / "nested").mkdir()
+    (labels / "labelsTr.csv").touch()  # not a label image
 
     assert labels_tr_count(tmp_path) == 2
+
+
+def test_num_training_error_matches_nnunet_integrity_check() -> None:
+    assert num_training_error({"numTraining": 116}, 116) is None
+    assert "21" in num_training_error({"numTraining": 21}, 116) and "116" in num_training_error({"numTraining": 21}, 116)
+    assert num_training_error({}, 3) is not None
+    assert num_training_error({"numTraining": True}, 1) is not None
 
 
 def test_image_count_check_compares_channels_and_labels(tmp_path: Path) -> None:
@@ -176,3 +186,28 @@ def test_definition_errors_reports_invalid_labels() -> None:
     errors = definition_errors({"channel_names": {"0": "CT"}, "labels": {"": 0}})
 
     assert errors == ("Labels must have continuous numeric IDs and a name for every label.",)
+
+
+def test_file_ending_error() -> None:
+    assert file_ending_error({"file_ending": ".nii.gz"}) is None
+    assert file_ending_error({}) is not None
+    assert file_ending_error({"file_ending": "nii.gz"}) is not None
+
+
+def test_missing_or_broken_raw_dataset_json_is_an_error(tmp_path: Path) -> None:
+    from nnworkbench.models.dataset import DatasetRecord
+    from nnworkbench.ui.dataset_state import load_state
+
+    raw = tmp_path / "Dataset009_Empty"
+    raw.mkdir()
+    state = load_state(DatasetRecord(9, "Empty", raw_path=raw))
+    assert state.data_state()[0] == "error" and "missing" in state.manifest_errors[0]
+    (raw / "dataset.json").write_text("{ broken", encoding="utf-8")
+    state = load_state(DatasetRecord(9, "Empty", raw_path=raw))
+    assert "cannot be read" in state.manifest_errors[0]
+
+
+def test_region_based_labels_are_valid() -> None:
+    manifest = {"channel_names": {"0": "T1"}, "file_ending": ".nii.gz", "regions_class_order": [1, 2, 3],
+                "labels": {"background": 0, "whole tumor": [1, 2, 3], "tumor core": [2, 3], "enhancing tumor": [3]}}
+    assert definition_errors(manifest) == ()

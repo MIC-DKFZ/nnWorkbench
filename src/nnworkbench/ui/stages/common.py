@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import shlex
 
-from qtpy.QtCore import Signal
+from qtpy.QtCore import Qt, QTimer, Signal
 from qtpy.QtGui import QGuiApplication
 from qtpy.QtWidgets import (
+    QSizePolicy,
+    QLabel,
     QHBoxLayout,
     QLineEdit,
     QPlainTextEdit,
@@ -17,7 +19,7 @@ from qtpy.QtWidgets import (
 
 from ..context import AppContext
 from ..dataset_state import DatasetState
-from ..widgets import Card, HowToCard, badge, button, clear_layout, label
+from ..widgets import Card, ElidedLabel, HowToCard, badge, button, clear_layout, label
 
 
 def format_command(command: str) -> str:
@@ -52,12 +54,16 @@ class CommandBox(QPlainTextEdit):
         self.setReadOnly(True)
         self.setFixedHeight(120)
         self._command = ""
+        self._commands: list[str] = []
 
-    def set_command(self, command: str) -> None:
+    def set_command(self, command: str | list[str]) -> None:
+        """One command, or several that run one after another (shown and copied joined with &&)."""
         from nnworkbench.services.commands import wrapped_command
 
-        self._command = command
-        self.setPlainText(format_command(wrapped_command(command)) if command else "")
+        self._commands = [command] if isinstance(command, str) else list(command)
+        self._commands = [text for text in self._commands if text]
+        self._command = " && ".join(self._commands)
+        self.setPlainText(" &&\n".join(format_command(wrapped_command(text)) for text in self._commands))
 
     def command(self) -> str:
         return self._command
@@ -66,7 +72,7 @@ class CommandBox(QPlainTextEdit):
         from nnworkbench.services.commands import wrapped_command
 
         if self._command:
-            QGuiApplication.clipboard().setText(wrapped_command(self._command))
+            QGuiApplication.clipboard().setText(" && ".join(wrapped_command(text) for text in self._commands))
 
 
 def arguments_field() -> QLineEdit:
@@ -97,7 +103,21 @@ class StagePage(QWidget):
         row.setSpacing(18)
         self.howto = howto
         self.howto.guide_requested.connect(lambda: self.guide_requested.emit(self.guide_stage))
-        row.addWidget(self.howto)
+        from ..widgets import scroll
+
+        self._howto_area = scroll(self.howto)
+        self._howto_area.setFixedWidth(290)  # 280 card + room for a scrollbar when the console is expanded
+        row.addWidget(self._howto_area)
+        # Collapsed: a slim strip that brings the how-to back. The choice is shared by all stages and remembered.
+        self._howto_strip = button("»", tooltip="Show the how-to", clicked=lambda: context.set_howto_expanded(True))
+        self._howto_strip.setFixedWidth(34)
+        self._howto_strip.setStyleSheet("padding: 0; font-size: 18px; color: #64748b;")
+        self._howto_strip.setSizePolicy(self._howto_strip.sizePolicy().horizontalPolicy(),
+                                        QSizePolicy.Policy.Expanding)
+        row.addWidget(self._howto_strip)
+        self.howto.collapse_requested.connect(lambda: context.set_howto_expanded(False))
+        context.howto_changed.connect(self._show_howto)
+        self._show_howto(context.howto_expanded)
         center = QWidget()
         self.center = QVBoxLayout(center)
         self.center.setContentsMargins(0, 0, 0, 0)
@@ -120,14 +140,15 @@ class StagePage(QWidget):
         top = QHBoxLayout()
         names = QVBoxLayout()
         names.setSpacing(2)
-        self._name = label("", name="h2")
+        self._name = ElidedLabel()
+        self._name.setObjectName("h2")
         self._sub = label("", muted=True, size=12, rich=True, wrap=True)
         names.addWidget(self._name)
         names.addWidget(self._sub)
         top.addLayout(names, 1)
         top.addWidget(button("⟳ Refresh", tooltip="Reload the dataset files from disk",
                              clicked=self.reload_requested.emit))
-        self._open = button("📁 Open", tooltip=f"Open the dataset folder in nnUNet_{self.folder}", clicked=self._open_folder)
+        self._open = button("Open", icon="folder", tooltip=f"Open folder · nnUNet_{self.folder}", clicked=self._open_folder)
         top.addWidget(self._open)
         self.header_actions = QHBoxLayout()
         self.header_actions.setSpacing(8)
@@ -156,11 +177,8 @@ class StagePage(QWidget):
                 f"{classes} class{'es' if classes != 1 else ''}")
 
     def header_badges(self, state: DatasetState) -> list:
-        """Badges below the name; the label mode is shown on every stage."""
-        ignore = state.ignore_id
-        if ignore is not None:
-            return [badge(f"Sparse labels · ignore = {ignore}", "purple", "dataset.json has an ignore label")]
-        return [badge("Dense labels · no ignore", "gray", "dataset.json has no ignore label")]
+        """Badges below the name: what exists in this stage and whether a new run is possible."""
+        return []
 
     def show_header_loading(self, name: str) -> None:
         self._name.setText(name)
@@ -170,13 +188,20 @@ class StagePage(QWidget):
     def show_loading(self) -> None:
         """Called while the dataset is read in the background; stages may override it."""
 
+    def follow_model(self, label: str) -> None:
+        """Select the model chosen on another stage, if this stage lists it (Train, Validate, Predict)."""
+
+    def _show_howto(self, expanded: bool) -> None:
+        self._howto_area.setVisible(expanded)
+        self._howto_strip.setVisible(not expanded)
+
     def set_state(self, state: DatasetState) -> None:
         self.state = state
         self._name.setText(state.record.directory_name)
         self._sub.setText(self.header_subtitle(state))
         path = self.stage_folder()
         self._open.setEnabled(path is not None and path.is_dir())
-        self._open.setToolTip(f"Open the dataset folder in nnUNet_{self.folder}" if self._open.isEnabled()
+        self._open.setToolTip(f"Open folder · nnUNet_{self.folder}/{state.record.directory_name}" if self._open.isEnabled()
                               else f"This dataset has no folder in nnUNet_{self.folder}.")
         clear_layout(self._badges)
         for item in self.header_badges(state):
@@ -201,8 +226,7 @@ class StagePage(QWidget):
 
 
 FOLD_SIZE = (48, 26)  # fold chips (Train) and fold buttons (Validate) share one width
-FOLD_BUTTON_HEIGHT = 40
-MODEL_ROW_HEIGHT = 56  # Validate buttons show the fold and its Dice on two lines
+MODEL_ROW_HEIGHT = 48  # Validate buttons show the fold and its Dice on two lines
 
 
 def models_table(folds_header: str):
@@ -215,7 +239,7 @@ def models_table(folds_header: str):
 
     header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
     header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-    table.setColumnWidth(1, 110)
+    table.setColumnWidth(1, 90)
     return table
 
 
@@ -224,6 +248,55 @@ def size_models_table(table, models) -> None:
     most = max((len(model.folds) for model in models), default=1)
     table.setColumnWidth(2, max(150, 24 + most * (FOLD_SIZE[0] + 6)))
     table.setFixedHeight(table.horizontalHeader().sizeHint().height() + 4 + MODEL_ROW_HEIGHT * min(max(len(models), 1), 5))
+
+
+FOLD_STATUS = {"done": ("✓ done", "green"), "training": ("● training", "orange"), "stopped": ("■ stopped", "orange"),
+           "reduced": ("final checkpoint only", "gray")}
+
+
+FOLD_ALL_NOTE = ("Fold all was trained on all cases, so its Dice is measured on training cases. It is not a "
+                 "validation result and is not included in the mean Dice.")
+
+
+def label_mode_badge(state: DatasetState):
+    """Sparse or dense labels; only relevant while working on the raw data."""
+    ignore = state.ignore_id
+    if ignore is not None:
+        return badge(f"Sparse labels · ignore = {ignore}", "purple", "dataset.json has an ignore label")
+    return badge("Dense labels · no ignore", "gray", "dataset.json has no ignore label")
+
+
+def fold_chip(fold) -> QLabel:
+    chip = QLabel(fold.name)
+    chip.setFixedSize(*FOLD_SIZE)
+    chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    chip.setObjectName("foldChip")
+    chip.setProperty("state", fold.status)
+    chip.setToolTip(FOLD_STATUS[fold.status][0])
+    return chip
+
+
+def model_name_cell(model):
+    """Trainer with plans · configuration below. Long names are shortened with "…" in the middle, so the
+    distinguishing start (e.g. iter_4) and end (e.g. 1000epochs) stay visible; the full name is the hover text."""
+    cell = QWidget()
+    layout = QVBoxLayout(cell)
+    layout.setContentsMargins(6, 0, 6, 0)
+    layout.setSpacing(0)
+    layout.addStretch()
+    for text, muted, mode in ((model.trainer, False, Qt.TextElideMode.ElideMiddle),
+                              (f"{model.plans} · {model.configuration}", True, Qt.TextElideMode.ElideRight)):
+        line = ElidedLabel(text, mode=mode)
+        line.setProperty("mono", True)
+        line.setProperty("muted", muted)
+        line.setMinimumWidth(1)
+        line.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        line.setToolTip(f"{model.trainer}__{model.plans}__{model.configuration}")
+        layout.addWidget(line)
+    layout.addStretch()
+    cell.setMinimumWidth(1)
+    cell.setToolTip(f"{model.trainer}__{model.plans}__{model.configuration}")
+    return cell
 
 
 def mean_dice_item(model):
@@ -245,3 +318,63 @@ def empty_panel(text: str) -> QWidget:
     column.addWidget(message)
     column.addStretch()
     return holder
+
+
+class RunDialog:
+    """Hosts a stage's run form (planner/trainer options, command, Copy and Run) in a dialog.
+
+    The form widget is built once by the stage and kept, so its choices survive between openings.
+    """
+
+    def __init__(self, parent: QWidget, title: str, form: QWidget, on_open=None) -> None:
+        from qtpy.QtWidgets import QDialog
+
+        self._on_open = on_open
+        self.dialog = QDialog(parent)
+        self.dialog.setWindowTitle(title)
+        self.dialog.setMinimumWidth(480)
+        layout = QVBoxLayout(self.dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(form)
+
+    def open(self) -> None:
+        self.dialog.show()
+        if self._on_open is not None:
+            self._on_open()  # the form's hints are only computed while it is visible
+        # fit the form after its hints are shown or hidden: nothing squeezed, no empty space at the bottom.
+        # Again on the next event loop turn, because showing the dialog resizes it once more.
+        self._fit()
+        QTimer.singleShot(0, self._fit)
+        self.dialog.raise_()
+        self.dialog.activateWindow()
+
+    def _fit(self) -> None:
+        layout = self.dialog.layout()
+        layout.activate()
+        width = max(self.dialog.width(), 480)
+        self.dialog.resize(width, layout.heightForWidth(width) if layout.hasHeightForWidth()
+                           else self.dialog.sizeHint().height())
+
+    def close(self) -> None:
+        self.dialog.accept()
+
+    @property
+    def visible(self) -> bool:
+        return self.dialog.isVisible()
+
+
+def detail_row(name: str, value: QWidget | str, *, mono: bool = False) -> QHBoxLayout:
+    """A key/value line of a details panel."""
+    row = QHBoxLayout()
+    row.setSpacing(10)
+    key = label(name, muted=True)
+    key.setFixedWidth(110)
+    row.addWidget(key)
+    if isinstance(value, str):
+        value = label(value, mono=mono, wrap=True, selectable=True)
+    if isinstance(value, QLabel) and value.objectName() == "badge":
+        row.addWidget(value, 0, Qt.AlignmentFlag.AlignLeft)  # badges keep their size, left-aligned
+        row.addStretch(1)
+    else:
+        row.addWidget(value, 1)
+    return row

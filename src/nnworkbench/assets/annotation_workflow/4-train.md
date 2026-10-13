@@ -51,7 +51,7 @@ Count in how many images each class occurs and how many voxels it covers, to spo
 nnworkbench-run label-analysis -d 42
 ```
 
-**In nnWorkbench:** On the **Data** page, click **Analyze dataset**, then switch the case table to **📊 Statistics** to see the results.
+**In nnWorkbench:** On the **Data** page, click **Compute statistics**, then switch the case table to **📊 Statistics** to see the results.
 
 ### 4. Preprocess
 
@@ -62,7 +62,7 @@ nnworkbench-run nnUNetv2_plan_and_preprocess -d 42 -c 3d_fullres \
     -pl nnUNetPlannerResEncL --verify_dataset_integrity
 ```
 
-**In nnWorkbench:** On the **Preprocess** page, choose a planner and the configurations, then click **▶ Run preprocessing** (see [Planners and GPU Memory](#planners-and-gpu-memory)).
+**In nnWorkbench:** On the **Preprocess** page, click **▶ Preprocess…**, choose a planner and the configurations, then click **▶ Preprocess** (see [Planners and GPU Memory](#planners-and-gpu-memory)).
 
 nnU-Net offers different model configurations. Two are relevant here:
 
@@ -95,7 +95,7 @@ nnworkbench-run nnUNetv2_train 42 3d_fullres 0 \
 
 To train a single model on all images instead, use fold `all` in place of `0`.
 
-**In nnWorkbench:** On the **Train** page, choose the plans (e.g. `nnUNetResEncUNetLPlans`), the configuration, the trainer and one fold, then click **▶ Start training**. `nnUNetTrainer` is preselected; with an `ignore` label in `dataset.json`, `nnUNetTrainerBetterIgnoreSampling` is preselected instead.
+**In nnWorkbench:** On the **Train** page, click **▶ Train…** and choose the plans (e.g. `nnUNetResEncUNetLPlans`), the configuration, the trainer and one fold, then click **▶ Train**. `nnUNetTrainer` is preselected; with an `ignore` label in `dataset.json`, `nnUNetTrainerBetterIgnoreSampling` is preselected instead.
 
 ### 6. Follow the Training
 

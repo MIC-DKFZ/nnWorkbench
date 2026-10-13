@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from datetime import datetime
+from pathlib import Path
 
-from qtpy.QtCore import QPoint, QRect, QSize, Qt, Signal
-from qtpy.QtGui import QColor, QFont, QPainter, QPen
+from qtpy.QtCore import QByteArray, QPoint, QRect, QSize, Qt, Signal
+from qtpy.QtGui import QAction, QColor, QFont, QGuiApplication, QIcon, QKeySequence, QPainter, QPen, QPixmap
+from qtpy.QtSvg import QSvgRenderer
 from qtpy.QtWidgets import (
     QAbstractButton,
     QStyledItemDelegate,
@@ -29,6 +31,44 @@ from qtpy.QtWidgets import (
 
 from . import style
 
+# ------------------------------------------------------------ icons
+# Small SVG line icons (assets/icon-*.svg) instead of emoji, which look different on every system and font.
+ICONS = ("search", "edit", "chart", "folder", "file", "bulb", "info")
+_ICON_DIR = Path(__file__).parent.parent / "assets"
+_ICON_COLOR = "#334155"  # the stroke colour in the files; replaced for other colours
+_icon_cache: dict[tuple[str, str, int], QPixmap] = {}
+
+
+def icon_pixmap(name: str, size: int = 16, color: str = _ICON_COLOR) -> QPixmap:
+    key = (name, color, size)
+    if key not in _icon_cache:
+        svg = (_ICON_DIR / f"icon-{name}.svg").read_text(encoding="utf-8").replace(_ICON_COLOR, color)
+        ratio = 2  # sharp on high-DPI screens
+        pixmap = QPixmap(size * ratio, size * ratio)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        QSvgRenderer(QByteArray(svg.encode())).render(painter)
+        painter.end()
+        pixmap.setDevicePixelRatio(ratio)
+        _icon_cache[key] = pixmap
+    return _icon_cache[key]
+
+
+def svg_icon(name: str, color: str = _ICON_COLOR) -> QIcon:
+    return QIcon(icon_pixmap(name, 16, color))
+
+
+def icon_html(name: str, size: int = 14) -> str:
+    """The icon inline in rich text (how-to steps, tips)."""
+    path = (_ICON_DIR / f"icon-{name}.svg").as_posix()
+    return f"<img src='{path}' width='{size}' height='{size}' style='vertical-align: middle'>"
+
+
+def icon_label(name: str, size: int = 16) -> QLabel:
+    widget = QLabel()
+    widget.setPixmap(icon_pixmap(name, size))
+    return widget
+
 
 def polish(widget: QWidget) -> None:
     """Re-apply the stylesheet after a dynamic property changed."""
@@ -37,8 +77,12 @@ def polish(widget: QWidget) -> None:
 
 
 def label(text: str = "", *, name: str | None = None, muted: bool = False, mono: bool = False,
-          wrap: bool = False, size: int | None = None, bold: bool = False, rich: bool = False) -> QLabel:
+          wrap: bool = False, size: int | None = None, bold: bool = False, rich: bool = False,
+          selectable: bool = False) -> QLabel:
     widget = QLabel(text)
+    if selectable:  # file names, paths and IDs can be selected and copied
+        widget.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        widget.setCursor(Qt.CursorShape.IBeamCursor)
     if name:
         widget.setObjectName(name)
     if muted:
@@ -57,6 +101,54 @@ def label(text: str = "", *, name: str | None = None, muted: bool = False, mono:
             font.setBold(True)
         widget.setFont(font)
     return widget
+
+
+class ElidedLabel(QLabel):
+    """A one-line label that shortens long text with "…" and shows the full text on hover."""
+
+    def __init__(self, text: str = "", parent=None, mode=Qt.TextElideMode.ElideRight) -> None:
+        super().__init__(parent)
+        self._full = ""
+        self._mode = mode
+        self.setMinimumWidth(40)
+        # Preferred: full width when there is room, shrinks (with "…") when there is not.
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        self.setText(text)
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        return QSize(40, super().minimumSizeHint().height())
+
+    def setText(self, text: str) -> None:  # noqa: N802 (Qt API)
+        self._full = text
+        self.setToolTip(text)
+        self._elide()
+
+    def full_text(self) -> str:
+        return self._full
+
+    def contextMenuEvent(self, event) -> None:  # noqa: N802
+        from qtpy.QtWidgets import QMenu
+
+        menu = QMenu(self)
+        menu.addAction("Copy", lambda: QGuiApplication.clipboard().setText(self._full))
+        menu.exec(event.globalPos())
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._elide()
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        hint = super().sizeHint()
+        return QSize(self.fontMetrics().horizontalAdvance(self._full) + 4, hint.height())
+
+    def _elide(self) -> None:
+        width = max(self.width(), 40)
+        super().setText(self.fontMetrics().elidedText(self._full, self._mode, width))
+
+
+def breakable(text: str) -> str:
+    """Allow line breaks after "_" in long identifiers (trainer and plans names), so wrapped labels do not widen."""
+    return text.replace("_", "_\u200b")
 
 
 def section_label(text: str) -> QLabel:
@@ -90,8 +182,12 @@ def tip(text: str, tone: str = "blue") -> QLabel:
 
 
 def button(text: str, *, primary: bool = False, ghost: bool = False, small: bool = False, tooltip: str = "",
-           clicked: Callable[[], None] | None = None, purple: bool = False, danger: bool = False) -> QPushButton:
+           clicked: Callable[[], None] | None = None, purple: bool = False, danger: bool = False,
+           icon: str = "") -> QPushButton:
     widget = QPushButton(text)
+    if icon:
+        widget.setIcon(svg_icon(icon, "#ffffff" if primary or purple or danger else _ICON_COLOR))
+        widget.setIconSize(QSize(14, 14))
     for flag, name in ((primary, "primary"), (ghost, "ghost"), (small, "small"), (purple, "purple"),
                        (danger, "danger")):
         if flag:
@@ -105,7 +201,11 @@ def button(text: str, *, primary: bool = False, ghost: bool = False, small: bool
 
 
 def icon_button(text: str, tooltip: str, clicked: Callable[[], None] | None = None) -> QPushButton:
-    widget = QPushButton(text)
+    """A small square button; ``text`` is an icon name (see ICONS) or a short text such as "{ }"."""
+    widget = QPushButton("" if text in ICONS else text)
+    if text in ICONS:
+        widget.setIcon(svg_icon(text))
+        widget.setIconSize(QSize(15, 15))
     widget.setObjectName("iconButton")
     widget.setToolTip(tooltip)
     widget.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -124,6 +224,7 @@ def dataset_id_label(dataset_id: int, current: bool = False) -> QLabel:
     widget = QLabel(f"{dataset_id:03d}")
     widget.setObjectName("dsid")
     widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    widget.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
     if current:
         widget.setProperty("current", True)
     return widget
@@ -138,7 +239,8 @@ def availability(raw: bool, preprocessed: bool, results: bool) -> QWidget:
         item = QLabel(text)
         item.setObjectName("availOn" if present else "availOff")
         item.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        row.addWidget(item)
+        item.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)  # pill, not row-high
+        row.addWidget(item, 0, Qt.AlignmentFlag.AlignVCenter)
     row.addStretch()
     return holder
 
@@ -264,6 +366,7 @@ class HowToCard(QFrame):
     """Left column: numbered steps, tips and a link to the guide chapter."""
 
     guide_requested = Signal()
+    collapse_requested = Signal()
 
     def __init__(self, title: str, steps: Iterable[str], tips: Iterable[tuple[str, str]], guide: str) -> None:
         super().__init__()
@@ -272,7 +375,16 @@ class HowToCard(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(12)
-        layout.addWidget(section_label(title))
+        head = QHBoxLayout()
+        head.addWidget(section_label(title))
+        head.addStretch()
+        collapse = QPushButton("«")
+        collapse.setObjectName("link")
+        collapse.setToolTip("Hide the how-to (remembered)")
+        collapse.setCursor(Qt.CursorShape.PointingHandCursor)
+        collapse.clicked.connect(self.collapse_requested.emit)
+        head.addWidget(collapse)
+        layout.addLayout(head)
         items = "".join(f"<li style='margin-bottom:6px'>{step}</li>" for step in steps)
         text = label(f"<ol style='margin-left:-22px'>{items}</ol>", wrap=True, rich=True)
         layout.addWidget(text)
@@ -297,7 +409,7 @@ class HowToCard(QFrame):
 class StageTab(QAbstractButton):
     """A stage tab with a round status icon and an underline when selected."""
 
-    _ICONS = {"ok": "✓", "warn": "!", "run": "⟳"}
+    _ICONS = {"ok": "✓", "warn": "!", "error": "!"}
 
     def __init__(self, text: str, parent=None) -> None:
         super().__init__(parent)
@@ -321,9 +433,9 @@ class StageTab(QAbstractButton):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         selected = self.isChecked()
         circle = QRect(14, 15, 20, 20)
-        fill = {"ok": QColor(style.GREEN), "warn": QColor(style.ORANGE)}.get(self._state)
-        if self._state == "run":
-            painter.setPen(QPen(QColor(style.BLUE), 2))
+        fill = {"ok": QColor(style.GREEN), "warn": QColor(style.ORANGE), "error": QColor(style.RED)}.get(self._state)
+        if self._state == "todo":  # orange ring: ready to run (or running)
+            painter.setPen(QPen(QColor(style.ORANGE), 2))
             painter.setBrush(QColor("white"))
         else:
             painter.setPen(Qt.PenStyle.NoPen)
@@ -331,7 +443,7 @@ class StageTab(QAbstractButton):
         painter.drawEllipse(circle)
         icon = self._ICONS.get(self._state, "")
         if icon:
-            painter.setPen(QColor(style.BLUE if self._state == "run" else "white"))
+            painter.setPen(QColor("white"))
             font = QFont(self.font())
             font.setPixelSize(11)
             painter.setFont(font)
@@ -386,9 +498,10 @@ class ToggleGroup(QFrame):
 
     changed = Signal(int)
 
-    def __init__(self, options: Iterable[str], parent=None) -> None:
+    def __init__(self, options: Iterable[str], parent=None, icons: Iterable[str] = ()) -> None:
         super().__init__(parent)
         self.setObjectName("toggleGroup")
+        icons = list(icons)
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(0)
@@ -396,6 +509,9 @@ class ToggleGroup(QFrame):
         self._group.setExclusive(True)
         for index, text in enumerate(options):
             option = QPushButton(text)
+            if index < len(icons) and icons[index]:
+                option.setIcon(svg_icon(icons[index]))
+                option.setIconSize(QSize(14, 14))
             option.setObjectName("toggleOption")
             option.setCheckable(True)
             option.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -406,6 +522,9 @@ class ToggleGroup(QFrame):
 
     def set_index(self, index: int) -> None:
         self._group.button(index).setChecked(True)
+
+    def set_tooltip(self, index: int, text: str) -> None:
+        self._group.button(index).setToolTip(text)
 
     def index(self) -> int:
         return self._group.checkedId()
@@ -434,6 +553,8 @@ class ChoiceGroup(QWidget):
         self.blockSignals(True)
         for button_widget in self._buttons.values():
             self._group.removeButton(button_widget)
+            self._row.removeWidget(button_widget)  # remove now; deleteLater alone can leave it visible for a while
+            button_widget.hide()
             button_widget.deleteLater()
         self._buttons.clear()
         for index, option in enumerate(options):
@@ -457,18 +578,63 @@ class ChoiceGroup(QWidget):
         if option in self._buttons:
             self._buttons[option].setChecked(True)
 
+    def set_selected(self, options: Iterable[str]) -> None:
+        """Select exactly these options (for multi-selection groups)."""
+        wanted = set(options)
+        self.blockSignals(True)
+        for option, widget in self._buttons.items():
+            widget.setChecked(option in wanted)
+        self.blockSignals(False)
+        self.changed.emit()
+
     def options(self) -> list[str]:
         return list(self._buttons)
 
 
-def form_row(name: str, widget: QWidget, width: int = 112) -> QHBoxLayout:
-    """A labelled row of a settings panel."""
+class InfoIcon(QLabel):
+    """A small (i) with a short explanation: a tooltip on hover; a click opens it as a small box that stays
+    open until the next click anywhere (no need to keep the mouse button pressed)."""
+
+    def __init__(self, text: str, parent=None) -> None:
+        super().__init__(parent)
+        self.setPixmap(icon_pixmap("info", 14, "#94a3b8"))
+        self.setToolTip(text)
+        self._text = text
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        QToolTip.hideText()
+        box = QFrame(self, Qt.WindowType.Popup)
+        box.setObjectName("infoBox")
+        box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        layout = QVBoxLayout(box)
+        layout.setContentsMargins(12, 10, 12, 10)
+        text = label(self._text, wrap=True, rich=True)
+        text.setFixedWidth(300)
+        layout.addWidget(text)
+        box.adjustSize()
+        box.move(self.mapToGlobal(QPoint(0, self.height() + 4)))
+        box.show()
+
+
+def form_row(name: str, widget: QWidget, width: int = 112, info: str = "") -> QHBoxLayout:
+    """A labelled row of a settings panel; ``info`` adds a small (i) with a short explanation."""
     row = QHBoxLayout()
     row.setSpacing(10)
     title = label(name, muted=True)
-    title.setFixedWidth(width)
     title.setWordWrap(True)
-    row.addWidget(title)
+    if info:
+        holder = QWidget()
+        holder.setFixedWidth(width)
+        holder_row = QHBoxLayout(holder)
+        holder_row.setContentsMargins(0, 0, 0, 0)
+        holder_row.setSpacing(5)
+        holder_row.addWidget(title)
+        holder_row.addWidget(InfoIcon(info))
+        holder_row.addStretch()
+        row.addWidget(holder)
+    else:
+        title.setFixedWidth(width)
+        row.addWidget(title)
     row.addWidget(widget, 1)
     return row
 
@@ -500,11 +666,32 @@ def make_table(headers: Iterable[str], *, stretch: int | None = 0, row_height: i
         header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
     if stretch is not None:
         header.setSectionResizeMode(stretch, QHeaderView.ResizeMode.Stretch)
+    _add_copy(table)
     return table
+
+
+def _copy_cell(table: QTableWidget) -> None:
+    item = table.currentItem()
+    if item is None and table.selectionModel() and table.selectionModel().selectedRows():
+        item = table.item(table.selectionModel().selectedRows()[0].row(), 0)
+    if item is not None and item.text():
+        QGuiApplication.clipboard().setText(item.text())
+
+
+def _add_copy(table: QTableWidget) -> None:
+    """Ctrl+C and right-click → Copy copy the text of the clicked cell (e.g. a file or case name)."""
+    action = QAction("Copy", table)
+    action.setShortcut(QKeySequence.StandardKey.Copy)
+    action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+    action.triggered.connect(lambda: _copy_cell(table))
+    table.addAction(action)
+    table.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
 
 
 def table_item(text: str, *, mono: bool = False, muted: bool = False, bold: bool = False, data=None) -> QTableWidgetItem:
     item = QTableWidgetItem(text)
+    if text:
+        item.setToolTip(text)  # full text when the column is too narrow
     font = item.font()
     if mono:
         font = QFont(style.MONO)
@@ -562,10 +749,9 @@ def scroll(widget: QWidget) -> QScrollArea:
 def empty_state(text: str, icon: str = "") -> QWidget:
     holder = QWidget()
     column = QVBoxLayout(holder)
-    column.setContentsMargins(40, 50, 40, 50)
-    column.addStretch()
+    column.setContentsMargins(24, 28, 24, 28)  # near the top of its card instead of centred in a large area
     if icon:
-        mark = label(icon, size=30)
+        mark = icon_label(icon, 28) if icon in ICONS else label(icon, size=30)
         mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
         column.addWidget(mark)
     message = label(text, muted=True, wrap=True, rich=True)
@@ -635,8 +821,12 @@ class IconButtonsDelegate(QStyledItemDelegate):
             painter.setPen(QPen(QColor(style.BLUE if checked else style.LINE), 1))
             painter.setBrush(QColor(style.BLUE if checked else "white"))
             painter.drawRoundedRect(rect.adjusted(0, 0, -1, -1), 7, 7)
-            painter.setPen(QColor("white" if checked else style.TEXT))
-            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, icon)
+            if icon in ICONS:
+                pixmap = icon_pixmap(icon, 15, "#ffffff" if checked else _ICON_COLOR)
+                painter.drawPixmap(rect.center().x() - 7, rect.center().y() - 7, pixmap)
+            else:
+                painter.setPen(QColor("white" if checked else style.TEXT))
+                painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, icon)
         painter.restore()
 
     def sizeHint(self, option, index) -> QSize:  # noqa: N802

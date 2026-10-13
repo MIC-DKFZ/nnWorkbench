@@ -8,6 +8,7 @@ from pathlib import Path
 from qtpy.QtCore import Qt, Signal
 from qtpy.QtGui import QGuiApplication
 from qtpy.QtWidgets import (
+    QSizePolicy,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -31,6 +32,7 @@ from nnworkbench.services.dataset_json import manifest_source
 
 from .context import AppContext
 from .widgets import (
+    svg_icon,
     Card,
     FlowLayout,
     availability,
@@ -336,7 +338,18 @@ class DetailsPanel(Card):
         self._toggle_json = button("{ } Show JSON", ghost=True, small=True, clicked=self._toggle)
         foot.addWidget(self._toggle_json)
         layout.addLayout(foot)
+        self._layout = layout
+        self._bottom = QWidget()  # absorbs the free space below the footnote while the details are shown
+        layout.addWidget(self._bottom, 1)
+        self._fit_stack()
         self.set_record(None, None)
+
+    def _fit_stack(self) -> None:
+        showing_json = self._stack.currentIndex() == 1
+        self._layout.setStretchFactor(self._stack, 1 if showing_json else 0)
+        self._bottom.setVisible(not showing_json)
+        policy = QSizePolicy.Policy.Expanding if showing_json else QSizePolicy.Policy.Maximum
+        self._stack.setSizePolicy(QSizePolicy.Policy.Preferred, policy)
 
     def set_record(self, record: DatasetRecord | None, details: dict | None) -> None:
         self._record = record
@@ -362,7 +375,6 @@ class DetailsPanel(Card):
         self._folder.setText(record.directory_name)
         if details is None:
             self._info.addWidget(label("Loading dataset.json…", muted=True))
-            self._info.addStretch()
             return
         manifest = details.get("manifest")
         self._json.setPlainText(json.dumps(manifest, indent=2, ensure_ascii=False) if manifest else
@@ -370,7 +382,6 @@ class DetailsPanel(Card):
         if not isinstance(manifest, dict):
             self._info.addWidget(label("No dataset.json found in nnUNet_raw, nnUNet_preprocessed or nnUNet_results.",
                                        muted=True, wrap=True))
-            self._info.addStretch()
             return
         description = manifest.get("description")
         if isinstance(description, str) and description.strip():
@@ -415,12 +426,12 @@ class DetailsPanel(Card):
             folders.addWidget(label(value, wrap=True), row, 1)
         folders.setColumnStretch(1, 1)
         self._info.addLayout(folders)
-        self._info.addStretch()
 
     def _toggle(self) -> None:
         showing_json = self._stack.currentIndex() == 1
         self._stack.setCurrentIndex(0 if showing_json else 1)
         self._toggle_json.setText("{ } Show JSON" if showing_json else "✕ Hide JSON")
+        self._fit_stack()
 
     def _open_clicked(self) -> None:
         if self._record is not None:
@@ -467,7 +478,8 @@ class OverviewPage(QWidget):
         toolbar = QHBoxLayout()
         toolbar.setSpacing(10)
         self._search = QLineEdit()
-        self._search.setPlaceholderText("🔍  Search datasets by name or ID…")
+        self._search.setPlaceholderText("Search datasets by name or ID…")
+        self._search.addAction(svg_icon("search", "#94a3b8"), QLineEdit.ActionPosition.LeadingPosition)
         self._search.setFixedWidth(360)
         self._search.textChanged.connect(self._render)
         toolbar.addWidget(self._search)

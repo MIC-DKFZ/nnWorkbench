@@ -72,8 +72,8 @@ Start the GUI with `nnworkbench-gui`.
 
 1. **Set the paths:** On the overview (the start screen), select the folders for `nnUNet_raw`, `nnUNet_preprocessed` and `nnUNet_results`. The three folders are independent: nnWorkbench combines the datasets found across all of them. For remote or terminal use, save the same paths with `nnworkbench-set-paths` as shown above.
 2. **Create a dataset:** Click **New dataset**, or open an existing one from the list. Copy your images into `imagesTr` and your labels into `labelsTr` (**📁 Open**, then **⟳ Refresh**), and fill in `dataset.json` with **✎ Edit** on the **Data** page.
-3. **Preprocess:** On the **Preprocess** page, click **▶ Run preprocessing** (`nnUNetPlannerResEncL` is preselected).
-4. **Train:** On the **Train** page, choose the fold and click **▶ Start training** (`nnUNetTrainer` is preselected).
+3. **Preprocess:** On the **Preprocess** page, click **▶ Preprocess…** and then **▶ Preprocess** (`nnUNetPlannerResEncL` is preselected).
+4. **Train:** On the **Train** page, click **▶ Train…**, choose the fold and click **▶ Train** (`nnUNetTrainer` is preselected).
 5. **Validate:** On the **Validate** page, click a finished fold of a model and use **🔍** next to a case to compare the prediction with your label.
 6. **Predict:** On the **Predict** page, choose the input and output folders, the model and its finished folds, and click **▶ Predict**. **🔍** opens a prediction in Napari.
 

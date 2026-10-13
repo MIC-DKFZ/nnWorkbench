@@ -32,22 +32,25 @@ from ..context import AppContext
 from ..dataset_state import DatasetState
 from ..editable_dropdown import EditableDropdownComboBox
 from ..widgets import (
+    icon_html,
+    icon_label,
     Card,
     ChoiceGroup,
     HowToCard,
     badge,
     button,
+    clear_layout,
     empty_state,
     form_row,
+    format_time,
     icon_button,
     label,
-    scroll,
     make_table,
     section_label,
     table_item,
     tip,
 )
-from .common import CommandBox, StagePage, arguments_field
+from .common import CommandBox, RunDialog, StagePage, arguments_field, detail_row
 
 DEFAULT_PLANNER = "nnUNetPlannerResEncL"
 CONFIGURATIONS = ("3d_fullres", "2d", "3d_lowres")
@@ -56,12 +59,17 @@ CONFIGURATIONS = ("3d_fullres", "2d", "3d_lowres")
 def _howto() -> HowToCard:
     return HowToCard("What preprocessing does", [
         "Analyses your images (<b>fingerprint</b>): sizes, spacing, intensities.",
-        "Plans the network and patch size for your GPU (<b>plans</b>).",
-        "Resamples and normalises all cases for training.",
-        "Needed once per dataset, and again after labels change.",
-    ], [("blue", "💡 <span style='font-family:monospace'>nnUNetPlannerResEncL</span> needs a GPU with about 24 GB. "
-                 "Use <span style='font-family:monospace'>nnUNetPlannerResEncM</span> for 8–12 GB. You can also type "
-                 "a custom planner name.")], "Train · Preprocess")
+        "Plans the network, patch size and preprocessing for your GPU (<b>plans</b>).",
+        "Resamples and normalises all cases and stores them in a <b>plans folder</b> (e.g. "
+        "<span style='font-family:monospace'>nnUNetPlans_3d_fullres</span>). Training reads its data from "
+        "this folder.",
+    ], [("blue", f"{icon_html('bulb')} Select a suitable planner (GPU memory, training time per fold on an A100):<br>"
+                 "<b>ExperimentPlanner</b> <span style='white-space:nowrap'>(~8 GB, ~9 h)</span><br>"
+                 "<b>nnUNetPlannerResEncM</b> <span style='white-space:nowrap'>(9–11 GB, ~12 h)</span><br>"
+                 "<b>nnUNetPlannerResEncL</b> <span style='white-space:nowrap'>(24 GB, ~35 h)</span> "
+                 "<span style='background:#1f5fbf; color:white; font-weight:600'>&nbsp;default&nbsp;</span><br>"
+                 "<b>nnUNetPlannerResEncXL</b> <span style='white-space:nowrap'>(40 GB, ~66 h)</span><br>"
+                 "or type a custom planner name.")], "Train · Preprocess")
 
 
 def _chip(text: str, state: str) -> QLabel:
@@ -90,10 +98,11 @@ class PreprocessStage(StagePage):
         head.addWidget(self._plans_count)
         # One row per preprocessed configuration; planned-only configurations are not listed.
         self._plans_table = make_table(["Plans", "Planner", "Configuration", "Preprocessed"], stretch=None)
+        self._plans_table.horizontalHeaderItem(0).setToolTip("Plans = what preprocessing writes (e.g. nnUNetResEncUNetLPlans). The planner is what you run to create them (e.g. nnUNetPlannerResEncL).")
+        self._plans_table.horizontalHeaderItem(1).setToolTip("Planner = what you run to create plans (e.g. nnUNetPlannerResEncL writes nnUNetResEncUNetLPlans).")
         self._plans_table.itemSelectionChanged.connect(self._plans_selected)
         plans_card.body.addWidget(self._plans_table)
-        self._plans_empty = empty_state("This dataset has not been preprocessed yet. Choose a planner and click "
-                                        "▶ Run preprocessing.")
+        self._plans_empty = empty_state("This dataset has not been preprocessed yet. Click ▶ Preprocess… to plan and preprocess it.")
         plans_card.body.addWidget(self._plans_empty)
         self.center.addWidget(plans_card)
         # Folder
@@ -114,27 +123,74 @@ class PreprocessStage(StagePage):
         folder_card.body.addWidget(self._tree, 1)
         self.center.addWidget(folder_card, 1)
         # Right: run panel or JSON viewer
-        self.right.addWidget(scroll(self._build_run_panel()))
-        self._json_panel = Card()
-        json_layout = QVBoxLayout()
-        json_layout.setContentsMargins(18, 16, 18, 16)
-        json_layout.setSpacing(10)
-        self._json_panel.body.addLayout(json_layout)
-        json_head = QHBoxLayout()
-        json_head.addWidget(label("{ }", mono=True, bold=True))
-        names = QVBoxLayout()
-        names.setSpacing(0)
-        self._json_title = label("", mono=True, bold=True)
-        names.addWidget(self._json_title)
-        names.addWidget(label("raw file · read only", muted=True, size=11))
-        json_head.addLayout(names, 1)
-        json_head.addWidget(button("✕", ghost=True, small=True, clicked=self._close_json))
-        json_layout.addLayout(json_head)
-        self._json_view = QPlainTextEdit()
-        self._json_view.setObjectName("codeView")
-        self._json_view.setReadOnly(True)
-        json_layout.addWidget(self._json_view, 1)
-        self.right.addWidget(self._json_panel)
+        # Right: details of the selected configuration (or the raw JSON of a file). New runs start from the
+        # "▶ Preprocess…" button in the header, which opens the run form in a dialog.
+        self.right.addWidget(self._build_details())
+        self._run_dialog = RunDialog(self, "Preprocess", self._build_run_panel(), on_open=self.update_actions)
+        self.header_actions.addWidget(button("▶ Preprocess…", primary=True, clicked=self._run_dialog.open,
+                                             tooltip="Plan and preprocess this dataset (choose planner and "
+                                                     "configurations, see the command)"))
+
+    def _build_details(self) -> QWidget:
+        panel = Card()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+        panel.body.addLayout(layout)
+        self._details_title = label("", name="h3", wrap=True)
+        layout.addWidget(self._details_title)
+        self._details_body = QVBoxLayout()
+        self._details_body.setSpacing(8)
+        layout.addLayout(self._details_body)
+        # Like the details on Validate: the raw plans file below the summary.
+        self._plans_json_label = section_label("Details")
+        layout.addWidget(self._plans_json_label)
+        self._plans_json = QPlainTextEdit()
+        self._plans_json.setObjectName("codeView")
+        self._plans_json.setReadOnly(True)
+        layout.addWidget(self._plans_json, 1)
+        layout.addStretch()  # keeps title and text at the top while the plans file is hidden
+        return panel
+
+    def _show_details(self, plans: PlansInfo | None, config) -> None:
+        clear_layout(self._details_body)
+        if plans is None or config is None:
+            self._details_title.setText("Not preprocessed yet")
+            self._details_body.addWidget(label("This dataset has not been preprocessed yet. Click ▶ Preprocess… to plan and preprocess it.",
+                                               muted=True, wrap=True))
+            self._plans_json_label.hide()
+            self._plans_json.hide()
+            return
+        self._show_json(plans.file)
+        self._details_title.setText(f"{plans.name} · {config.name}")
+        total = self.state.raw.label_files or len(self.state.raw.cases) if self.state else 0
+        when = format_time(plans.preprocessed_time) if plans.preprocessed_time else "—"
+        status = (badge("! outdated · labelsTr changed afterwards", "orange") if plans.outdated
+                  else badge("✓ up to date", "green"))
+        rows = (("Planner", label(plans.planner, mono=True)),
+                ("Preprocessed", f"{config.preprocessed_cases} / {total or config.preprocessed_cases} cases"),
+                ("Date", when),
+                ("Status", status),
+                ("Patch size", label(" × ".join(str(value) for value in config.patch_size) or "—", mono=True)),
+                ("Spacing", label(" × ".join(f"{value:.3g}" for value in config.spacing) or "—", mono=True)),
+                ("Batch size", str(config.batch_size or "—")),
+                ("Folder", label(f"{config.data_identifier}/", mono=True, wrap=True, selectable=True)))
+        for name, value in rows:
+            self._details_body.addLayout(detail_row(name, value))
+        actions = QHBoxLayout()
+        actions.addWidget(button("↻ Run again…", small=True, clicked=lambda: self._rerun(plans, config),
+                                 tooltip="Open the preprocessing form with this planner and configuration prefilled, "
+                                         "e.g. after labels changed"))
+        actions.addStretch()
+        self._details_body.addLayout(actions)
+
+    def _rerun(self, plans: PlansInfo, config) -> None:
+        """Prefill the run form with the planner and configuration of this entry and open it."""
+        if plans.planner and plans.planner != "—":
+            self._planner.setCurrentText(plans.planner)
+        options = list(CONFIGURATIONS) + ([config.name] if config.name not in CONFIGURATIONS else [])
+        self._configurations.set_options(options, selected=[config.name])
+        self._run_dialog.open()
 
     def _build_run_panel(self) -> QWidget:
         panel = Card()
@@ -142,7 +198,6 @@ class PreprocessStage(StagePage):
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(12)
         panel.body.addLayout(layout)
-        layout.addWidget(label("Run preprocessing", name="h3"))
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(10)
@@ -151,7 +206,7 @@ class PreprocessStage(StagePage):
         self._planner.setProperty("mono", True)
         self._planner.addItems(["ExperimentPlanner", "nnUNetPlannerResEncM", DEFAULT_PLANNER, "nnUNetPlannerResEncXL"])
         self._planner.setCurrentText(DEFAULT_PLANNER)
-        self._planner.setToolTip("Type a custom planner name, or choose an installed planner.")
+
         self._planner.currentTextChanged.connect(self._update_command)
         self._configurations = ChoiceGroup(exclusive=False)
         self._configurations.set_options(CONFIGURATIONS, selected=["3d_fullres"])
@@ -167,16 +222,23 @@ class PreprocessStage(StagePage):
         self._arguments = arguments_field()
         self._arguments.setPlaceholderText("Optional, e.g. -npfp 8")
         self._arguments.textChanged.connect(self._update_command)
+        info = {
+            "Planner": "The planner chooses a suitable network size, patch size and preprocessing for your data. "
+                       "Planners differ in network size, needed GPU memory and training time.",
+            "Configurations": "The configuration defines the data handling and the model input: <b>3d_fullres</b> "
+                              "3D at full resolution (the usual choice), <b>2d</b> single slices (faster), "
+                              "<b>3d_lowres</b> downsampled 3D (only for very large images).",
+        }
         for name, widget in (("Planner", self._planner), ("Configurations", self._configurations),
                              ("Processes", self._processes), ("Checks", self._verify),
                              ("Additional arguments", self._arguments)):
-            layout.addLayout(form_row(name, widget))
+            layout.addLayout(form_row(name, widget, info=info.get(name, "")))
         layout.addWidget(section_label("Command"))
         self._command = CommandBox()
         layout.addWidget(self._command)
         actions = QHBoxLayout()
         actions.addWidget(button("Copy command", small=True, clicked=lambda: self._command.copy()))
-        self._run = button("▶ Run preprocessing", small=True, primary=True, clicked=self._run_preprocessing)
+        self._run = button("▶ Preprocess", small=True, primary=True, clicked=self._run_preprocessing)
         actions.addWidget(self._run)
         actions.addStretch()
         layout.addLayout(actions)
@@ -234,6 +296,7 @@ class PreprocessStage(StagePage):
             self._plans_selected()
         else:
             self._fill_tree(None)
+            self._show_details(None, None)
         self._update_command()
 
     def _fix_plan_columns(self) -> None:
@@ -270,6 +333,7 @@ class PreprocessStage(StagePage):
             return
         plans, config = self._rows[self._plans_table.item(selected[0].row(), 0).data(Qt.ItemDataRole.UserRole)]
         self._selected_plans = (plans.name, config.name)
+        self._show_details(plans, config)
         self._fill_tree(plans)
 
     ROW_HEIGHT = 34
@@ -281,13 +345,13 @@ class PreprocessStage(StagePage):
         state = self.state
         root = state.record.preprocessed_path if state else None
         if root is None or not root.is_dir():
-            self._tree.addTopLevelItem(QTreeWidgetItem(["No preprocessed folder for this dataset yet."]))
+            self._tree.addTopLevelItem(QTreeWidgetItem(["This dataset has not been preprocessed yet."]))
             return
         notes = {"dataset.json": "copy of raw", "dataset_fingerprint.json": "intensity & spacing statistics",
                  "splits_final.json": "folds for training"}
         for path in sorted(root.glob("*.json"), key=lambda item: item.name.casefold()):
             note = notes.get(path.name, "network & patch settings" if "plans" in path.name.casefold() else "")
-            self._add_row(None, "📄", path.name, note, "{ }", "Show JSON", lambda selected=path: self._show_json(selected))
+            self._add_row(None, "file", path.name, note, "{ }", "Show JSON", lambda selected=path: self._show_json(selected))
         self._case_folder = next((root / config.data_identifier for config in (plans.configurations if plans else ())
                                   if config.preprocessed), None)
         gt = root / "gt_segmentations"
@@ -311,8 +375,8 @@ class PreprocessStage(StagePage):
         layout.setContentsMargins(4, 2, 8, 2)
         layout.setSpacing(8)
         if icon:
-            layout.addWidget(label(icon, size=12))
-        layout.addWidget(label(name, mono=True), 1)
+            layout.addWidget(icon_label(icon, 14))
+        layout.addWidget(label(name, mono=True, selectable=True), 1)
         if note:
             layout.addWidget(label(note, muted=True, size=12))
         if button_icon:
@@ -325,7 +389,7 @@ class PreprocessStage(StagePage):
         return item
 
     def _add_folder(self, folder: Path, name: str, note: str) -> None:
-        item = self._add_row(None, "📁", name, note)
+        item = self._add_row(None, "folder", name, note)
         item.setData(0, Qt.ItemDataRole.UserRole, str(folder))
         item.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator)
         item.setExpanded(False)  # folders stay collapsed; files are listed when expanded
@@ -358,8 +422,8 @@ class PreprocessStage(StagePage):
             return
         for path in files[start:start + self.BATCH]:
             is_case = path.name.endswith(".b2nd") or path.parent.name == "gt_segmentations"
-            self._add_row(item, "", path.name, "", "🔍" if is_case else "",
-                          "Inspect in Napari · preprocessed image and segmentation",
+            self._add_row(item, "", path.name, "", "search" if is_case else "",
+                          "Open in Napari · preprocessed image and segmentation",
                           lambda selected=path: self._inspect_pair(selected))
         if start + self.BATCH < len(files):
             QTimer.singleShot(0, lambda: self._append_files(item, files, start + self.BATCH, version))
@@ -367,16 +431,16 @@ class PreprocessStage(StagePage):
     # ------------------------------------------------------------ JSON panel
 
     def _show_json(self, path: Path) -> None:
-        self._json_title.setText(path.name)
-        self._json_view.setPlainText("Loading…")
-        self.right.setCurrentWidget(self._json_panel)
-        self.context.tasks.run("preprocess-json", lambda: json_value(path),
-                               lambda data: self._json_view.setPlainText(
+        """Show any JSON file of the folder in the Details box (where the plans file is shown)."""
+        self._plans_json_label.setText(f"DETAILS · {path.name}")
+        self._plans_json_label.show()
+        self._plans_json.show()
+        self._plans_json.setToolTip(str(path))
+        self._plans_json.setPlainText("Loading…")
+        self.context.tasks.run("preprocess-plans", lambda: json_value(path),
+                               lambda data: self._plans_json.setPlainText(
                                    json.dumps(data, indent=2, ensure_ascii=False) if data is not None
                                    else f"{path.name} is missing or not valid JSON."))
-
-    def _close_json(self) -> None:
-        self.right.setCurrentIndex(0)
 
     # ------------------------------------------------------------ run
 
@@ -397,35 +461,38 @@ class PreprocessStage(StagePage):
         self.update_actions()
 
     def update_actions(self) -> None:
-        if self.state is None:
-            return
+        if self.state is None or not getattr(self, "_run_dialog", None) or not self._run_dialog.visible:
+            return  # nothing to show while the run dialog is closed
         reason = self.busy_or_missing("raw", "preprocessed")
         missing = self.state.raw.missing_labels
         if not reason and missing:
-            reason = (f"{missing} image{'s have' if missing != 1 else ' has'} no label (see Data). nnU-Net needs a label "
-                      "for every image, so preprocessing is disabled until they exist.")
+            reason = f"{missing} image{'s' if missing != 1 else ''} without label · cannot preprocess (see Data)"
         if not reason and not self.state.raw.cases:
-            reason = "imagesTr has no images yet."
+            reason = "no raw data · cannot preprocess"
         self._run.setEnabled(not reason)
         self._run.setToolTip(reason)
-        self._run_hint.setText(("⏳ " if self.context.jobs.busy else "") + reason)
+        self._run_hint.setText(reason)
         self._run_hint.setVisible(bool(reason))
 
     def _run_preprocessing(self) -> None:
-        if self.state is not None:
-            self.context.jobs.start_nnunet("Preprocess", self.state.record.name, self._command_text())
+        if self.state is not None and self.context.jobs.start_nnunet("Preprocess", self.state.record.name,
+                                                                      self._command_text()):
+            self._run_dialog.close()
 
     def header_badges(self, state: DatasetState) -> list:
-        """Preprocessing status first (red when something blocks training), label mode last."""
-        items = []
-        if state.raw.missing_labels:
-            items.append(badge(f"labels incomplete · {state.raw.missing_labels} image"
-                               f"{'s' if state.raw.missing_labels != 1 else ''} without label", "red"))
+        """What is preprocessed, then whether preprocessing can run (it needs complete raw data)."""
         preprocessed = [plans for plans in state.plans if plans.preprocessed_time]
         if not preprocessed:
-            items.append(badge("not preprocessed yet", "red"))
+            items = [badge("no preprocessed data", "gray")]
         elif any(plans.outdated for plans in preprocessed):
-            items.append(badge("preprocessing outdated · labelsTr changed afterwards", "red"))
-        elif not items:
-            items.append(badge("✓ preprocessed", "green"))
-        return items + super().header_badges(state)
+            items = [badge("preprocessing outdated · labelsTr changed afterwards", "red")]
+        else:
+            items = [badge("✓ preprocessed", "green")]
+        missing = state.raw.missing_labels
+        if not state.raw.cases:
+            items.append(badge("no raw data · cannot preprocess", "gray",
+                               "Preprocessing needs the images and labels in nnUNet_raw."))
+        elif missing:
+            items.append(badge(f"{missing} image{'s' if missing != 1 else ''} without label · cannot preprocess", "red",
+                               "nnU-Net needs a label for every image (see Data)."))
+        return items

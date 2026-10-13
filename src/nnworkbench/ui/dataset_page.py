@@ -70,11 +70,13 @@ class DatasetPage(QWidget):
     def open(self, record: DatasetRecord) -> None:
         if self.record is None or record.dataset_id != self.record.dataset_id:
             self.state = None  # the stage stays the same when switching datasets
+            self._context.model_label = None
             for page in self.pages.values():
                 page.show_header_loading(record.directory_name)
                 page.show_loading()
             for tab in self._tabs.values():
                 tab.set_state("")
+                tab.setToolTip("")
         self.record = record
         self.reload()
 
@@ -92,7 +94,9 @@ class DatasetPage(QWidget):
         for key, method in (("data", state.data_state), ("preprocess", state.preprocess_state),
                             ("train", state.train_state), ("validate", state.validate_state),
                             ("predict", state.predict_state)):
-            self._tabs[key].set_state(method())
+            tab_state, hint = method()
+            self._tabs[key].set_state(tab_state)
+            self._tabs[key].setToolTip(hint)
         for page in self.pages.values():
             page.set_state(state)
 
@@ -100,3 +104,5 @@ class DatasetPage(QWidget):
         self._current = key
         self._tabs[key].setChecked(True)
         self._stack.setCurrentWidget(self.pages[key])
+        if self._context.model_label:
+            self.pages[key].follow_model(self._context.model_label)

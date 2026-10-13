@@ -30,6 +30,7 @@ class AppContext(QObject):
 
     settings_changed = Signal()
     annotation_changed = Signal(bool)
+    howto_changed = Signal(bool)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -42,6 +43,9 @@ class AppContext(QObject):
             prefetch_radius=self.store.value("napari/prefetch_radius", 1, type=int),
         )
         self.roots: dict[str, Path | None] = {"raw": None, "preprocessed": None, "results": None}
+        # The model last chosen on Train, Validate or Predict (trainer__plans__configuration); the other stages
+        # select it too when they are opened. Cleared when another dataset opens.
+        self.model_label: str | None = None
         self.jobs = JobRunner(self)
         self.tasks = TaskRunner(self)
         self._napari: list[QProcess] = []
@@ -59,6 +63,15 @@ class AppContext(QObject):
         self.settings_changed.emit()
         if annotation_changed:
             self.annotation_changed.emit(settings.annotation_workflow)
+
+    @property
+    def howto_expanded(self) -> bool:
+        """Whether the how-to column is shown (expanded by default, remembered across sessions)."""
+        return self.store.value("ui/howto_expanded", True, type=bool)
+
+    def set_howto_expanded(self, expanded: bool) -> None:
+        self.store.setValue("ui/howto_expanded", expanded)
+        self.howto_changed.emit(expanded)
 
     def set_annotation_workflow(self, enabled: bool) -> None:
         if enabled != self.settings.annotation_workflow:

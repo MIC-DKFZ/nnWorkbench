@@ -33,7 +33,7 @@ def create_dataset(raw_root: Path | None, all_roots: list[Path | None], dataset_
         (destination / child).mkdir()
     labels = {"background": 0, "": 1}
     manifest = {"channel_names": {"0": ""}, "labels": labels, "numTraining": 0,
-                "file_ending": "", "name": directory_name, "description": "", "license": ""}
+                "file_ending": "", "name": directory_name, "description": "", "licence": ""}
     (destination / "dataset.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return destination
 

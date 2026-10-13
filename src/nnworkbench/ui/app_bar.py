@@ -7,7 +7,7 @@ from qtpy.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
 
 from nnworkbench.models.dataset import DatasetRecord
 
-from .widgets import ToggleSwitch, button, dataset_id_label, label
+from .widgets import ElidedLabel, ToggleSwitch, button, dataset_id_label, label
 
 
 class AppBar(QFrame):
@@ -51,10 +51,13 @@ class AppBar(QFrame):
         switcher_row.setContentsMargins(10, 4, 12, 4)
         switcher_row.setSpacing(8)
         self._switcher_id = dataset_id_label(0)
-        self._switcher_name = label("", bold=True)
+        self._switcher_name = ElidedLabel()
+        font = self._switcher_name.font()
+        font.setBold(True)
+        self._switcher_name.setFont(font)
         self._switcher_folder = label("", muted=True, size=12)
         switcher_row.addWidget(self._switcher_id)
-        switcher_row.addWidget(self._switcher_name)
+        switcher_row.addWidget(self._switcher_name)  # elides long names when the button gets narrow
         switcher_row.addWidget(self._switcher_folder)
         switcher_row.addStretch()
         switcher_row.addWidget(label("▾", muted=True))
@@ -64,7 +67,8 @@ class AppBar(QFrame):
         row.addWidget(self.switcher)
         row.addStretch()
         self.annotation = ToggleSwitch("Annotation Workflow")
-        self.annotation.setToolTip("Applies to all datasets: adds ✎ to annotate cases in Napari")
+        self.annotation.setToolTip("Applies to all datasets: adds ✎ to annotate cases in Napari (saved directly to labelsTr) "
+                                   "and the annotation hints")
         self.annotation.toggled.connect(self.annotation_toggled.emit)
         row.addWidget(self.annotation)
         row.addWidget(button("? Guide", ghost=True, clicked=self.guide_requested.emit))

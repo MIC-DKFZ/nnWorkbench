@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from qtpy.QtGui import QFont
 from qtpy.QtWidgets import QApplication
 
@@ -21,6 +23,7 @@ RED_SOFT = "#fbe9e8"
 PURPLE = "#6b4fbb"
 PURPLE_SOFT = "#efeafb"
 MONO = "DejaVu Sans Mono"
+CHECK_ICON = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
 
 TONES = {
     "green": (GREEN_SOFT, GREEN),
@@ -86,10 +89,6 @@ QPushButton#choice:checked {{ background: {BLUE_SOFT}; border-color: {BLUE}; col
 QPushButton#choice:disabled {{ border-style: dashed; color: #b6c0cd; }}
 QPushButton#foldButton {{ padding: 0; border-radius: 7px; font-size: 12px; }}
 QPushButton#foldButton:checked {{ background: {BLUE}; border-color: {BLUE}; color: white; }}
-QLabel#foldButtonText {{ font-size: 12px; font-weight: 700; color: {TEXT}; }}
-QLabel#foldButtonText[role="mutedDice"] {{ color: #94a3b8; font-weight: 500; }}
-QLabel#foldButtonText[checked="true"] {{ color: white; }}
-QLabel#foldButtonText[role="mutedDice"][checked="true"] {{ color: #c7d6ef; }}
 QPushButton#link {{ background: transparent; border: 0; color: {BLUE}; padding: 2px 4px; font-weight: 600; }}
 QPushButton#backButton {{ background: transparent; border: 0; color: {MUTED}; padding: 7px 10px; }}
 QPushButton#backButton:hover {{ background: #f1f4f8; color: {TEXT}; }}
@@ -114,7 +113,7 @@ QPlainTextEdit#consoleLog {{
 }}
 QCheckBox {{ spacing: 8px; background: transparent; }}
 QCheckBox::indicator {{ width: 15px; height: 15px; border: 1.5px solid #cbd5e1; border-radius: 4px; background: {PANEL}; }}
-QCheckBox::indicator:checked {{ background: {BLUE}; border-color: {BLUE}; image: none; }}
+QCheckBox::indicator:checked {{ background: {BLUE}; border-color: {BLUE}; image: url("{CHECK_ICON}"); }}
 
 QTableWidget, QTreeWidget, QListWidget {{
     background: {PANEL}; border: 0; gridline-color: transparent; outline: 0;
@@ -160,6 +159,9 @@ QLabel#configChip[state="ok"] {{ background: #d6efdf; color: {GREEN}; }}
 QLabel#configChip[state="plan"] {{ border: 1px dashed #94a3b8; color: {MUTED}; font-weight: 500; }}
 QLabel#jobChip {{ border: 1px solid {LINE}; border-radius: 10px; padding: 2px 10px; font-size: 12px; font-weight: 600; color: {MUTED}; }}
 QLabel#jobChip[active="true"] {{ border-color: {BLUE}; background: {BLUE_SOFT}; color: {BLUE}; }}
+QFrame#infoBox {{ background: white; border: 1px solid {LINE}; border-radius: 8px; }}
+QLabel#jobChip[failed="true"] {{ border-color: {RED}; background: {RED_SOFT}; color: {RED}; }}
+QLabel[failed="true"] {{ color: {RED}; }}
 QLabel#statusYes {{ color: {GREEN}; font-weight: 700; }}
 QLabel#statusNo {{ color: {RED}; font-weight: 700; }}
 
@@ -169,6 +171,11 @@ QTextBrowser#annotationGuide {{ background: {PANEL}; border: 1px solid {LINE}; b
 QTabBar::tab {{ background: transparent; color: {MUTED}; font-weight: 600; padding: 7px 12px; border: 0; border-bottom: 2px solid transparent; }}
 QTabBar::tab:selected {{ color: {BLUE}; border-bottom-color: {BLUE}; }}
 QTabWidget::pane {{ border: 0; border-top: 1px solid {LINE}; }}
+QMenu {{ background: {PANEL}; border: 1px solid {LINE}; border-radius: 8px; padding: 4px; }}
+QMenu::item {{ background: transparent; color: {TEXT}; padding: 6px 22px 6px 12px; border-radius: 6px; }}
+QMenu::item:selected {{ background: {BLUE_SOFT}; color: {BLUE}; }}
+QMenu::item:disabled {{ color: #a3adbb; }}
+QMenu::separator {{ height: 1px; background: {LINE}; margin: 4px 6px; }}
 QToolTip {{ background: #1e293b; color: white; border: 0; padding: 5px 8px; }}
 """
 

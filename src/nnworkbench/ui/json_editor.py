@@ -22,13 +22,13 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from nnworkbench.services.dataset_json import definition_errors, labels_tr_count, write_manifest
+from nnworkbench.services.dataset_json import definition_errors, file_ending_error, num_training_error, write_manifest
 
 from .widgets import badge, button, label, scroll, set_badge
 
 _STRUCTURED = ("channel_names", "labels")
 # Keys nnWorkbench always shows; their names are fixed. Every other key is a custom entry.
-_STANDARD = ("channel_names", "labels", "numTraining", "file_ending", "name", "description", "license")
+_STANDARD = ("channel_names", "labels", "numTraining", "file_ending", "name", "description", "licence")
 
 
 class _PairEditor(QWidget):
@@ -110,7 +110,7 @@ def _custom_value(text: str, was_number: bool = False) -> object:
 
 
 class DatasetJsonPanel(QFrame):
-    """Shows dataset.json; ✎ Edit switches to the in-place editor."""
+    """Shows dataset.json; Edit switches to the in-place editor."""
 
     saved = Signal()
 
@@ -129,7 +129,7 @@ class DatasetJsonPanel(QFrame):
         self._badge = badge("✓ valid", "green")
         head.addWidget(self._badge)
         head.addStretch()
-        self._edit = button("✎ Edit", small=True, clicked=self._start_edit)
+        self._edit = button("Edit", small=True, icon="edit", clicked=self._start_edit)
         self._cancel = button("Cancel", small=True, clicked=self._cancel_edit)
         self._save = button("Save", small=True, primary=True, clicked=self._save_edit)
         for widget in (self._edit, self._cancel, self._save):
@@ -146,17 +146,24 @@ class DatasetJsonPanel(QFrame):
         self._note = label("", muted=True, wrap=True, size=12, rich=True)
         layout.addWidget(self._note)
         self._editors: dict[str, object] = {}
+        self._cases: int | None = None
         self._set_mode(False)
 
-    def set_manifest(self, directory: Path | None, manifest: dict | None, editable: bool, note: str = "") -> None:
-        self._directory, self._manifest, self._editable = directory, manifest, editable
+    def set_manifest(self, directory: Path | None, manifest: dict | None, editable: bool, note: str = "",
+                     cases: int | None = None) -> None:
+        """``cases`` is the number of training cases in imagesTr; numTraining is checked against it."""
+        self._directory, self._manifest, self._editable, self._cases = directory, manifest, editable, cases
         self._view.setPlainText(json.dumps(manifest, indent=2, ensure_ascii=False) if manifest is not None
                                 else "No dataset.json found.")
-        errors = definition_errors(manifest) if isinstance(manifest, dict) else ("missing",)
+        errors = ((*definition_errors(manifest), *filter(None, [file_ending_error(manifest)]))
+                  if isinstance(manifest, dict) else ("missing",))
+        count_error = num_training_error(manifest, cases) if isinstance(manifest, dict) and cases else None
         if manifest is None:
-            set_badge(self._badge, "missing", "orange")
+            set_badge(self._badge, "missing or unreadable", "red")
         elif errors:
-            set_badge(self._badge, "! check labels and channels", "orange", " ".join(errors))
+            set_badge(self._badge, "! invalid", "red", " ".join(errors))
+        elif count_error:
+            set_badge(self._badge, "! check numTraining", "red", count_error)
         else:
             set_badge(self._badge, "✓ valid", "green")
         self._default_note = note
@@ -198,7 +205,20 @@ class DatasetJsonPanel(QFrame):
                 field.setProperty("mono", True)
                 field.setProperty("json", not isinstance(value, str))
                 grid.addWidget(key_label, row, 0)
-                grid.addWidget(field, row, 1)
+                if key == "numTraining" and self._cases and value != self._cases:
+                    cell = QWidget()
+                    cell_row = QHBoxLayout(cell)
+                    cell_row.setContentsMargins(0, 0, 0, 0)
+                    cell_row.setSpacing(6)
+                    cell_row.addWidget(field, 1)
+                    fix = QPushButton(f"Set to {self._cases}")
+                    fix.setObjectName("link")
+                    fix.setToolTip("numTraining must be the number of training cases in imagesTr.")
+                    fix.clicked.connect(lambda _=False, f=field, c=self._cases: f.setText(str(c)))
+                    cell_row.addWidget(fix)
+                    grid.addWidget(cell, row, 1)
+                else:
+                    grid.addWidget(field, row, 1)
                 editor = field
             self._editors[key] = editor
             row += 1
@@ -225,11 +245,11 @@ class DatasetJsonPanel(QFrame):
         old.deleteLater()
         area = scroll(holder)
         self._stack.insertWidget(1, area)
-        count = labels_tr_count(self._directory)
+        count = f" ({self._cases})" if self._cases else ""
         self._note.setText("The standard keys are fixed; only their values can be changed. Custom entries can be "
                            "added and removed. Labels and channels can be renamed, "
                            "renumbered, added and removed. Labels must stay consecutive, and <span style='font-family:"
-                           f"monospace'>ignore</span> must be the highest ID. numTraining must match labelsTr ({count}).")
+                           f"monospace'>ignore</span> must be the highest ID. numTraining must match the training cases in imagesTr{count}.")
         self._set_mode(True)
 
     def _add_custom(self, key: str, value: object) -> None:
@@ -305,7 +325,7 @@ class DatasetJsonPanel(QFrame):
             self._note.setText(f"<span style='color:#c2413b'>Could not save: {error}</span>")
             return
         self._manifest = manifest
-        self.set_manifest(self._directory, manifest, self._editable, self._default_note)
+        self.set_manifest(self._directory, manifest, self._editable, self._default_note, self._cases)
         self.saved.emit()
 
     def _cancel_edit(self) -> None:

@@ -71,7 +71,7 @@ class DatasetSwitcher(QFrame):
             row_layout.setSpacing(10)
             is_current = current is not None and record.dataset_id == current.dataset_id
             row_layout.addWidget(dataset_id_label(record.dataset_id, current=is_current))
-            row_layout.addWidget(label(record.name + ("  · open" if is_current else ""), bold=True), 1)
+            row_layout.addWidget(label(record.name, bold=True), 1)
             row_layout.addWidget(availability(record.raw_path is not None, record.preprocessed_path is not None,
                                               record.results_path is not None))
             item.setSizeHint(QSize(430, 46))
@@ -79,8 +79,15 @@ class DatasetSwitcher(QFrame):
             self._list.setItemWidget(item, row)
             if is_current:
                 current_item = item
+        # Below the button, but always inside the window: shift left if needed and shorten the list on low windows.
+        window = anchor.window().geometry()  # global coordinates of the main window's content
         position = anchor.mapToGlobal(QPoint(-60, anchor.height() + 4))
-        self.move(position)
+        x = max(window.left() + 8, min(position.x(), window.right() - self.width() - 8))
+        other = self.sizeHint().height() - self._list.height()  # search field and footer
+        room = window.bottom() - position.y() - 8
+        self._list.setFixedHeight(max(120, min(322, room - other)))
+        self.adjustSize()
+        self.move(x, position.y())
         self.show()
         self._search.setFocus()
         if current_item is not None:

@@ -123,3 +123,5 @@ def test_extended_command_options() -> None:
     assert "--verify_dataset_integrity" not in preprocessing_command(10, "2d", "P", verify=False)
     assert training_command(10, "nnUNetPlans", "2d", "T", "3", continue_training=True).endswith("-p nnUNetPlans --c")
     assert prediction_command(10, "/i", "/o", "P", "2d", folds="0 1", disable_tta=True).endswith("-f 0 1 --disable_tta")
+    assert prediction_command(10, "/i", "/o", "P", "2d", folds="0", continue_prediction=True).endswith(
+        "-f 0 --continue_prediction")

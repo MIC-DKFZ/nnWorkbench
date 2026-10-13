@@ -51,7 +51,7 @@ class _ClassChart(QWidget):
         painter.drawLine(plot.bottomLeft(), plot.topLeft())
         painter.save()
         painter.translate(14, plot.center().y()); painter.rotate(-90)
-        axis_label = "Voxels" if self._metric == "voxels" else "Number of images"
+        axis_label = "Voxels" if self._metric == "voxels" else "Number of cases"
         painter.setPen(QColor("#64748b"))
         painter.drawText(-plot.height() // 2, -8, plot.height(), 16,
                          Qt.AlignmentFlag.AlignCenter, axis_label)
@@ -89,7 +89,7 @@ class _AxisScatterChart(QWidget):
         if not values:
             painter.setPen(QColor("#64748b"))
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
-                             "Spatial data is unavailable. Run Analyze Labels again.")
+                             "Spatial data is unavailable. Run Compute statistics again.")
             return
         axis_count = max(len(item) for item in values)
         numbers = [float(value) for item in values for value in item]
@@ -164,6 +164,15 @@ class _AxisScatterChart(QWidget):
                          Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter, label)
 
 
+def _style_table(table: QTableWidget) -> None:
+    """Match the other tables: left-aligned headers, no grid, row selection."""
+    table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+    table.horizontalHeader().setHighlightSections(False)
+    table.verticalHeader().setDefaultSectionSize(32)
+    table.setShowGrid(False)
+    table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+
+
 class LabelStatisticsView(QWidget):
     """Inline label analysis with class, per-image, and geometry views."""
 
@@ -183,7 +192,7 @@ class LabelStatisticsView(QWidget):
         spacing_header = f"Voxel spacing ({axes}; mm)" if axes else "Voxel spacing (mm)"
         summary_parts = [f"{len(per_image)} label files", f"{len(classes)} classes"]
         summary_parts.append(f"{axis_count}D")
-        summary = QLabel("Label analysis · " + " · ".join(summary_parts))
+        summary = QLabel("Statistics · " + " · ".join(summary_parts))
         summary.setObjectName("analysisSummary")
         summary.setProperty("muted", True)
         controls = QHBoxLayout(); controls.setContentsMargins(16, 8, 16, 4); controls.setSpacing(10)
@@ -194,6 +203,7 @@ class LabelStatisticsView(QWidget):
         controls.addWidget(background); layout.addLayout(controls)
         views = QTabWidget(); layout.addWidget(views, 1)
         table = QTableWidget(len(classes), 3); self.class_table = table
+        _style_table(table)
         table.setHorizontalHeaderLabels(("Class", "Images containing class", "Total voxels"))
         table.verticalHeader().hide(); table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -206,9 +216,10 @@ class LabelStatisticsView(QWidget):
         views.addTab(table, "Class summary")
         class_column = 5 if self._show_labeled_data else 4
         image_table = QTableWidget(len(per_image), len(classes) + class_column)
+        _style_table(image_table)
         self.image_table = image_table
         image_table.setTextElideMode(Qt.TextElideMode.ElideNone); image_table.setWordWrap(True)
-        image_headers = ["Image", "Label validity", dimensions_header, spacing_header]
+        image_headers = ["Case", "Label validity", dimensions_header, spacing_header]
         if self._show_labeled_data:
             image_headers.append("Labeled data")
         image_table.setHorizontalHeaderLabels((

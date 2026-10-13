@@ -14,6 +14,8 @@ from ..dataset_state import DatasetState
 from ..json_editor import DatasetJsonPanel
 from ..label_statistics_dialog import LabelStatisticsView
 from ..widgets import (
+    icon_html,
+    icon_label,
     Bar,
     Card,
     HowToCard,
@@ -28,24 +30,22 @@ from ..widgets import (
     mark_item,
     label,
     make_table,
+    polish,
     section_label,
     separator,
     table_item,
 )
-from .common import StagePage
+from .common import StagePage, label_mode_badge
 
 
 def _howto() -> HowToCard:
     return HowToCard("The raw dataset", [
         "Images go to <b>imagesTr</b>, one file per channel: <span style='font-family:monospace'>case_0000.nii.gz</span>.",
         "Labels go to <b>labelsTr</b> with the same case name, without the channel suffix.",
-        "<b>dataset.json</b> describes channels, labels and the file ending.",
-        "🔍 opens a case in Napari. With the Annotation Workflow, ✎ opens it for annotation; saving writes "
-        "<b>labelsTr</b> directly.",
-    ], [("blue", "📝 <b>Describe</b> and <b>Define</b> from the guide end up here: the description and the labels "
-                  "in dataset.json."),
-        ("blue", "📊 <b>Statistics</b> shows the analysis of the whole dataset (run <b>Analyze dataset</b> first); "
-                 "📊 in a row shows one case.")], "Prepare your images")
+        "<b>dataset.json</b> describes channels, labels and the file ending. An optional <b>ignore</b> label marks "
+        "voxels that are not annotated; it must have the highest label ID.",
+        f"{icon_html('search')} inspects a case in Napari; {icon_html('edit')} annotates it (saved to <b>labelsTr</b>).",
+    ], [], "Prepare your images")
 
 
 class CaseStatisticsPanel(QFrame):
@@ -60,10 +60,10 @@ class CaseStatisticsPanel(QFrame):
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(10)
         head = QHBoxLayout()
-        head.addWidget(label("📊", size=15))
+        head.addWidget(icon_label("chart", 16))
         names = QVBoxLayout()
         names.setSpacing(0)
-        self._case = label("", mono=True, bold=True)
+        self._case = label("", mono=True, bold=True, selectable=True)
         self._position = label("", muted=True, size=11)
         names.addWidget(self._case)
         names.addWidget(self._position)
@@ -77,9 +77,9 @@ class CaseStatisticsPanel(QFrame):
         layout.addLayout(self._content)
         layout.addStretch()
         actions = QHBoxLayout()
-        self._inspect = button("🔍 Inspect in Napari", small=True,
+        self._inspect = button("Open in Napari", small=True, icon="search",
                                clicked=lambda: self._row is not None and stage.inspect(self._row))
-        self._annotate = button("✎ Annotate", small=True,
+        self._annotate = button("Annotate", small=True, icon="edit",
                                 clicked=lambda: self._row is not None and stage.annotate(self._row))
         actions.addWidget(self._inspect)
         actions.addWidget(self._annotate)
@@ -96,7 +96,7 @@ class CaseStatisticsPanel(QFrame):
         self._content.addWidget(section_label("Files"))
         for path in (*row.image_files, *([row.label_file] if row.label_file else [])):
             line = QHBoxLayout()
-            line.addWidget(label(f"{path.parent.name}/{path.name}", mono=True, size=12), 1)
+            line.addWidget(label(f"{path.parent.name}/{path.name}", mono=True, size=12, selectable=True), 1)
             try:
                 stat = path.stat()
                 line.addWidget(label(f"{format_size(stat.st_size)} · {format_time(stat.st_mtime)}", muted=True, size=12))
@@ -104,7 +104,7 @@ class CaseStatisticsPanel(QFrame):
                 pass
             self._content.addLayout(line)
         if row.label_file is None:
-            self._content.addWidget(label("No label yet. ✎ creates it (all ignore for sparse labels, "
+            self._content.addWidget(label("No label yet. Annotate creates it (all ignore for sparse labels, "
                                           "all background for dense labels).", muted=True, wrap=True, size=12))
         self._content.addWidget(separator())
         self._content.addWidget(label("<b style='color:#64748b'>GEOMETRY</b> <span style='color:#64748b'>"
@@ -138,8 +138,8 @@ class CaseStatisticsPanel(QFrame):
                    ("Origin", "[" + ", ".join(f"{value + 0.0:g}" for value in image.origin) + "]"))
         for index, (key, value) in enumerate(entries):
             grid.addWidget(label(key, muted=True, size=12), index, 0)
-            grid.addWidget(label(value, mono=True), index, 1)
-        direction = label("[" + ", ".join(f"{value + 0.0:g}" for value in image.direction) + "]", mono=True, wrap=True)
+            grid.addWidget(label(value, mono=True, selectable=True), index, 1)
+        direction = label("[" + ", ".join(f"{value + 0.0:g}" for value in image.direction) + "]", mono=True, wrap=True, selectable=True)
         grid.addWidget(label("Direction", muted=True, size=12), len(entries), 0, Qt.AlignmentFlag.AlignTop)
         grid.addWidget(direction, len(entries), 1)
         grid.setColumnStretch(1, 1)
@@ -162,7 +162,7 @@ class CaseStatisticsPanel(QFrame):
         self._content.addLayout(head)
         if entry is None:
             message = ("No label yet." if row.label_file is None else
-                       "Not in the statistics yet. Run Analyze dataset to see the classes of this case.")
+                       "Not in the statistics yet. Run Compute statistics to see the classes of this case.")
             self._content.addWidget(label(message, muted=True, wrap=True, size=12))
             return
         names = state.names
@@ -190,13 +190,16 @@ class DataStage(StagePage):
 
     def __init__(self, context: AppContext, parent=None) -> None:
         super().__init__(context, _howto(), parent)
-        self._annotation_tip = self.howto.add_tip(
-            "✎ <b>Sparse labels</b> (ignore in dataset.json): a missing label is created as all <i>ignore</i> when you "
-            "open the case with ✎; annotate small regions. <b>Dense labels</b> (no ignore): it is created as all "
-            "background; annotate every object.", "purple")
+        # both label modes stay visible; the one of this dataset is highlighted in set_state
+        self._sparse_tip = self.howto.add_tip(
+            f"{icon_html('edit')} <b>Sparse labels</b> (with ignore label): an empty mask is initialised with <i>ignore</i>; "
+            "annotate only some regions, the rest is ignored in training.", "gray")
+        self._dense_tip = self.howto.add_tip(
+            f"{icon_html('edit')} <b>Dense labels</b> (no ignore label): an empty mask is initialised with background; annotate "
+            "every object.", "gray")
         self._rows: list[CaseRow] = []
         self._case_index = -1
-        self._analyze = button("Analyze dataset", primary=True, clicked=self._analyze_dataset)
+        self._analyze = button("Compute statistics", primary=True, clicked=self._analyze_dataset)
         self.header_actions.addWidget(self._analyze)
         # Files / Statistics card
         files = Card()
@@ -204,7 +207,9 @@ class DataStage(StagePage):
         self._path = label("", mono=True)
         head.addWidget(self._path)
         head.addStretch()
-        self._toggle = ToggleGroup(["☰ Files", "📊 Statistics"])
+        self._toggle = ToggleGroup(["Files", "Statistics"], icons=["file", "chart"])
+        self._toggle.set_tooltip(1, "Statistics of the whole dataset (run Compute statistics first); "
+                                    "the chart button in a row shows one case")
         self._toggle.changed.connect(self._toggle_view)
         head.addWidget(self._toggle)
         self._views = QStackedWidget()
@@ -219,17 +224,17 @@ class DataStage(StagePage):
         self._counts = label("", muted=True, mono=True, rich=True)
         band_row.addWidget(self._counts)
         files_layout.addWidget(band)
-        self._table = make_table(["Case", "Images", "Labels", "Last edit", ""], stretch=0)
+        self._table = make_table(["Case", "Images", "Labels", ""], stretch=0)  # last edit: hover over Labels
         self._table.cellClicked.connect(lambda row, _column: self._select_row(row))
         self._table_stack = QStackedWidget()
         self._table_stack.addWidget(self._table)
         self._table_stack.addWidget(empty_state("Loading files…"))
         files_layout.addWidget(self._table_stack, 1)
         self._fill_version = 0
-        self._table.setItemDelegateForColumn(4, IconButtonsDelegate(self._table, self._row_buttons, self._row_clicked))
+        self._table.setItemDelegateForColumn(3, IconButtonsDelegate(self._table, self._row_buttons, self._row_clicked))
         # Fixed widths: resizing to contents would re-measure every row and freeze large datasets.
         header = self._table.horizontalHeader()
-        for column, width in ((1, 90), (2, 90), (3, 150)):
+        for column, width in ((1, 80), (2, 80)):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
             self._table.setColumnWidth(column, width)
         self._counts_text = ""
@@ -253,20 +258,22 @@ class DataStage(StagePage):
         super().set_state(state)
         record = state.record
         annotation = self.context.settings.annotation_workflow
-        self._annotation_tip.setVisible(annotation)
+        for widget, active in ((self._sparse_tip, state.sparse), (self._dense_tip, not state.sparse)):
+            widget.setVisible(annotation)
+            widget.setProperty("tone", "purple" if active else "gray")
+            polish(widget)
         raw = state.raw
         self._rows = list(raw.cases)
-        self._path.setText(f"nnUNet_raw/{record.directory_name}" if record.raw_path else "not in nnUNet_raw")
+        self._path.setText(f"nnUNet_raw/{record.directory_name}" if record.raw_path else "no raw data in nnUNet_raw")
         self._counts_text = (f"imagesTr <b style='color:#1e293b'>{raw.image_files}</b>  ·  labelsTr "
                              f"<b style='color:#1e293b'>{raw.label_files}</b>  ·  dataset.json")
         self._fill_table(annotation)
         self._fill_statistics(state)
-        note = ("An <span style='font-family:monospace'>ignore</span> label (the highest ID) makes the labels "
-                "<b>sparse</b>: voxels that are not annotated are ignored in training. Without it, labels are "
-                "<b>dense</b>.")
+        note = ""
         if state.manifest_kind not in (None, "raw"):
             note = f"Read from nnUNet_{state.manifest_kind}; it can only be edited in nnUNet_raw."
-        self._json.set_manifest(record.raw_path, state.manifest, editable=record.raw_path is not None, note=note)
+        self._json.set_manifest(record.raw_path, state.manifest, editable=record.raw_path is not None, note=note,
+                                cases=len(raw.cases) if state.manifest_kind == "raw" and raw.cases else None)
         if self.right.currentWidget() is self._case_panel and 0 <= self._case_index < len(self._rows):
             self._case_panel.show_case(self._rows[self._case_index], self._case_index, len(self._rows), state)
         else:
@@ -284,11 +291,11 @@ class DataStage(StagePage):
         self._counts.setText("Loading files…")
 
     def _row_buttons(self, index: int) -> list:
-        buttons = [("🔍", "Inspect in Napari", False)]
+        buttons = [("search", "Open in Napari · image and label", False)]
         if self.context.settings.annotation_workflow:
-            buttons.append(("✎", "Annotate in Napari · saves to labelsTr", False))
+            buttons.append(("edit", "Annotate in Napari · saves to labelsTr", False))
         open_case = self._case_index if self.right.currentWidget() is self._case_panel else -1
-        buttons.append(("📊", "Case statistics · classes, geometry, files", index == open_case))
+        buttons.append(("chart", "Case statistics · classes, geometry, files", index == open_case))
         return buttons
 
     def _row_clicked(self, index: int, button_number: int) -> None:
@@ -296,9 +303,9 @@ class DataStage(StagePage):
             return
         names = [icon for icon, _tip, _checked in self._row_buttons(index)]
         action = names[button_number]
-        if action == "🔍":
+        if action == "search":
             self.inspect(self._rows[index])
-        elif action == "✎":
+        elif action == "edit":
             self.annotate(self._rows[index])
         else:
             self.show_case(index)
@@ -309,8 +316,8 @@ class DataStage(StagePage):
         self._table.setRowCount(len(self._rows))
         self._table_stack.setCurrentIndex(0)
         width = 16 + (3 if annotation else 2) * 34
-        self._table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(4, width)
+        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        self._table.setColumnWidth(3, width)
         self._fill_batch(0, self._fill_version)
 
     def _fill_batch(self, start: int, version: int) -> None:
@@ -322,8 +329,9 @@ class DataStage(StagePage):
             row = self._rows[index]
             self._table.setItem(index, 0, table_item(row.case_id, mono=True))
             self._table.setItem(index, 1, mark_item(row.channels_present))
-            self._table.setItem(index, 2, mark_item(row.has_label))
-            self._table.setItem(index, 3, table_item(format_time(row.last_edit), muted=True))
+            labels = mark_item(row.has_label)
+            labels.setToolTip(f"Last edit: {format_time(row.last_edit)}" if row.has_label else "No label yet")
+            self._table.setItem(index, 2, labels)
         self._table.setUpdatesEnabled(True)
         if stop < len(self._rows):
             self._counts.setText(f"{self._counts_text}  ·  loading {stop} / {len(self._rows)}…")
@@ -341,19 +349,19 @@ class DataStage(StagePage):
             band.setObjectName("cardBand")
             band_row = QHBoxLayout(band)
             band_row.setContentsMargins(16, 8, 16, 8)
-            band_row.addWidget(label("Label analysis · not computed yet", muted=True, size=12))
+            band_row.addWidget(label("Statistics · not computed yet", muted=True, size=12))
             self._stats_layout.addWidget(band)
             self._stats_layout.addWidget(empty_state(
                 "<b style='color:#1e293b; font-size:15px'>No statistics yet</b><br><br>The statistics (class "
                 "distribution, voxels per class, image shape and spacing) are computed from the label files once and "
-                "then reused. They have not been computed yet: run <b>Analyze dataset</b> (above) first. It reads every "
-                "label file and can take a few minutes for large datasets.", "📊"), 1)
+                "then reused. They have not been computed yet: run <b>Compute statistics</b> (above) first. It reads every "
+                "label file and can take a few minutes for large datasets.", "chart"), 1)
             return
         view = LabelStatisticsView(state.analysis, annotation_workflow_enabled=state.sparse)
         if state.analysis_outdated:
             view.header_row.insertWidget(1, badge(f"{state.analysis_outdated} label"
                                                   f"{'s' if state.analysis_outdated != 1 else ''} changed since", "orange",
-                                                  "Run Analyze dataset to update the statistics"))
+                                                  "Run Update statistics to include the changed labels"))
         self._stats_layout.addWidget(view)
 
     def header_badges(self, state: DatasetState) -> list:
@@ -367,11 +375,22 @@ class DataStage(StagePage):
             items.append(badge("names invalid · images need a _0000 channel suffix", "red"))
         if not raw.channels_complete:
             items.append(badge("channels missing", "red"))
-        if state.manifest_errors:
-            items.append(badge("dataset.json invalid", "red", " ".join(state.manifest_errors)))
+        count = state.manifest.get("numTraining") if isinstance(state.manifest, dict) else None
+        if any(error.startswith("numTraining") for error in state.manifest_errors):
+            items.append(badge(f"numTraining {count} ≠ {len(raw.cases)} cases", "red",
+                               next(error for error in state.manifest_errors if error.startswith("numTraining"))))
+        other = [error for error in state.manifest_errors if not error.startswith("numTraining")]
+        if other:
+            items.append(badge("dataset.json invalid", "red", " ".join(other)))
+        if not raw.cases and state.raw_path is not None:
+            items.append(badge("no images in imagesTr yet", "red", "Add images (and labels) to imagesTr and labelsTr."))
         if not items and raw.cases:
             items.append(badge("✓ ready for preprocessing", "green"))
-        return items + super().header_badges(state)
+        if state.analysis and state.analysis_outdated:  # not a problem for preprocessing, only for the statistics
+            changed = state.analysis_outdated
+            items.append(badge(f"statistics outdated · {changed} label{'s' if changed != 1 else ''} changed", "orange",
+                               "Labels changed after the last Compute statistics; click Update statistics."))
+        return [*items, label_mode_badge(state)]
 
     def update_actions(self) -> None:
         if self.state is None:
@@ -379,6 +398,7 @@ class DataStage(StagePage):
         reason = self.busy_or_missing("raw")
         has_labels = self.state.raw.label_files > 0
         self._analyze.setEnabled(not reason and has_labels)
+        self._analyze.setText("Update statistics" if self.state.analysis is not None else "Compute statistics")
         tooltip = "Computes the dataset statistics: class distribution, voxels per class, image shape and spacing."
         if reason:
             tooltip += f" Disabled: {reason}"
