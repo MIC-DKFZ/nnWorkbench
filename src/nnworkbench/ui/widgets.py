@@ -78,6 +78,24 @@ def icon_html(name: str, size: int = 14) -> str:
     return f"<img src='{url}' width='{size}' height='{size}' style='vertical-align: middle'>"
 
 
+def logo_label(name: str, height: int) -> QLabel:
+    """A logo from assets/images (e.g. "dkfz-logo"), drawn sharply at the given height."""
+    renderer = QSvgRenderer(str(_ICON_DIR.parent / "images" / f"{name}.svg"))
+    size = renderer.defaultSize()
+    width = round(height * size.width() / max(size.height(), 1))
+    ratio = 2  # sharp on high-DPI screens
+    pixmap = QPixmap(width * ratio, height * ratio)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    pixmap.setDevicePixelRatio(ratio)
+    widget = QLabel()
+    widget.setPixmap(pixmap)
+    widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    return widget
+
+
 def icon_label(name: str, size: int = 16) -> QLabel:
     widget = QLabel()
     widget.setPixmap(icon_pixmap(name, size))

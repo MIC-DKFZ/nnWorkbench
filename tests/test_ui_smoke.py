@@ -212,3 +212,19 @@ def test_train_validate_predict_pages(tmp_path: Path) -> None:
     finally:
         window.close()
         application.processEvents()
+
+
+def test_about_dialog_shows_version_and_credits() -> None:
+    from importlib import metadata
+
+    from qtpy.QtWidgets import QLabel
+
+    from nnworkbench.ui.about_dialog import AboutDialog
+
+    application = _application()  # keep a reference: PyQt5 would delete an unreferenced QApplication
+    dialog = AboutDialog()
+    texts = " ".join(widget.text() for widget in dialog.findChildren(QLabel))
+    assert f"Version {metadata.version('nnworkbench')}" in texts
+    assert "Applied Computer Vision Lab" in texts and "Apache License 2.0" in texts
+    logos = [widget for widget in dialog.findChildren(QLabel) if widget.pixmap() is not None and not widget.pixmap().isNull()]
+    assert len(logos) >= 2 and application is not None

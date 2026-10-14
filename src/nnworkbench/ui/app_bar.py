@@ -1,4 +1,4 @@
-"""Top bar: logo, back to the overview, dataset switcher, Annotation Workflow, Guide and Settings."""
+"""Top bar: logo, back to the overview, dataset switcher, Annotation Workflow, Guide, Settings and Info."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ class AppBar(QFrame):
     back_requested = Signal()
     switcher_requested = Signal()
     guide_requested = Signal()
+    about_requested = Signal()
     settings_requested = Signal()
     annotation_toggled = Signal(bool)
 
@@ -73,6 +74,9 @@ class AppBar(QFrame):
         row.addWidget(self.annotation)
         row.addWidget(button("? Guide", ghost=True, clicked=self.guide_requested.emit))
         row.addWidget(button("⚙ Settings", ghost=True, clicked=self.settings_requested.emit))
+        # Rarely needed, so last: version, credits (logos) and licence
+        row.addWidget(button("Info", ghost=True, icon="info", clicked=self.about_requested.emit,
+                             tooltip="About nnWorkbench: version, credits and licence"))
         self.show_overview()
 
     def show_overview(self) -> None:

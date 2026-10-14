@@ -58,6 +58,7 @@ class MainWindow(QMainWindow):
         self.app_bar.switcher_requested.connect(self._open_switcher)
         self.app_bar.settings_requested.connect(self._open_settings)
         self.app_bar.guide_requested.connect(lambda: self._open_guide(0))
+        self.app_bar.about_requested.connect(self._open_about)
         self.app_bar.annotation_toggled.connect(self.context.set_annotation_workflow)
         self.app_bar.set_annotation(self.context.settings.annotation_workflow)
         self.context.annotation_changed.connect(self.app_bar.set_annotation)
@@ -131,6 +132,11 @@ class MainWindow(QMainWindow):
         self.dataset_page.reload()
 
     # ------------------------------------------------------------ dialogs
+
+    def _open_about(self) -> None:
+        from .about_dialog import AboutDialog
+
+        AboutDialog(self).exec()
 
     def _open_settings(self) -> None:
         dialog = SettingsDialog(self.context.settings, self)

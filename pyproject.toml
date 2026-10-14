@@ -32,6 +32,8 @@ nnworkbench-run = "nnworkbench.command_runner:main"
 [tool.setuptools.package-data]
 nnworkbench = [
     "assets/icons/*.svg",
+    "assets/images/dkfz-logo.svg",
+    "assets/images/helmholtz-imaging-logo.svg",
     "assets/annotation_workflow/*.md",
     "assets/annotation_workflow/images/*.png",
 ]
