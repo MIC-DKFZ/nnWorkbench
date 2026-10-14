@@ -76,8 +76,9 @@ def test_command_runner_applies_saved_paths(monkeypatch) -> None:
     monkeypatch.setattr(command_runner.subprocess, "run", lambda command, **kwargs: (
         captured.update(command=command, **kwargs) or Result()))
 
+    monkeypatch.setattr(command_runner, "find_executable", lambda name: f"/env/bin/{name}")
     assert command_runner.run_with_configured_paths(["nnUNetv2_train", "1", "2d", "0"]) == 7
-    assert captured["command"] == ["nnUNetv2_train", "1", "2d", "0"]
+    assert captured["command"] == ["/env/bin/nnUNetv2_train", "1", "2d", "0"]
     assert captured["env"]["nnUNet_raw"] == "/raw"
 
 
@@ -177,3 +178,23 @@ def test_dataset_inspection_opens_selected_image(monkeypatch, tmp_path) -> None:
     assert opened == [images / "case_002_0000.nii.gz"]
     with pytest.raises(ValueError, match="between 1 and 3"):
         command_runner.run_dataset_inspection(42, 4)
+
+
+def test_find_executable_looks_next_to_python_when_not_on_path(tmp_path, monkeypatch) -> None:
+    # e.g. started from the macOS Dock or a Windows shortcut: the environment's scripts are not on PATH
+    scripts = tmp_path / "bin"; scripts.mkdir()
+    tool = scripts / "nnUNetv2_train"; tool.write_text("#!/bin/sh\n"); tool.chmod(0o755)
+    monkeypatch.setenv("PATH", "")
+    monkeypatch.setattr(command_runner.sys, "executable", str(scripts / "python"))
+    assert command_runner.find_executable("nnUNetv2_train") == str(tool)
+    assert command_runner.find_executable("missing_tool") == "missing_tool"
+
+
+def test_windows_quoting_and_argument_splitting(monkeypatch) -> None:
+    from nnworkbench.services import commands
+
+    monkeypatch.setattr(commands, "WINDOWS", True)
+    assert commands.split_arguments(r'-chk "C:\models\best ckpt.pth" -o D:\out') == [
+        "-chk", r"C:\models\best ckpt.pth", "-o", r"D:\out"]
+    internal = commands.prediction_command(1, r"C:\My data", r"D:\out", "nnUNetPlans", "3d_fullres")
+    assert commands.wrapped_command(internal).startswith(r'nnworkbench-run nnUNetv2_predict -i "C:\My data" -o D:\out')

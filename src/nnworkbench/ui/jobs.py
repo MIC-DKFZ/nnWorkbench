@@ -139,8 +139,10 @@ class JobRunner(QObject):
         labels = step_labels or [""] * len(commands)
         steps = []
         for step_label, text in zip(labels, commands):
-            arguments = shlex.split(wrapped_command(text))
-            steps.append((step_label, arguments[0], arguments[1:]))
+            # The same as "nnworkbench-run …", but started with this Python, so it works without the environment's
+            # scripts folder on PATH (e.g. when the app is started from the macOS Dock or a Windows shortcut).
+            arguments = ["-m", "nnworkbench.command_runner", *shlex.split(text)]
+            steps.append((step_label, sys.executable, arguments))
         display = " && ".join(wrapped_command(text) for text in commands)
         return self._start(title, dataset, display, steps)
 
@@ -165,7 +167,9 @@ class JobRunner(QObject):
         number = total - len(job.steps)
         job.step_prefix = f"{step_label} ({number}/{total}) · " if total > 1 else ""
         job.progress = job.step_prefix.removesuffix(" · ")
-        shown = shlex.join([program, *arguments])
+        runner = ["-m", "nnworkbench.command_runner"]
+        shown = (shlex.join(["nnworkbench-run", *arguments[2:]]) if arguments[:2] == runner
+                 else shlex.join([program, *arguments]))
         if number == 1:
             job.output.append(f"$ {shown}\n")
         else:
@@ -173,6 +177,7 @@ class JobRunner(QObject):
         process = QProcess(self)
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("PYTHONUNBUFFERED", "1")
+        environment.insert("PYTHONIOENCODING", "utf-8")  # the output is read as UTF-8 (Windows default: ANSI code page)
         process.setProcessEnvironment(environment)
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.readyReadStandardOutput.connect(lambda: self._read(process, job))

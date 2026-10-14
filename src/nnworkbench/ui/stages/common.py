@@ -23,18 +23,21 @@ from ..widgets import Card, ElidedLabel, HowToCard, badge, button, clear_layout,
 
 
 def format_command(command: str) -> str:
-    """Show one option per line (shell line continuation), so commands never break inside a word."""
-    parts = shlex.split(command)
+    """The wrapped command with one option per line, so it never breaks inside a word. Quoting and the line
+    continuation follow the platform's shell (``\\`` for POSIX shells, ``^`` for the Windows command prompt)."""
+    from nnworkbench.services.commands import WINDOWS, shell_join
+
+    parts = ["nnworkbench-run", *shlex.split(command)]
     lines: list[str] = []
     current: list[str] = []
     for part in parts:
         if part.startswith("-") and current and not _is_number(part):
-            lines.append(shlex.join(current))
+            lines.append(shell_join(current))
             current = []
         current.append(part)
     if current:
-        lines.append(shlex.join(current))
-    return " \\\n  ".join(lines)
+        lines.append(shell_join(current))
+    return (" ^\n  " if WINDOWS else " \\\n  ").join(lines)
 
 
 def _is_number(text: str) -> bool:
@@ -58,12 +61,10 @@ class CommandBox(QPlainTextEdit):
 
     def set_command(self, command: str | list[str]) -> None:
         """One command, or several that run one after another (shown and copied joined with &&)."""
-        from nnworkbench.services.commands import wrapped_command
-
         self._commands = [command] if isinstance(command, str) else list(command)
         self._commands = [text for text in self._commands if text]
         self._command = " && ".join(self._commands)
-        self.setPlainText(" &&\n".join(format_command(wrapped_command(text)) for text in self._commands))
+        self.setPlainText(" &&\n".join(format_command(text) for text in self._commands))
 
     def command(self) -> str:
         return self._command

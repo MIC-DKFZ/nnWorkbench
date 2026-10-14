@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -16,13 +18,27 @@ from .services.image_stack import stack_image_folder
 from .services.label_analysis import analyse_label_distribution
 
 
+def find_executable(name: str) -> str:
+    """Find a console script such as nnUNetv2_train: on PATH, or next to this Python (bin/ on Linux and macOS,
+    Scripts\\ on Windows), so it is found even when the environment is not activated."""
+    found = shutil.which(name)
+    if found:
+        return found
+    folder = Path(sys.executable).parent
+    for directory in (folder, folder / "Scripts", folder / "bin"):
+        found = shutil.which(name, path=str(directory))
+        if found:
+            return found
+    return name
+
+
 def run_with_configured_paths(command: Sequence[str]) -> int:
     """Run *command* with saved nnU-Net paths, returning its exit status."""
     if not command:
         raise ValueError("Specify a command to run.")
     environment = os.environ.copy()
     environment.update(configured_paths())
-    return subprocess.run(command, env=environment, check=False).returncode
+    return subprocess.run([find_executable(command[0]), *command[1:]], env=environment, check=False).returncode
 
 
 def raw_dataset_directory(dataset_id: int) -> Path:

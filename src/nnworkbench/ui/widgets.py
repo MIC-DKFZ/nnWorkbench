@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import ClassVar
 
-from qtpy.QtCore import QByteArray, QPoint, QRect, QSize, Qt, Signal
+from qtpy.QtCore import QByteArray, QPoint, QRect, QSize, Qt, QUrl, Signal
 from qtpy.QtGui import (
     QAction,
     QColor,
@@ -71,8 +71,9 @@ def svg_icon(name: str, color: str = _ICON_COLOR) -> QIcon:
 
 def icon_html(name: str, size: int = 14) -> str:
     """The icon inline in rich text (how-to steps, tips)."""
-    path = (_ICON_DIR / f"icon-{name}.svg").as_posix()
-    return f"<img src='{path}' width='{size}' height='{size}' style='vertical-align: middle'>"
+    # a file:// URL: a plain Windows path ("C:/…") would be read as a URL with the scheme "c"
+    url = QUrl.fromLocalFile(str(_ICON_DIR / f"icon-{name}.svg")).toString()
+    return f"<img src='{url}' width='{size}' height='{size}' style='vertical-align: middle'>"
 
 
 def icon_label(name: str, size: int = 16) -> QLabel:

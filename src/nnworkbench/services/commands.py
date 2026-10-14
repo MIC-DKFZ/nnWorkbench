@@ -1,8 +1,27 @@
 from __future__ import annotations
 
+import os
 import shlex
+import subprocess
 from collections.abc import Sequence
 from pathlib import Path
+
+# Commands are kept as POSIX-quoted strings inside nnWorkbench (created with shlex.join, so Windows paths survive).
+# What the user sees or copies uses the quoting of the platform's shell.
+WINDOWS = os.name == "nt"
+
+
+def split_arguments(text: str) -> list[str]:
+    """Split additional arguments typed by the user; on Windows backslashes in paths are kept."""
+    if WINDOWS:
+        return [part[1:-1] if len(part) > 1 and part[0] == part[-1] == '"' else part
+                for part in shlex.split(text, posix=False)]
+    return shlex.split(text)
+
+
+def shell_join(arguments: Sequence[str]) -> str:
+    """Quote for the platform's shell: cmd/PowerShell on Windows, a POSIX shell elsewhere."""
+    return subprocess.list2cmdline(list(arguments)) if WINDOWS else shlex.join(arguments)
 
 
 def preprocessing_command(dataset_id: int, configuration: str | Sequence[str], planner: str,
@@ -14,7 +33,7 @@ def preprocessing_command(dataset_id: int, configuration: str | Sequence[str], p
         arguments += ["-np", str(processes)]
     if verify:
         arguments.append("--verify_dataset_integrity")
-    return shlex.join((*arguments, *shlex.split(additional_arguments)))
+    return shlex.join((*arguments, *split_arguments(additional_arguments)))
 
 
 def training_command(dataset_id: int, plans_file: str, configuration: str, trainer: str, fold: str,
@@ -22,7 +41,7 @@ def training_command(dataset_id: int, plans_file: str, configuration: str, train
     arguments = ["nnUNetv2_train", str(dataset_id), configuration, fold, "-tr", trainer, "-p", Path(plans_file).stem]
     if continue_training:
         arguments.append("--c")
-    return shlex.join((*arguments, *shlex.split(additional_arguments)))
+    return shlex.join((*arguments, *split_arguments(additional_arguments)))
 
 
 def prediction_command(dataset_id: int, input_directory: str, output_directory: str, plans: str,
@@ -37,9 +56,9 @@ def prediction_command(dataset_id: int, input_directory: str, output_directory: 
         arguments.append("--disable_tta")
     if continue_prediction:
         arguments.append("--continue_prediction")  # skip images that already have a prediction
-    return shlex.join((*arguments, *shlex.split(additional_arguments)))
+    return shlex.join((*arguments, *split_arguments(additional_arguments)))
 
 
 def wrapped_command(command: str) -> str:
-    """Prefix an nnU-Net command with the saved-path nnWorkbench runner."""
-    return shlex.join(("nnworkbench-run", *shlex.split(command)))
+    """Prefix an nnU-Net command with the saved-path nnWorkbench runner, quoted for the platform's shell."""
+    return shell_join(("nnworkbench-run", *shlex.split(command)))

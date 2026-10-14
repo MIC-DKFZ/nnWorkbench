@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from qtpy.QtGui import QFont
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QColor, QFont, QFontDatabase, QFontInfo, QPalette
 from qtpy.QtWidgets import QApplication
 
 BG = "#f4f6fa"
@@ -22,7 +23,7 @@ RED = "#c2413b"
 RED_SOFT = "#fbe9e8"
 PURPLE = "#6b4fbb"
 PURPLE_SOFT = "#efeafb"
-MONO = "DejaVu Sans Mono"
+MONO = "DejaVu Sans Mono"  # replaced at start-up by an installed fixed-width font (see apply_application_style)
 CHECK_ICON = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
 
 TONES = {
@@ -43,7 +44,8 @@ _TIPS = "\n".join(
     for tone, (soft, strong) in TONES.items()
 )
 
-STYLESHEET = f"""
+def _stylesheet() -> str:
+    return f"""
 QMainWindow, QDialog {{ background: {BG}; }}
 QWidget {{ color: {TEXT}; font-size: 13px; }}
 QWidget#appRoot, QWidget#page, QStackedWidget#pages {{ background: {BG}; }}
@@ -177,8 +179,54 @@ QToolTip {{ background: #1e293b; color: white; border: 0; padding: 5px 8px; }}
 """
 
 
+STYLESHEET = _stylesheet()
+
+
+def _installed(family: str) -> bool:
+    try:
+        families = QFontDatabase.families()  # static in Qt 6
+    except TypeError:
+        families = QFontDatabase().families()  # instance method in Qt 5
+    return family in families
+
+
+def monospace_family() -> str:
+    """DejaVu Sans Mono where installed (Linux), otherwise the platform's fixed-width font (Consolas, Menlo, …)."""
+    if _installed("DejaVu Sans Mono"):
+        return "DejaVu Sans Mono"
+    font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+    return font.family() if QFontInfo(font).fixedPitch() else "Courier New"
+
+
+def _use_light_colours(app: QApplication) -> None:
+    """Light colours on every system. The stylesheet is made for them; with a system dark mode (macOS, Windows,
+    some Linux desktops) Qt 6 would otherwise use a dark palette, giving dark text on dark backgrounds."""
+    hints = app.styleHints()
+    if hasattr(hints, "setColorScheme"):  # Qt 6.8+: also native parts such as title bars and file dialogs
+        hints.setColorScheme(Qt.ColorScheme.Light)
+    palette = QPalette()
+    for role, colour in ((QPalette.ColorRole.Window, BG), (QPalette.ColorRole.WindowText, TEXT),
+                         (QPalette.ColorRole.Base, PANEL), (QPalette.ColorRole.AlternateBase, "#f8fafc"),
+                         (QPalette.ColorRole.Text, TEXT), (QPalette.ColorRole.Button, PANEL),
+                         (QPalette.ColorRole.ButtonText, TEXT), (QPalette.ColorRole.BrightText, "#ffffff"),
+                         (QPalette.ColorRole.Highlight, BLUE), (QPalette.ColorRole.HighlightedText, "#ffffff"),
+                         (QPalette.ColorRole.ToolTipBase, TEXT), (QPalette.ColorRole.ToolTipText, "#ffffff"),
+                         (QPalette.ColorRole.PlaceholderText, "#94a3b8"), (QPalette.ColorRole.Link, BLUE)):
+        palette.setColor(role, QColor(colour))
+    for role in (QPalette.ColorRole.WindowText, QPalette.ColorRole.Text, QPalette.ColorRole.ButtonText):
+        palette.setColor(QPalette.ColorGroup.Disabled, role, QColor("#94a3b8"))
+    app.setPalette(palette)
+
+
 def apply_application_style(app: QApplication) -> None:
     """Apply the shared visual language for the desktop application."""
+    global MONO
     app.setStyle("Fusion")
-    app.setFont(QFont("Noto Sans", 10))
-    app.setStyleSheet(STYLESHEET)
+    _use_light_colours(app)
+    # Noto Sans where installed (most Linux desktops), otherwise the platform's UI font (Segoe UI, SF Pro, …).
+    font = QFont("Noto Sans", 10) if _installed("Noto Sans") else QFontDatabase.systemFont(
+        QFontDatabase.SystemFont.GeneralFont)
+    font.setPointSize(10)
+    app.setFont(font)
+    MONO = monospace_family()
+    app.setStyleSheet(_stylesheet())
