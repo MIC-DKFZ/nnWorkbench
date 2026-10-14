@@ -136,7 +136,9 @@ class MainWindow(QMainWindow):
     def _open_about(self) -> None:
         from .about_dialog import AboutDialog
 
-        AboutDialog(self).exec()
+        dialog = AboutDialog(self)
+        dialog.exec()
+        dialog.deleteLater()  # a new one is created next time
 
     def _open_settings(self) -> None:
         dialog = SettingsDialog(self.context.settings, self)

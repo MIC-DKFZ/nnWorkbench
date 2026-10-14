@@ -222,9 +222,15 @@ def test_about_dialog_shows_version_and_credits() -> None:
     from nnworkbench.ui.about_dialog import AboutDialog
 
     application = _application()  # keep a reference: PyQt5 would delete an unreferenced QApplication
-    dialog = AboutDialog()
-    texts = " ".join(widget.text() for widget in dialog.findChildren(QLabel))
-    assert f"Version {metadata.version('nnworkbench')}" in texts
-    assert "Applied Computer Vision Lab" in texts and "Apache License 2.0" in texts
-    logos = [widget for widget in dialog.findChildren(QLabel) if widget.pixmap() is not None and not widget.pixmap().isNull()]
-    assert len(logos) >= 2 and application is not None
+    window = MainWindow()
+    dialog = AboutDialog(window)  # owned by the window, as in the app (an orphan dialog crashed at exit)
+    try:
+        labels = dialog.findChildren(QLabel)
+        texts = " ".join(widget.text() for widget in labels)
+        assert f"Version {metadata.version('nnworkbench')}" in texts
+        assert "Applied Computer Vision Lab" in texts and "Apache License 2.0" in texts
+        assert sum(1 for widget in labels if widget.pixmap() is not None and not widget.pixmap().isNull()) >= 2
+    finally:
+        dialog.close()
+        window.close()
+        application.processEvents()
