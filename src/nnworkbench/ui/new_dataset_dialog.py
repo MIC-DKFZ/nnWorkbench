@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from qtpy.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QSpinBox
+from qtpy.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QLineEdit
+
+from .widgets import NumberField, with_stepper
 
 
 class NewDatasetDialog(QDialog):
@@ -8,9 +10,9 @@ class NewDatasetDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         layout = QFormLayout(self)
-        self.dataset_id = QSpinBox(); self.dataset_id.setRange(1, 999999); self.dataset_id.setValue(dataset_id)
+        self.dataset_id = NumberField(1, 999999, dataset_id)
         self.name = QLineEdit(name); self.name.setPlaceholderText("e.g. LiverCT")
-        layout.addRow("Dataset ID", self.dataset_id); layout.addRow("Name", self.name)
+        layout.addRow("Dataset ID", with_stepper(self.dataset_id)); layout.addRow("Name", self.name)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
         layout.addRow(buttons)

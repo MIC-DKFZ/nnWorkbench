@@ -6,25 +6,21 @@ import os
 
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
-    QAbstractSpinBox,
     QCheckBox,
     QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLayout,
-    QSpinBox,
     QVBoxLayout,
 )
 
 from .context import Settings
-from .widgets import button, label, section_label, separator, with_stepper
+from .widgets import NumberField, button, label, section_label, separator, with_stepper
 
 
-def _number_field() -> QSpinBox:
-    """A plain number field: the styled spin-box arrows rendered as stray lines, so type or scroll instead."""
-    field = QSpinBox()
-    field.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+def _number_field() -> NumberField:
+    field = NumberField(1, 99, 1)
     field.setFixedWidth(100)
     field.setMinimumHeight(32)
     return field

@@ -16,7 +16,7 @@ From the first image to a trained segmentation model, nnWorkbench keeps the enti
 - **Connect nnInteractive and nnU-Net:** Use nnInteractive in Napari to create annotations, save them directly as training labels in `labelsTr`, and continue with nnU-Net preprocessing and training.
 - **Annotation Workflow:** Follow a documented, guided workflow designed to create high-quality labels that support model performance while minimizing manual annotation effort.
 
-![Annotation Workflow](src/nnworkbench/assets/AnnotationWorkflowHeader.png)
+![Annotation Workflow](src/nnworkbench/assets/images/annotation-workflow-header.png)
 
 # Installation
 
@@ -25,7 +25,7 @@ Requirements:
 - Python 3.12 or newer
 - Conda or another suitable Python environment manager
 
-![nnWorkbench local and remote installation overview](src/nnworkbench/assets/AnnotationWorkflowInstall.png)
+![nnWorkbench local and remote installation overview](src/nnworkbench/assets/images/installation-overview.png)
 
 Create an environment and clone the repository:
 
@@ -143,8 +143,8 @@ nnworkbench-run reduce-checkpoints /path/to/nnUNet_results/Dataset042_CellSegmen
 
 # Acknowledgements
 
-<img src="src/nnworkbench/assets/HI_Logo.svg" alt="Helmholtz Imaging" height="40"><br>
-<img src="src/nnworkbench/assets/DKFZ_Logo.svg" alt="German Cancer Research Center (DKFZ)" height="38">&nbsp;&nbsp;&nbsp;
+<img src="src/nnworkbench/assets/images/helmholtz-imaging-logo.svg" alt="Helmholtz Imaging" height="40"><br>
+<img src="src/nnworkbench/assets/images/dkfz-logo.svg" alt="German Cancer Research Center (DKFZ)" height="38">&nbsp;&nbsp;&nbsp;
 
 
 

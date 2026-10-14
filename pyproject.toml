@@ -31,7 +31,7 @@ nnworkbench-run = "nnworkbench.command_runner:main"
 
 [tool.setuptools.package-data]
 nnworkbench = [
-    "assets/*.svg",
+    "assets/icons/*.svg",
     "assets/annotation_workflow/*.md",
     "assets/annotation_workflow/images/*.png",
 ]

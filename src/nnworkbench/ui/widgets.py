@@ -14,6 +14,7 @@ from qtpy.QtGui import (
     QFont,
     QGuiApplication,
     QIcon,
+    QIntValidator,
     QKeySequence,
     QPainter,
     QPen,
@@ -29,6 +30,7 @@ from qtpy.QtWidgets import (
     QHeaderView,
     QLabel,
     QLayout,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -43,9 +45,9 @@ from qtpy.QtWidgets import (
 from . import style
 
 # ------------------------------------------------------------ icons
-# Small SVG line icons (assets/icon-*.svg) instead of emoji, which look different on every system and font.
+# Small SVG line icons (assets/icons/*.svg) instead of emoji, which look different on every system and font.
 ICONS = ("search", "edit", "chart", "folder", "file", "bulb", "info")
-_ICON_DIR = Path(__file__).parent.parent / "assets"
+_ICON_DIR = Path(__file__).parent.parent / "assets" / "icons"
 _ICON_COLOR = "#334155"  # the stroke colour in the files; replaced for other colours
 _icon_cache: dict[tuple[str, str, int], QPixmap] = {}
 
@@ -53,7 +55,7 @@ _icon_cache: dict[tuple[str, str, int], QPixmap] = {}
 def icon_pixmap(name: str, size: int = 16, color: str = _ICON_COLOR) -> QPixmap:
     key = (name, color, size)
     if key not in _icon_cache:
-        svg = (_ICON_DIR / f"icon-{name}.svg").read_text(encoding="utf-8").replace(_ICON_COLOR, color)
+        svg = (_ICON_DIR / f"{name}.svg").read_text(encoding="utf-8").replace(_ICON_COLOR, color)
         ratio = 2  # sharp on high-DPI screens
         pixmap = QPixmap(size * ratio, size * ratio)
         pixmap.fill(Qt.GlobalColor.transparent)
@@ -72,7 +74,7 @@ def svg_icon(name: str, color: str = _ICON_COLOR) -> QIcon:
 def icon_html(name: str, size: int = 14) -> str:
     """The icon inline in rich text (how-to steps, tips)."""
     # a file:// URL: a plain Windows path ("C:/…") would be read as a URL with the scheme "c"
-    url = QUrl.fromLocalFile(str(_ICON_DIR / f"icon-{name}.svg")).toString()
+    url = QUrl.fromLocalFile(str(_ICON_DIR / f"{name}.svg")).toString()
     return f"<img src='{url}' width='{size}' height='{size}' style='vertical-align: middle'>"
 
 
@@ -615,9 +617,63 @@ class InfoIcon(QLabel):
         box.show()
 
 
+class NumberField(QLineEdit):
+    """A whole-number field. A styled line edit instead of a QSpinBox: spin boxes are drawn per platform and
+    on Windows the number was not visible with the stylesheet. Type, scroll, use ↑/↓ or the steppers."""
+
+    valueChanged = Signal(int)
+
+    def __init__(self, minimum: int = 0, maximum: int = 99, value: int = 0, parent=None) -> None:
+        super().__init__(parent)
+        self._minimum, self._maximum, self._value = minimum, maximum, value
+        self.setValidator(QIntValidator(minimum, maximum, self))
+        self.setText(str(value))
+        self.textEdited.connect(self._typed)
+        self.editingFinished.connect(lambda: self.setText(str(self._value)))  # e.g. an empty field again
+
+    def setRange(self, minimum: int, maximum: int) -> None:
+        self._minimum, self._maximum = minimum, max(minimum, maximum)
+        self.setValidator(QIntValidator(self._minimum, self._maximum, self))
+        self.setValue(self._value)
+
+    def value(self) -> int:
+        return self._value
+
+    def setValue(self, value: int) -> None:
+        value = max(self._minimum, min(self._maximum, int(value)))
+        if self.text() != str(value):
+            self.setText(str(value))
+        if value != self._value:
+            self._value = value
+            self.valueChanged.emit(value)
+
+    def stepUp(self) -> None:
+        self.setValue(self._value + 1)
+
+    def stepDown(self) -> None:
+        self.setValue(self._value - 1)
+
+    def _typed(self, text: str) -> None:
+        if text.isdigit() and self._minimum <= int(text) <= self._maximum and int(text) != self._value:
+            self._value = int(text)
+            self.valueChanged.emit(self._value)
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() in (Qt.Key.Key_Up, Qt.Key.Key_Down):
+            self.stepUp() if event.key() == Qt.Key.Key_Up else self.stepDown()
+            return
+        super().keyPressEvent(event)
+
+    def wheelEvent(self, event) -> None:
+        if self.hasFocus():  # only when focused, so scrolling a page does not change values by accident
+            self.stepUp() if event.angleDelta().y() > 0 else self.stepDown()
+            event.accept()
+        else:
+            super().wheelEvent(event)
+
+
 def with_stepper(field) -> QWidget:
-    """A number field with two small buttons (▴ ▾) that change it by one; the spin box's own arrows are not
-    used because the stylesheet draws them as stray lines."""
+    """A number field with two small buttons (▴ ▾) that change it by one."""
     holder = QWidget()
     row = QHBoxLayout(holder)
     row.setContentsMargins(0, 0, 0, 0)

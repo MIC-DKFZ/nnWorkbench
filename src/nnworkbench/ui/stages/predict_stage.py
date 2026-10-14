@@ -6,14 +6,12 @@ import os
 from pathlib import Path
 
 from qtpy.QtWidgets import (
-    QAbstractSpinBox,
     QCheckBox,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLineEdit,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -28,6 +26,7 @@ from ..widgets import (
     ChoiceGroup,
     HowToCard,
     IconButtonsDelegate,
+    NumberField,
     ToggleGroup,
     badge,
     breakable,
@@ -149,7 +148,7 @@ class PredictStage(StagePage):
         self._continue.toggled.connect(self._update_command)
         self._continue_hint = form_hint("")
         # Processes for preprocessing (-npp) and segmentation export (-nps); nnU-Net's default is 3 each.
-        self._npp, self._nps = QSpinBox(), QSpinBox()
+        self._npp, self._nps = NumberField(1, 99, 3), NumberField(1, 99, 3)
         processes = QWidget()
         processes_grid = QGridLayout(processes)  # under each other: side by side is too wide for the panel
         processes_grid.setContentsMargins(0, 0, 0, 0)
@@ -160,8 +159,7 @@ class PredictStage(StagePage):
         for row, (field, name, purpose) in enumerate(fields):
             field.setRange(1, max(1, os.cpu_count() or 1))
             field.setValue(3)
-            field.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-            field.setFixedWidth(52)
+            field.setFixedWidth(60)
             field.setToolTip(purpose)
             field.valueChanged.connect(self._update_command)
             processes_grid.addWidget(label(name, muted=True, size=12), row, 0)

@@ -9,13 +9,11 @@ from pathlib import Path
 from qtpy.QtCore import QSize, Qt, QTimer
 from qtpy.QtGui import QColor, QFontMetrics
 from qtpy.QtWidgets import (
-    QAbstractSpinBox,
     QCheckBox,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QPlainTextEdit,
-    QSpinBox,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -34,6 +32,7 @@ from ..widgets import (
     Card,
     ChoiceGroup,
     HowToCard,
+    NumberField,
     badge,
     button,
     clear_layout,
@@ -204,10 +203,9 @@ class PreprocessStage(StagePage):
         self._configurations = ChoiceGroup(exclusive=False)
         self._configurations.set_options(CONFIGURATIONS, selected=["3d_fullres"])
         self._configurations.changed.connect(self._update_command)
-        self._processes = QSpinBox()
+        self._processes = NumberField(1, 99, 8)
         self._processes.setRange(1, max(1, os.cpu_count() or 1))
         self._processes.setValue(min(8, os.cpu_count() or 1))
-        self._processes.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self._processes.valueChanged.connect(self._update_command)
         self._verify = QCheckBox("Verify dataset integrity")
         self._verify.setChecked(True)

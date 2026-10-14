@@ -24,7 +24,7 @@ RED_SOFT = "#fbe9e8"
 PURPLE = "#6b4fbb"
 PURPLE_SOFT = "#efeafb"
 MONO = "DejaVu Sans Mono"  # replaced at start-up by an installed fixed-width font (see apply_application_style)
-CHECK_ICON = (Path(__file__).parent.parent / "assets" / "check.svg").as_posix()
+CHECK_ICON = (Path(__file__).parent.parent / "assets" / "icons" / "check.svg").as_posix()
 
 TONES = {
     "green": (GREEN_SOFT, GREEN),
