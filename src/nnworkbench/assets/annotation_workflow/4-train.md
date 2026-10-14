@@ -41,7 +41,7 @@ Open a few images together with their labels in a viewer such as Napari and chec
 nnworkbench-run inspect -d 42
 ```
 
-**In nnWorkbench:** On the **Data** page, click **🔍** next to a case. Napari opens the image together with its label.
+**In nnWorkbench:** On the **Data** page, click the magnifier button (**Open in Napari**) next to a case. Napari opens the image together with its label.
 
 ### 3. Analyze the Labels (Optional)
 
@@ -51,7 +51,7 @@ Count in how many images each class occurs and how many voxels it covers, to spo
 nnworkbench-run label-analysis -d 42
 ```
 
-**In nnWorkbench:** On the **Data** page, click **Compute statistics**, then switch the case table to **📊 Statistics** to see the results.
+**In nnWorkbench:** On the **Data** page, click **Compute statistics**, then switch the case table to **Statistics** to see the results.
 
 ### 4. Preprocess
 

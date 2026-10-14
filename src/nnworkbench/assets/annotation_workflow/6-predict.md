@@ -37,7 +37,7 @@ nnworkbench-run nnUNetv2_predict -i imagesTs/ -o predictions/ \
     -p nnUNetResEncUNetLPlans -f all
 ```
 
-**In nnWorkbench:** On the **Predict** page, choose the input and output folders, the model and its finished folds, and click **▶ Predict**. **🔍** next to a predicted image opens it in Napari.
+**In nnWorkbench:** On the **Predict** page, choose the input and output folders, the model and its finished folds, and click **▶ Predict**. The magnifier button (**Open in Napari**) next to a predicted image opens it in Napari.
 
 The output folder contains one segmentation file for each input case. Review the predictions before using them for further analysis; in nnWorkbench, use **Inspect predictions** in **Results**.
 

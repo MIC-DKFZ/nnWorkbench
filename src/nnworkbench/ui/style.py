@@ -158,6 +158,9 @@ QLabel#foldChip[state="stopped"] {{ background: #fff; border: 1px dashed {ORANGE
 QLabel#foldChip[state="reduced"] {{ background: #e2e8f0; color: #475569; }}
 QLabel#jobChip {{ border: 1px solid {LINE}; border-radius: 10px; padding: 2px 10px; font-size: 12px; font-weight: 600; color: {MUTED}; }}
 QLabel#jobChip[active="true"] {{ border-color: {BLUE}; background: {BLUE_SOFT}; color: {BLUE}; }}
+QPushButton#stepButton {{ border: 1px solid {LINE}; border-radius: 3px; background: white; color: {MUTED};
+    font-size: 9px; padding: 0; }}
+QPushButton#stepButton:hover {{ border-color: {BLUE}; color: {BLUE}; }}
 QFrame#infoBox {{ background: white; border: 1px solid {LINE}; border-radius: 8px; }}
 QLabel#jobChip[failed="true"] {{ border-color: {RED}; background: {RED_SOFT}; color: {RED}; }}
 QLabel[failed="true"] {{ color: {RED}; }}

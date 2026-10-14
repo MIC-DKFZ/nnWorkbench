@@ -18,7 +18,7 @@ from qtpy.QtWidgets import (
 )
 
 from .context import Settings
-from .widgets import button, label, section_label, separator
+from .widgets import button, label, section_label, separator, with_stepper
 
 
 def _number_field() -> QSpinBox:
@@ -71,7 +71,7 @@ class SettingsDialog(QDialog):
         self.workers = _number_field()
         self.workers.setRange(1, os.cpu_count() or 1)
         self.workers.setValue(min(settings.workers, os.cpu_count() or 1))
-        section("Statistics", [("Worker processes", self.workers)], "Used by Compute statistics.")
+        section("Statistics", [("Worker processes", with_stepper(self.workers))], "Used by Compute statistics.")
         self.previous = QCheckBox("Previous cases")
         self.previous.setChecked(settings.prefetch_previous)
         self.following = QCheckBox("Next cases")
@@ -84,7 +84,7 @@ class SettingsDialog(QDialog):
         self.radius = _number_field()
         self.radius.setRange(1, 20)
         self.radius.setValue(settings.prefetch_radius)
-        section("Napari", [("Prefetch", prefetch), ("Prefetch radius", self.radius)],
+        section("Napari", [("Prefetch", prefetch), ("Prefetch radius", with_stepper(self.radius))],
                 "Loads neighbouring cases in the background so stepping through cases in Napari is faster. Uses more "
                 "memory.")
         actions = QHBoxLayout()

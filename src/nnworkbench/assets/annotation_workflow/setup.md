@@ -85,7 +85,7 @@ nnUNet_raw/
 
 Create the dataset folder with the subfolders `imagesTr` and `labelsTr` in `nnUNet_raw` yourself, copy your images (and, in the nnU-Net Workflow, your labels) into them, and add a `dataset.json` as described [below](#create-datasetjson). Make sure no other dataset uses the same ID.
 
-**In nnWorkbench:** Click **＋ New dataset** on the overview and enter a dataset ID and a name. nnWorkbench creates the correctly named folder with `imagesTr`, `labelsTr` and a `dataset.json` template, and warns you if the ID is already in use. Copy your images (and, in the nnU-Net Workflow, your labels) into the folders (**📁 Open**, then **⟳ Refresh**), and use **🔍** next to a case on the **Data** page to open it in Napari.
+**In nnWorkbench:** Click **＋ New dataset** on the overview and enter a dataset ID and a name. nnWorkbench creates the correctly named folder with `imagesTr`, `labelsTr` and a `dataset.json` template, and warns you if the ID is already in use. Copy your images (and, in the nnU-Net Workflow, your labels) into the folders (**Open**, then **⟳ Refresh**), and use the magnifier button (**Open in Napari**) next to a case on the **Data** page to open it in Napari.
 
 ## Create dataset.json
 
@@ -112,7 +112,7 @@ The `dataset.json` file describes the channels, the classes and the file format;
   - **nnU-Net Workflow:** Use the IDs in your label files. Add `ignore` only if some voxels are not labeled.
 - **`numTraining`:** The number of cases in `labelsTr`.
 
-**In nnWorkbench:** **＋ New dataset** creates a `dataset.json` template. Fill it in with **✎ Edit** on the **Data** page: the keys are fixed, and you can change the values, rename and renumber labels and channels, and add or remove them. Saving checks for missing names, non-continuous IDs and an `ignore` label that is not the highest ID.
+**In nnWorkbench:** **＋ New dataset** creates a `dataset.json` template. Fill it in with **Edit** on the **Data** page: the keys are fixed, and you can change the values, rename and renumber labels and channels, and add or remove them. Saving checks for missing names, non-continuous IDs and an `ignore` label that is not the highest ID.
 
 ## Prepare Your Images (Optional)
 

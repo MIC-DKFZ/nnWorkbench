@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from qtpy.QtWidgets import (
+    QAbstractSpinBox,
     QCheckBox,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLineEdit,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -41,6 +44,7 @@ from ..widgets import (
     section_label,
     table_item,
     tip,
+    with_stepper,
 )
 from .common import (
     CommandBox,
@@ -144,6 +148,27 @@ class PredictStage(StagePage):
         self._continue.setChecked(True)  # default: keep existing predictions and only predict the missing cases
         self._continue.toggled.connect(self._update_command)
         self._continue_hint = form_hint("")
+        # Processes for preprocessing (-npp) and segmentation export (-nps); nnU-Net's default is 3 each.
+        self._npp, self._nps = QSpinBox(), QSpinBox()
+        processes = QWidget()
+        processes_grid = QGridLayout(processes)  # under each other: side by side is too wide for the panel
+        processes_grid.setContentsMargins(0, 0, 0, 0)
+        processes_grid.setHorizontalSpacing(8)
+        processes_grid.setVerticalSpacing(6)
+        fields = [(self._npp, "preprocessing", "-npp: processes for preprocessing the images"),
+                  (self._nps, "export", "-nps: processes for writing the segmentations")]
+        for row, (field, name, purpose) in enumerate(fields):
+            field.setRange(1, max(1, os.cpu_count() or 1))
+            field.setValue(3)
+            field.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+            field.setFixedWidth(52)
+            field.setToolTip(purpose)
+            field.valueChanged.connect(self._update_command)
+            processes_grid.addWidget(label(name, muted=True, size=12), row, 0)
+            processes_grid.addWidget(with_stepper(field), row, 1)
+        processes_grid.setColumnStretch(2, 1)
+        self._processes_hint = form_hint("Fewer processes use less RAM and CPU but take longer. Reduce them if you run "
+                                         "out of RAM.")
         self._arguments = arguments_field()
         self._arguments.setPlaceholderText("Optional, e.g. --save_probabilities")
         self._arguments.textChanged.connect(self._update_command)
@@ -153,6 +178,8 @@ class PredictStage(StagePage):
         layout.addLayout(form_row("Mirroring (TTA)", self._tta))
         layout.addLayout(form_row("Continue", self._continue))
         layout.addWidget(self._continue_hint)
+        layout.addLayout(form_row("Processes", processes))
+        layout.addWidget(self._processes_hint)
         layout.addLayout(form_row("Additional arguments", self._arguments))
         layout.addWidget(section_label("Command"))
         self._command = CommandBox()
@@ -288,7 +315,8 @@ class PredictStage(StagePage):
         return prediction_command(self.state.record.dataset_id, source, target, model.plans,
                                   model.configuration, self._arguments.text(), trainer=model.trainer,
                                   folds=" ".join(self._folds.selected()), disable_tta=self._tta.index() == 1,
-                                  continue_prediction=self._continue.isChecked())
+                                  continue_prediction=self._continue.isChecked(),
+                                  preprocessing_processes=self._npp.value(), export_processes=self._nps.value())
 
     def _update_command(self, *_args) -> None:
         try:

@@ -47,11 +47,14 @@ def training_command(dataset_id: int, plans_file: str, configuration: str, train
 def prediction_command(dataset_id: int, input_directory: str, output_directory: str, plans: str,
                        configuration: str, additional_arguments: str = "", trainer: str = "nnUNetTrainer",
                        folds: str = "0 1 2 3 4", *, disable_tta: bool = False,
-                       continue_prediction: bool = False) -> str:
+                       continue_prediction: bool = False, preprocessing_processes: int = 3,
+                       export_processes: int = 3) -> str:
     arguments = ["nnUNetv2_predict", "-i", input_directory, "-o", output_directory, "-d",
                  str(dataset_id), "-c", configuration, "-p", plans, "-tr", trainer]
     if selected_folds := shlex.split(folds):
         arguments.extend(("-f", *selected_folds))
+    # processes for preprocessing and for exporting the segmentations (nnU-Net's default: 3 each)
+    arguments += ["-npp", str(preprocessing_processes), "-nps", str(export_processes)]
     if disable_tta:
         arguments.append("--disable_tta")
     if continue_prediction:

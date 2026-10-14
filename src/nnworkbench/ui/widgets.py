@@ -615,6 +615,30 @@ class InfoIcon(QLabel):
         box.show()
 
 
+def with_stepper(field) -> QWidget:
+    """A number field with two small buttons (▴ ▾) that change it by one; the spin box's own arrows are not
+    used because the stylesheet draws them as stray lines."""
+    holder = QWidget()
+    row = QHBoxLayout(holder)
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(2)
+    row.addWidget(field)
+    arrows = QVBoxLayout()
+    arrows.setContentsMargins(0, 0, 0, 0)
+    arrows.setSpacing(1)
+    for text, step, tooltip in (("▴", field.stepUp, "Increase by one"), ("▾", field.stepDown, "Decrease by one")):
+        arrow = QPushButton(text)
+        arrow.setObjectName("stepButton")
+        arrow.setFixedSize(18, 15)
+        arrow.setToolTip(tooltip)
+        arrow.setCursor(Qt.CursorShape.PointingHandCursor)
+        arrow.setAutoRepeat(True)  # keep pressed to count on
+        arrow.clicked.connect(lambda _checked=False, step=step: step())
+        arrows.addWidget(arrow)
+    row.addLayout(arrows)
+    return holder
+
+
 def form_row(name: str, widget: QWidget, width: int = 112, info: str = "") -> QHBoxLayout:
     """A labelled row of a settings panel; ``info`` adds a small (i) with a short explanation."""
     row = QHBoxLayout()

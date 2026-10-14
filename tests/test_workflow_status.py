@@ -124,6 +124,6 @@ def test_extended_command_options() -> None:
         "nnUNetv2_plan_and_preprocess -d 10 -c 3d_fullres 2d -pl nnUNetPlannerResEncL -np 8 --verify_dataset_integrity")
     assert "--verify_dataset_integrity" not in preprocessing_command(10, "2d", "P", verify=False)
     assert training_command(10, "nnUNetPlans", "2d", "T", "3", continue_training=True).endswith("-p nnUNetPlans --c")
-    assert prediction_command(10, "/i", "/o", "P", "2d", folds="0 1", disable_tta=True).endswith("-f 0 1 --disable_tta")
+    assert prediction_command(10, "/i", "/o", "P", "2d", folds="0 1", disable_tta=True).endswith("-f 0 1 -npp 3 -nps 3 --disable_tta")
     assert prediction_command(10, "/i", "/o", "P", "2d", folds="0", continue_prediction=True).endswith(
-        "-f 0 --continue_prediction")
+        "-f 0 -npp 3 -nps 3 --continue_prediction")

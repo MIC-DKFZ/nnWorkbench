@@ -48,6 +48,7 @@ from ..widgets import (
     section_label,
     table_item,
     tip,
+    with_stepper,
 )
 from .common import CommandBox, RunDialog, StagePage, arguments_field, detail_row
 
@@ -222,7 +223,7 @@ class PreprocessStage(StagePage):
                               "<b>3d_lowres</b> downsampled 3D (only for very large images).",
         }
         for name, widget in (("Planner", self._planner), ("Configurations", self._configurations),
-                             ("Processes", self._processes), ("Checks", self._verify),
+                             ("Processes", with_stepper(self._processes)), ("Checks", self._verify),
                              ("Additional arguments", self._arguments)):
             layout.addLayout(form_row(name, widget, info=info.get(name, "")))
         layout.addWidget(section_label("Command"))

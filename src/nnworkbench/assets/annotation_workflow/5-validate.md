@@ -28,7 +28,7 @@ When using cross-validation, repeat this review for all folds. Each image is use
 
 Open each validation prediction together with its image and your labels from `labelsTr`, overlay them, and compare the prediction with your labels.
 
-**In nnWorkbench:** On the **Validate** page, click a finished fold of a model, then **🔍** next to a case. Napari opens the image, your labels and the prediction together.
+**In nnWorkbench:** On the **Validate** page, click a finished fold of a model, then the magnifier button (**Open in Napari**) next to a case. Napari opens the image, your labels and the prediction together.
 
 ## What to Look For
 
@@ -86,7 +86,7 @@ Create a new dataset for each round. The previous dataset and its trained model 
    - Add new images to `imagesTr` and annotate them if the errors occur in image types that are underrepresented, e.g. noisy images or one imaging session.
 3. **Train again:** update `numTraining` in `dataset.json` if you added images, then preprocess and train the new dataset as described in [4. Train](4-train.md).
 
-**In nnWorkbench:** On the **Validate** page, click **＋ Create next iteration**. nnWorkbench suggests the next free dataset ID and a name ending in `_iter1` (then `_iter2`, …), and copies `imagesTr`, `labelsTr` and `dataset.json` into the new dataset. In the new dataset, use **✎** to extend existing annotations and to annotate newly added images, then preprocess and train.
+**In nnWorkbench:** On the overview, select the dataset and click **＋ New iteration** (shown with the Annotation Workflow). nnWorkbench suggests the next free dataset ID and a name ending in `_iter1` (then `_iter2`, …), and copies `imagesTr`, `labelsTr` and `dataset.json` into the new dataset. In the new dataset, use the pencil button (**Annotate**) to extend existing annotations and to annotate newly added images, then preprocess and train.
 
 ---
 
