@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]  # SPDX license expression (PEP 639)
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,8 +8,32 @@ version = "0.1.0"
 description = "A GUI for nnU-Net workflows and nnInteractive-powered annotation"
 readme = "README.md"
 requires-python = ">=3.12"
-authors = [{name = "Lars Krämer"}, {email = "lars.kraemer@dkfz-heidelberg.de"},]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{name = "Lars Krämer", email = "lars.kraemer@dkfz-heidelberg.de"}]
+keywords = ["nnU-Net", "nnInteractive", "segmentation", "annotation", "medical imaging", "deep learning", "GUI", "napari"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Healthcare Industry",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
 dependencies = ["nnunetv2>=2.8.1,<3"]
+
+[project.urls]
+# TODO: replace the placeholders once the repository is public
+Homepage = "https://REPOSITORY-URL"
+Repository = "https://REPOSITORY-URL"
+Documentation = "https://REPOSITORY-URL/blob/main/src/nnworkbench/assets/annotation_workflow/README.md"
+Issues = "https://REPOSITORY-URL/issues"
 
 [project.optional-dependencies]
 # GUI dependencies without a Qt binding. qtpy also works with Qt 5 (PyQt5), e.g. if napari brought it.

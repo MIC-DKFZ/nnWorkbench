@@ -66,15 +66,21 @@ class AboutDialog(QDialog):
             f"{_link('https://www.helmholtz-imaging.de/', 'Helmholtz Imaging')} at the German Cancer Research "
             "Center (DKFZ)."))
         layout.addWidget(separator())
+        licences = self._text(
+            "nnWorkbench is licensed under the Apache License 2.0.<br>"
+            f"The {_link('https://huggingface.co/MIC-DKFZ/nnInteractive', 'nnInteractive model weights')}, downloaded "
+            f"on first use, are licensed under "
+            f"{_link('https://creativecommons.org/licenses/by-nc-sa/4.0/', 'CC&nbsp;BY-NC-SA&nbsp;4.0')}: "
+            "<b>non-commercial use only</b>.", muted=True)
+        layout.addWidget(licences)
         footer = QHBoxLayout()
-        footer.addWidget(label("Licensed under the Apache License 2.0", muted=True, size=12))
         footer.addStretch()
         footer.addWidget(button("Close", clicked=self.accept))
         layout.addLayout(footer)
 
     @staticmethod
-    def _text(text: str) -> QLabel:
-        widget = label(text, wrap=True, rich=True)
+    def _text(text: str, muted: bool = False) -> QLabel:
+        widget = label(text, wrap=True, rich=True, muted=muted, size=12 if muted else None)
         widget.setOpenExternalLinks(True)
         widget.setMinimumHeight(widget.heightForWidth(_WIDTH - 48))  # reserve the wrapped height (fixed width)
         return widget
