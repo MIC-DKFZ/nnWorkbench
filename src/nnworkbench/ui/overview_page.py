@@ -460,14 +460,14 @@ class OverviewPage(QWidget):
         titles.addWidget(label("All datasets found in your nnU-Net folders. Select one to see its details, "
                                "open it to work on it.", muted=True))
         head.addLayout(titles, 1)
-        self._iteration = button("＋ New iteration", purple=True, clicked=self._new_iteration,
-                                 tooltip="Annotation Workflow: copies the selected dataset's images, labels and "
-                                         "dataset.json into a new dataset for the next annotation round")
+        self._iteration = button("＋ New iteration", purple=True, clicked=self._new_iteration)
         head.addWidget(self._iteration, 0, Qt.AlignmentFlag.AlignBottom)
         head.addWidget(button("＋ New dataset", primary=True, clicked=self.new_dataset_requested.emit),
                        0, Qt.AlignmentFlag.AlignBottom)
         context.annotation_changed.connect(lambda _enabled: self._update_iteration())
         self._selected_record: DatasetRecord | None = None
+        self._records: list[DatasetRecord] = []
+        self._update_iteration()  # hidden from the start while the Annotation Workflow is off
         layout.addLayout(head)
         self.paths = PathsCard()
         layout.addWidget(self.paths)
@@ -511,6 +511,7 @@ class OverviewPage(QWidget):
         self._records = records
         self._modified = {record.dataset_id: _record_modified(record) for record in records}
         self._render(keep=keep)
+        self._update_iteration()
 
     def _visible(self) -> list[DatasetRecord]:
         needle = self._search.text().strip().casefold()
@@ -549,20 +550,17 @@ class OverviewPage(QWidget):
             self.details.set_record(None, None)
 
     def _update_iteration(self) -> None:
-        """Only with the Annotation Workflow; needs the selected dataset in nnUNet_raw."""
-        record = self._selected_record
+        """Only with the Annotation Workflow; the source dataset is chosen in the dialog (default: the selected one)."""
         self._iteration.setVisible(self._context.settings.annotation_workflow)
-        self._iteration.setEnabled(record is not None and record.raw_path is not None)
-        if record is not None:
-            self._iteration.setToolTip(
-                f"Create the next annotation round of {record.directory_name}: copies its images, labels and "
-                "dataset.json into a new dataset" if record.raw_path is not None
-                else f"{record.directory_name} has no folder in nnUNet_raw, so no iteration can be created.")
+        available = any(record.raw_path is not None for record in getattr(self, "_records", []))
+        self._iteration.setEnabled(available)
+        self._iteration.setToolTip(
+            "Annotation Workflow: copies the images, labels and dataset.json of a dataset (the selected one by "
+            "default) into a new dataset for the next annotation round" if available
+            else "No dataset in nnUNet_raw yet, so no iteration can be created.")
 
     def _new_iteration(self) -> None:
-        record = self._selected_record
-        if record is not None:
-            self.new_iteration_requested.emit(record)
+        self.new_iteration_requested.emit(self._selected_record)  # None: the dialog picks the first dataset
 
     def _selected_id(self) -> int | None:
         rows = self._table.selectionModel().selectedRows() if self._table.selectionModel() else []

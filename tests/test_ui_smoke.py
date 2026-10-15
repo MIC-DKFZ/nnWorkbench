@@ -234,3 +234,29 @@ def test_about_dialog_shows_version_and_credits() -> None:
         dialog.close()
         window.close()
         application.processEvents()
+
+
+def test_new_iteration_button_and_source_dataset(tmp_path: Path) -> None:
+    from nnworkbench.ui.new_dataset_dialog import NewDatasetDialog
+
+    application = _application()
+    window = MainWindow()
+    try:
+        overview = window.overview
+        window.context.set_annotation_workflow(False)
+        assert overview._iteration.isHidden()  # only with the Annotation Workflow
+        window.context.set_annotation_workflow(True)
+        assert not overview._iteration.isHidden()
+
+        first = DatasetRecord(3, "Cells", raw_path=tmp_path / "Dataset003_Cells")
+        second = DatasetRecord(7, "Lungs", raw_path=tmp_path / "Dataset007_Lungs")
+        dialog = NewDatasetDialog(window, title="Create next iteration", sources=[first, second], source=second,
+                                  suggest=lambda record: (record.dataset_id + 1, f"{record.name}_iter1"))
+        assert dialog.source() is second  # the selected dataset is preselected
+        assert (dialog.dataset_id.value(), dialog.name.text()) == (8, "Lungs_iter1")
+        dialog.source_box.setCurrentIndex(0)  # switch the source: ID and name follow
+        assert dialog.source() is first and (dialog.dataset_id.value(), dialog.name.text()) == (4, "Cells_iter1")
+        dialog.close()
+    finally:
+        window.close()
+        application.processEvents()

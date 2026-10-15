@@ -178,18 +178,23 @@ class MainWindow(QMainWindow):
         if record is not None:
             self.open_dataset(record)
 
-    def _create_next_iteration(self, source: DatasetRecord) -> None:
+    def _create_next_iteration(self, selected: DatasetRecord | None) -> None:
         raw, preprocessed, results = self.overview.paths.local_paths()
-        if source is None or source.raw_path is None or raw is None or not raw.is_dir():
-            QMessageBox.warning(self, "nnUNet_raw required", "The dataset must be available in nnUNet_raw.")
+        sources = [record for record in self.records if record.raw_path is not None]
+        if not sources or raw is None or not raw.is_dir():
+            QMessageBox.warning(self, "nnUNet_raw required", "The source dataset must be available in nnUNet_raw.")
             return
-        dataset_id = next_free_dataset_id(source.dataset_id + 1, [raw, preprocessed, results])
-        dialog = NewDatasetDialog(self, dataset_id=dataset_id, name=next_iteration_name(source.name),
-                                  title="Create next iteration")
+        roots = [raw, preprocessed, results]
+        dialog = NewDatasetDialog(
+            self, title="Create next iteration", sources=sources,
+            source=next((record for record in sources if selected and record.dataset_id == selected.dataset_id),
+                        sources[0]),
+            suggest=lambda record: (next_free_dataset_id(record.dataset_id + 1, roots), next_iteration_name(record.name)))
         if not dialog.exec():
             return
+        source = dialog.source()
         try:
-            created = create_next_iteration(raw, [raw, preprocessed, results], source.raw_path,
+            created = create_next_iteration(raw, roots, source.raw_path,
                                             dialog.dataset_id.value(), dialog.name.text())
         except (ValueError, OSError) as error:
             QMessageBox.warning(self, "Iteration not created", str(error))
