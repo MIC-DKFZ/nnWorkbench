@@ -1,3 +1,23 @@
+"""nnU-Net trainers for sparse labels (an ``ignore`` label in dataset.json), used by the Annotation Workflow.
+
+``nnUNetTrainerBetterIgnoreSampling`` and its variants sample training patches from annotated areas:
+regular patches start at a randomly chosen annotated voxel (any label except ``ignore``) and are shifted by
+up to half a patch, instead of being cropped anywhere in the mostly unannotated image. Foreground
+oversampling works as in nnU-Net, but prefers real foreground classes over the aggregate annotated area.
+
+Adapted from nnU-Net (https://github.com/MIC-DKFZ/nnUNet), licensed under the Apache License 2.0,
+Copyright 2019 Division of Medical Image Computing, German Cancer Research Center (DKFZ), Heidelberg, Germany.
+Modifications in this file:
+
+- ``nnUNetDataLoaderBetterIgnoreSampling.get_bbox``: adapted from ``nnUNetDataLoader.get_bbox``; the crop
+  bounds are unchanged, the choice of the patch location for datasets with an ignore label is new (see above).
+- ``nnUNetTrainerBetterIgnoreSampling.get_dataloaders``: adapted from ``nnUNetTrainer.get_dataloaders``; it
+  builds the same augmentation pipelines but uses the data loader above via the new ``get_plain_dataloaders``.
+- The remaining classes combine this sampling with existing nnU-Net trainer variants (DA5, mirroring, epochs).
+
+nnWorkbench is also licensed under the Apache License 2.0.
+"""
+
 import warnings
 
 import numpy as np
