@@ -260,3 +260,24 @@ def test_new_iteration_button_and_source_dataset(tmp_path: Path) -> None:
     finally:
         window.close()
         application.processEvents()
+
+
+def test_choice_group_keep_one_never_deselects_the_last_option() -> None:
+    from qtpy.QtWidgets import QWidget
+
+    from nnworkbench.ui.widgets import ChoiceGroup
+
+    application = _application()
+    parent = QWidget()
+    group = ChoiceGroup(exclusive=False, parent=parent, keep_one=True)
+    group.set_options(["0", "1", "2"], selected=["0"])
+    group._buttons["1"].click()
+    assert group.selected() == ["0", "1"]
+    group._buttons["0"].click()
+    group._buttons["1"].click()  # the last selected one stays selected
+    assert group.selected() == ["1"]
+    group.set_selected(["2"])
+    assert group.selected() == ["2"]
+    parent.close()
+    parent.deleteLater()
+    assert application is not None

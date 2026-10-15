@@ -46,7 +46,7 @@ from . import style
 
 # ------------------------------------------------------------ icons
 # Small SVG line icons (assets/icons/*.svg) instead of emoji, which look different on every system and font.
-ICONS = ("search", "edit", "chart", "folder", "file", "bulb", "info")
+ICONS = ("search", "edit", "chart", "folder", "file", "bulb", "info", "chip")
 _ICON_DIR = Path(__file__).parent.parent / "assets" / "icons"
 _ICON_COLOR = "#334155"  # the stroke colour in the files; replaced for other colours
 _icon_cache: dict[tuple[str, str, int], QPixmap] = {}
@@ -548,21 +548,28 @@ class ToggleGroup(QFrame):
     def index(self) -> int:
         return self._group.checkedId()
 
+    def set_index(self, index: int) -> None:
+        """Select an option without emitting changed."""
+        self._group.button(index).setChecked(True)
+
 
 class ChoiceGroup(QWidget):
     """A row of checkable buttons, single or multi selection (folds, configurations)."""
 
     changed = Signal()
 
-    def __init__(self, exclusive: bool = True, object_name: str = "choice", parent=None) -> None:
+    def __init__(self, exclusive: bool = True, object_name: str = "choice", parent=None, *,
+                 keep_one: bool = False) -> None:
+        """``keep_one``: in a multi selection, clicking the last selected option does not deselect it."""
         super().__init__(parent)
+        self._keep_one = keep_one
         self._row = QHBoxLayout(self)
         self._row.setContentsMargins(0, 0, 0, 0)
         self._row.setSpacing(6)
         self._row.addStretch()
         self._group = QButtonGroup(self)
         self._group.setExclusive(exclusive)
-        self._group.buttonToggled.connect(lambda *_: self.changed.emit())
+        self._group.buttonToggled.connect(self._toggled)
         self._buttons: dict[str, QPushButton] = {}
         self._object_name = object_name
 
@@ -588,6 +595,13 @@ class ChoiceGroup(QWidget):
             widget.setChecked(option in selected)
             self._buttons[option] = widget
         self.blockSignals(False)
+        self.changed.emit()
+
+    def _toggled(self, widget: QPushButton, checked: bool) -> None:
+        if (self._keep_one and not checked and not self.signalsBlocked()  # blocked: set_options or set_selected
+                and not any(button_widget.isChecked() for button_widget in self._buttons.values())):
+            widget.setChecked(True)  # one option stays selected; emits changed again
+            return
         self.changed.emit()
 
     def selected(self) -> list[str]:

@@ -4,7 +4,7 @@
 
 We use the standard nnU-Net folder structure to stay compatible with the existing nnU-Net workflow. This keeps the overall workflow simple, avoids redundant conversions or file movements, and helps to keep the project clear and reproducible. We need three main storage folders:
 
-- **`nnUNet_raw/`**: This folder contains the original datasets in the format expected by nnU-Net: images, labels and, with the Annotation Workflow, your annotations.
+- **`nnUNet_raw/`**: This folder contains the original datasets in the format expected by nnU-Net: images and labels.
 - **`nnUNet_preprocessed/`**: This folder is filled automatically when running nnU-Net planning and preprocessing and is used during model training. You don't have to do anything here manually.
 - **`nnUNet_results/`**: This folder stores trained models and training outputs.
 
@@ -27,6 +27,8 @@ Check the saved paths with `nnworkbench-get-paths`. The GUI and the command line
 To train on a remote machine or cluster, see [Work with a Remote Machine](#work-with-a-remote-machine-optional).
 
 ## Work with a Remote Machine (Optional)
+
+**Info** (top right) shows which device nnU-Net uses on your computer: a GPU or only the CPU (see [Device](4-train.md#device-gpu-or-cpu)).
 
 If your computer has no suitable GPU, you can keep working in nnWorkbench on your computer (annotating, validating, inspecting) and run the GPU-heavy commands, training and prediction, on a remote machine or cluster.
 

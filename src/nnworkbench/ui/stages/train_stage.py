@@ -15,6 +15,12 @@ from qtpy.QtWidgets import (
 )
 
 from nnworkbench.services.commands import training_command
+from nnworkbench.services.device_probe import (
+    DEVICE_CHOICES,
+    default_choice,
+    device_argument,
+    device_hint,
+)
 from nnworkbench.services.nnunet_discovery import available_trainers
 from nnworkbench.services.workflow_status import FoldInfo, ModelInfo
 
@@ -26,6 +32,7 @@ from ..widgets import (
     ChoiceGroup,
     HowToCard,
     IconButtonsDelegate,
+    ToggleGroup,
     badge,
     breakable,
     button,
@@ -43,6 +50,7 @@ from ..widgets import (
     tip,
 )
 from .common import (
+    DEVICE_INFO,
     FOLD_ALL_NOTE,
     FOLD_STATUS,
     CommandBox,
@@ -277,11 +285,17 @@ class TrainStage(StagePage):
         for combo in (self._trainer, self._plans, self._configuration):
             combo.setSizeAdjustPolicy(combo.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
             combo.setMinimumContentsLength(8)
-        self._fold_choice = ChoiceGroup(exclusive=False)  # several folds train one after another
+        # several folds train one after another; at least one stays selected
+        self._fold_choice = ChoiceGroup(exclusive=False, keep_one=True)
         self._fold_choice.changed.connect(self._fold_choice_changed)
         self._fold_hint = label("", muted=True, size=11)
         self._continue = QCheckBox("Resume from the latest checkpoint  --c")
         self._continue.toggled.connect(self._update_command)
+        self._device = ToggleGroup(DEVICE_CHOICES)
+        self._device.changed.connect(lambda _index: self._update_command())
+        self._device_hint = form_hint("")
+        self._device.set_index(DEVICE_CHOICES.index(default_choice(self.context.device)))
+        self.context.device_changed.connect(self._preselect_device)
         self._arguments = arguments_field()
         self._arguments.textChanged.connect(self._update_command)
         self._trainer_hint = form_hint("")
@@ -299,6 +313,8 @@ class TrainStage(StagePage):
         layout.addLayout(form_row("Folds", self._fold_choice))
         layout.addWidget(self._fold_hint)
         layout.addLayout(form_row("Continue", self._continue))
+        layout.addLayout(form_row("Device", self._device, info=DEVICE_INFO))
+        layout.addWidget(self._device_hint)
         layout.addLayout(form_row("Additional arguments", self._arguments))
         layout.addWidget(section_label("Command"))
         self._command = CommandBox()
@@ -356,7 +372,7 @@ class TrainStage(StagePage):
         self._plans.blockSignals(False)
         self._plans_changed()
         folds = [str(index) for index in range(state.fold_count)] + ["all"]
-        selected = self._fold_choice.selected() or [self._first_free_fold(folds)]
+        selected = [fold for fold in self._fold_choice.selected() if fold in folds] or [self._first_free_fold(folds)]
         self._fold_choice.set_options(folds, selected=selected)
         self._fold_hint.setText(f"{state.fold_count} folds in splits_final.json · several folds train one after "
                                 "another and stop at the first failure")
@@ -488,8 +504,16 @@ class TrainStage(StagePage):
         return [training_command(self.state.record.dataset_id, self._plans.currentText() or "PLANS",
                                  self._configuration.currentText() or "CONFIGURATION",
                                  self._trainer.currentText() or DENSE_TRAINER, fold, self._arguments.text(),
-                                 continue_training=self._continue.isChecked())
+                                 continue_training=self._continue.isChecked(), device=self._device_argument())
                 for fold in self._fold_choice.selected()]
+
+    def _device_argument(self) -> str | None:
+        return device_argument(DEVICE_CHOICES[self._device.index()])
+
+    def _preselect_device(self) -> None:
+        """Preselect the device found on this computer (GPU, or the Apple GPU on a Mac)."""
+        self._device.set_index(DEVICE_CHOICES.index(default_choice(self.context.device)))
+        self._update_command()
 
     def _update_command(self, *_args) -> None:
         try:
@@ -497,6 +521,7 @@ class TrainStage(StagePage):
         except ValueError:
             pass
         self._update_trainer_hint()
+        self._device_hint.setText(device_hint(DEVICE_CHOICES[self._device.index()], self.context.device))
         self.update_actions()
 
     def _update_trainer_hint(self) -> None:
@@ -520,6 +545,7 @@ class TrainStage(StagePage):
         self._start.setToolTip(reason)
         self._busy_hint.setText(reason)
         self._busy_hint.setVisible(bool(reason))
+        self._run_dialog.refit()
 
     def _start_training(self) -> None:
         if self.state is not None:

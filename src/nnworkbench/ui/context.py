@@ -12,6 +12,8 @@ from qtpy.QtCore import QObject, QProcess, QSettings, QUrl, Signal
 from qtpy.QtGui import QDesktopServices
 from qtpy.QtWidgets import QMessageBox
 
+from nnworkbench.services.device_probe import DeviceInfo, probe_device
+
 from .jobs import JobRunner, start_process_group, stop_process_group
 from .tasks import TaskRunner
 
@@ -31,6 +33,7 @@ class AppContext(QObject):
     settings_changed = Signal()
     annotation_changed = Signal(bool)
     howto_changed = Signal(bool)
+    device_changed = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -49,6 +52,20 @@ class AppContext(QObject):
         self.jobs = JobRunner(self)
         self.tasks = TaskRunner(self)
         self._napari: list[QProcess] = []
+        self.device: DeviceInfo | None = None  # None while the check runs (see detect_device)
+
+    # ------------------------------------------------------------ device
+
+    def detect_device(self) -> None:
+        """Check in the background which device PyTorch can use (GPU, Apple GPU or CPU)."""
+        self.device = None
+        self.device_changed.emit()
+        self.tasks.run("device", probe_device, self._device_detected,
+                       lambda error: self._device_detected(DeviceInfo("unknown", error=error)))
+
+    def _device_detected(self, info: object) -> None:
+        self.device = info if isinstance(info, DeviceInfo) else DeviceInfo("unknown")
+        self.device_changed.emit()
 
     # ------------------------------------------------------------ settings
 

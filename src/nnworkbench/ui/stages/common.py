@@ -255,6 +255,13 @@ FOLD_STATUS = {"done": ("✓ done", "green"), "training": ("● training", "oran
            "reduced": ("final checkpoint only", "gray")}
 
 
+DEVICE_INFO = ("Where nnU-Net runs: <b>GPU</b> an NVIDIA GPU (nnU-Net's default, no -device), <b>MPS</b> the "
+               "Apple GPU of a Mac with Apple silicon (-device mps; slower than an NVIDIA GPU), <b>CPU</b> the "
+               "processor (-device cpu; works everywhere, but training takes days per fold). The device found on "
+               "this computer is preselected; without one, copy the command to a GPU machine or cluster. Details "
+               "in Info.")
+
+
 FOLD_ALL_NOTE = ("Fold all was trained on all cases, so its Dice is measured on training cases. It is not a "
                  "validation result and is not included in the mean Dice.")
 
@@ -355,6 +362,11 @@ class RunDialog:
         width = max(self.dialog.width(), 480)
         self.dialog.resize(width, layout.heightForWidth(width) if layout.hasHeightForWidth()
                            else self.dialog.sizeHint().height())
+
+    def refit(self) -> None:
+        """Fit again after hints changed while the dialog is open (e.g. the device was detected)."""
+        if self.visible:
+            QTimer.singleShot(0, self._fit)
 
     def close(self) -> None:
         self.dialog.accept()

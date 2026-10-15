@@ -17,6 +17,12 @@ from qtpy.QtWidgets import (
 )
 
 from nnworkbench.services.commands import prediction_command
+from nnworkbench.services.device_probe import (
+    DEVICE_CHOICES,
+    default_choice,
+    device_argument,
+    device_hint,
+)
 from nnworkbench.services.workflow_status import ModelInfo, prediction_status
 
 from ..context import AppContext
@@ -46,6 +52,7 @@ from ..widgets import (
     with_stepper,
 )
 from .common import (
+    DEVICE_INFO,
     CommandBox,
     StagePage,
     arguments_field,
@@ -167,6 +174,11 @@ class PredictStage(StagePage):
         processes_grid.setColumnStretch(2, 1)
         self._processes_hint = form_hint("Fewer processes use less RAM and CPU but take longer. Reduce them if you run "
                                          "out of RAM.")
+        self._device = ToggleGroup(DEVICE_CHOICES)
+        self._device.changed.connect(lambda _index: self._update_command())
+        self._device_hint = form_hint("")
+        self._device.set_index(DEVICE_CHOICES.index(default_choice(self.context.device)))
+        self.context.device_changed.connect(self._preselect_device)
         self._arguments = arguments_field()
         self._arguments.setPlaceholderText("Optional, e.g. --save_probabilities")
         self._arguments.textChanged.connect(self._update_command)
@@ -178,6 +190,8 @@ class PredictStage(StagePage):
         layout.addWidget(self._continue_hint)
         layout.addLayout(form_row("Processes", processes))
         layout.addWidget(self._processes_hint)
+        layout.addLayout(form_row("Device", self._device, info=DEVICE_INFO))
+        layout.addWidget(self._device_hint)
         layout.addLayout(form_row("Additional arguments", self._arguments))
         layout.addWidget(section_label("Command"))
         self._command = CommandBox()
@@ -314,13 +328,20 @@ class PredictStage(StagePage):
                                   model.configuration, self._arguments.text(), trainer=model.trainer,
                                   folds=" ".join(self._folds.selected()), disable_tta=self._tta.index() == 1,
                                   continue_prediction=self._continue.isChecked(),
-                                  preprocessing_processes=self._npp.value(), export_processes=self._nps.value())
+                                  preprocessing_processes=self._npp.value(), export_processes=self._nps.value(),
+                                  device=device_argument(DEVICE_CHOICES[self._device.index()]))
+
+    def _preselect_device(self) -> None:
+        """Preselect the device found on this computer (GPU, or the Apple GPU on a Mac)."""
+        self._device.set_index(DEVICE_CHOICES.index(default_choice(self.context.device)))
+        self._update_command()
 
     def _update_command(self, *_args) -> None:
         try:
             self._command.set_command(self._command_text())
         except ValueError:
             pass
+        self._device_hint.setText(device_hint(DEVICE_CHOICES[self._device.index()], self.context.device))
         self.update_actions()
 
     def update_actions(self) -> None:

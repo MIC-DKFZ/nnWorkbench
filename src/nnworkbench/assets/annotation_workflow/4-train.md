@@ -122,6 +122,14 @@ The planner decides how large the network is, and therefore how much GPU memory 
 
 We recommend **`nnUNetPlannerResEncL`**, which is used in all examples of this guide. If your GPU has less than 24 GB of memory, use `nnUNetPlannerResEncM` or `ExperimentPlanner` instead, and replace the plans name in the commands accordingly.
 
+### Device (GPU or CPU)
+
+nnU-Net trains and predicts on an NVIDIA GPU by default. On a Mac with Apple silicon it can use the Apple GPU (`-device mps`), and every computer can use the CPU (`-device cpu`), but training on the CPU takes days per fold. Training on the Apple GPU works, but is much slower than on an NVIDIA GPU, and the GPU shares its memory with the system: use `nnUNetPlannerResEncM` or `ExperimentPlanner` there.
+
+**In nnWorkbench:** The Train and Predict dialogs have a **Device** choice: **GPU** (NVIDIA, no `-device`), **MPS** (the Apple GPU, `-device mps`) or **CPU** (`-device cpu`). Each choice gives the same command on every computer, so a copied command does what it shows, also on a cluster. The device found on your computer is preselected (MPS on a Mac, otherwise GPU); **Info** (top right) shows what was found.
+
+If **Info** shows `CPU only` although your computer has an NVIDIA GPU, PyTorch was installed without CUDA support (the default on Windows). Reinstall it as described in the [installation instructions](https://pytorch.org/get-started/locally/), or train on a remote machine (see [Work with a Remote Machine](setup.md#work-with-a-remote-machine-optional)).
+
 ### Trainer
 
 The trainer defines how the model is trained. Which one to use depends on your labels:
