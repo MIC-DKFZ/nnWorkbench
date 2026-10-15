@@ -198,3 +198,30 @@ def test_windows_quoting_and_argument_splitting(monkeypatch) -> None:
         "-chk", r"C:\models\best ckpt.pth", "-o", r"D:\out"]
     internal = commands.prediction_command(1, r"C:\My data", r"D:\out", "nnUNetPlans", "3d_fullres")
     assert commands.wrapped_command(internal).startswith(r'nnworkbench-run nnUNetv2_predict -i "C:\My data" -o D:\out')
+
+
+def test_status_command_reports_stages_and_problems(tmp_path, monkeypatch, capsys) -> None:
+    import json
+
+    raw = tmp_path / "raw" / "Dataset012_Cells"
+    (raw / "imagesTr").mkdir(parents=True)
+    (raw / "labelsTr").mkdir()
+    for case in ("a", "b"):
+        (raw / "imagesTr" / f"{case}_0000.nii.gz").touch()
+    (raw / "labelsTr" / "a.nii.gz").touch()  # b has no label
+    (raw / "dataset.json").write_text(json.dumps({
+        "channel_names": {"0": "light"}, "labels": {"background": 0, "cell": 1, "ignore": 2},
+        "numTraining": 2, "file_ending": ".nii.gz"}), encoding="utf-8")
+    monkeypatch.setattr(command_runner, "configured_paths", lambda: {
+        "nnUNet_raw": str(tmp_path / "raw"), "nnUNet_preprocessed": "", "nnUNet_results": ""})
+
+    assert command_runner._run_builtin_command(["status", "-d", "12"]) == 0
+    text = capsys.readouterr().out
+    assert "Dataset012_Cells" in text and "sparse labels (ignore = 2)" in text
+    assert "[fix]" in text and "1 image without label" in text  # the problem is listed below the stages
+    assert text.isascii() or set(text) - set(map(chr, range(128))) <= {"·"}  # prints in every console
+
+    assert command_runner._run_builtin_command(["status", "-d", "12", "--json"]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["stages"]["data"]["state"] == "error" and status["stages"]["preprocess"]["state"] == "none"
+    assert status["cases"] == 2 and status["models"] == []

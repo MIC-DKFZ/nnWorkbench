@@ -182,6 +182,20 @@ def _run_builtin_command(command: Sequence[str]) -> int | None:
         return run_checkpoint_reduction(
             options.model_directory, reset_trainer_name=options.reset_trainer_name,
         )
+    if name == "status":
+        parser = argparse.ArgumentParser(
+            prog=f"nnworkbench-run {name}",
+            description="Show what is done and what is next for a dataset: checks, preprocessing, models and folds "
+                        "(the same states as the stage tabs in the GUI).")
+        parser.add_argument("-d", "--dataset", type=int, required=True, help="Dataset ID")
+        parser.add_argument("--json", action="store_true", help="Print the status as JSON, e.g. for scripts")
+        options = parser.parse_args(arguments)
+        from .status_report import run_status
+
+        paths = configured_paths()
+        roots = {key: Path(paths[f"nnUNet_{key}"]) if paths.get(f"nnUNet_{key}") else None
+                 for key in ("raw", "preprocessed", "results")}
+        return run_status(options.dataset, roots, as_json=options.json)
     return None
 
 

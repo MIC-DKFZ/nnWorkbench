@@ -118,6 +118,9 @@ These use the recommended `nnUNetPlannerResEncL`, which the GUI also preselects.
 It also provides the following dataset tools:
 
 ```bash
+# Show what is done and what is next for a dataset (the stage states of the GUI; add --json for scripts)
+nnworkbench-run status -d 42
+
 # Open a dataset's images, labels and annotations in Napari, starting at the 12th image
 nnworkbench-run inspect -d 42 -i 12
 
@@ -140,6 +143,12 @@ nnworkbench-run reduce-checkpoints /path/to/nnUNet_results/Dataset042_CellSegmen
 
 - [nnWorkbench guide](src/nnworkbench/assets/annotation_workflow/README.md): the nnU-Net Workflow and the Annotation Workflow step by step; also shown in the GUI via **? Guide** in the top bar.
 
+
+# License
+
+nnWorkbench is licensed under the [Apache License 2.0](LICENSE).
+
+The [nnInteractive model weights](https://huggingface.co/MIC-DKFZ/nnInteractive), which napari-nninteractive downloads on first use for interactive annotation, are licensed under [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 (CC BY-NC-SA 4.0)](https://creativecommons.org/licenses/by-nc-sa/4.0/): **non-commercial use only**. This applies to the Annotation Workflow with nnInteractive; nnU-Net and the rest of nnWorkbench are not affected.
 
 # Acknowledgements
 
