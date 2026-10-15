@@ -36,7 +36,9 @@ Documentation = "https://REPOSITORY-URL/blob/main/src/nnworkbench/assets/annotat
 Issues = "https://REPOSITORY-URL/issues"
 
 [project.optional-dependencies]
-# GUI dependencies without a Qt binding. qtpy also works with Qt 5 (PyQt5), e.g. if napari brought it.
+# Two installations: `nnworkbench` (core: nnU-Net, bundled trainers, CLI; e.g. for a cluster) and
+# `nnworkbench[all]` (core + the app with Napari, MITK and local nnInteractive).
+# `gui` is the app without a Qt binding, used by `all` and for Qt 5 (`pip install "nnworkbench[gui]" PyQt5`).
 gui = [
     "qtpy>=2.4,<3",
     "mitk-python>=2026.06,<2027",
@@ -44,7 +46,7 @@ gui = [
     "napari-layer-statistics>=1,<2",
     "napari-nninteractive[local]>=2.5.3,<3",
 ]
-local = ["nnworkbench[gui]", "PySide6>=6.6,<7"]
+all = ["nnworkbench[gui]", "PySide6>=6.6,<7"]
 dev = ["qtpy>=2.4,<3", "PySide6>=6.6,<7", "pytest>=8.0,<9", "ruff>=0.6,<1", "build>=1,<2"]
 
 [project.scripts]
