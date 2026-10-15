@@ -53,7 +53,7 @@ def _image_case_ids(dataset_directory: Path) -> set[str]:
 
 def label_validity(counts: dict[int, int], filename: Path, image_cases: set[str],
                    background_ids: set[int], ignored_ids: set[int], undefined_ids: set[int]) -> list[str]:
-    """Return all per-label findings shown in the label-analysis details table."""
+    """Return all per-label findings shown in the statistics details table."""
     findings: list[str] = []
     if set(counts).issubset(background_ids | ignored_ids):
         findings.append("Empty (background/ignore only)")
@@ -226,14 +226,14 @@ def main() -> None:
     arguments = parser.parse_args()
     try:
         files = label_files(arguments.dataset_directory)
-        print(f"Analyzing {len(files)} label file(s) in {arguments.dataset_directory}", flush=True)
+        print(f"Computing statistics of {len(files)} label file(s) in {arguments.dataset_directory}", flush=True)
         analysis = analyse_label_distribution(
             arguments.dataset_directory, arguments.workers,
             progress=lambda message: print(message, flush=True),
         )
     except (OSError, ValueError, RuntimeError) as error:
-        raise SystemExit(f"Label analysis failed: {error}") from error
-    print(f"Label analysis completed: {analysis_path(arguments.dataset_directory)} "
+        raise SystemExit(f"Computing statistics failed: {error}") from error
+    print(f"Statistics computed: {analysis_path(arguments.dataset_directory)} "
           f"({analysis['files_analyzed']} file(s))", flush=True)
 
 

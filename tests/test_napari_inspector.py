@@ -27,7 +27,6 @@ def test_related_files_groups_raw_case_across_folders(tmp_path: Path) -> None:
     for folder, names in {
         "imagesTr": ("case_001_0000.nii.gz", "case_001_0001.nii.gz", "case_002_0000.nii.gz"),
         "labelsTr": ("case_001.nii.gz", "case_002.nii.gz"),
-        "annotationsTr": ("case_001.json",),
     }.items():
         directory = tmp_path / folder; directory.mkdir()
         for name in names:
@@ -38,7 +37,6 @@ def test_related_files_groups_raw_case_across_folders(tmp_path: Path) -> None:
     assert case_id(tmp_path / "imagesTr" / "case_001_0000.nii.gz") == "case_001"
     assert [path.name for path in files.images] == ["case_001_0000.nii.gz", "case_001_0001.nii.gz"]
     assert [path.name for path in files.labels] == ["case_001.nii.gz"]
-    assert [path.name for path in files.annotations] == ["case_001.json"]
     assert image_case_ids(tmp_path) == ("case_001", "case_002")
 
 
@@ -63,13 +61,13 @@ def test_preprocessed_case_ids_excludes_segmentation_companions(tmp_path: Path) 
 
 
 def test_annotation_source_image_uses_the_first_image_channel(tmp_path: Path) -> None:
-    images = tmp_path / "imagesTr"; annotations = tmp_path / "annotationsTr"
-    images.mkdir(); annotations.mkdir()
+    images = tmp_path / "imagesTr"; labels = tmp_path / "labelsTr"
+    images.mkdir(); labels.mkdir()
     (images / "case_001_0001.nii.gz").touch()
     primary = images / "case_001_0000.nii.gz"; primary.touch()
-    annotation = annotations / "case_001.nii.gz"; annotation.touch()
+    label = labels / "case_001.nii.gz"; label.touch()
 
-    assert annotation_source_image(annotation) == primary
+    assert annotation_source_image(label) == primary
 
 
 def test_annotation_label_summary_reserves_zero_for_ignore(tmp_path: Path) -> None:
@@ -102,15 +100,14 @@ def test_read_case_uses_mitk_for_nifti_layers(tmp_path: Path) -> None:
 def test_read_case_names_layers_by_role(tmp_path: Path) -> None:
     mitk = pytest.importorskip("mitk")
     np = pytest.importorskip("numpy")
-    for folder, name in (("imagesTr", "case_001_0000.nii.gz"), ("labelsTr", "case_001.nii.gz"),
-                         ("annotationsTr", "case_001.nii.gz")):
+    for folder, name in (("imagesTr", "case_001_0000.nii.gz"), ("labelsTr", "case_001.nii.gz")):
         (tmp_path / folder).mkdir()
         mitk.Image(np.ones((2, 2, 2), dtype=np.uint8)).save(tmp_path / folder / name)
 
     case = _read_case(tmp_path, "case_001")
 
     assert [layer.name for layer in case.layers] == [
-        "Image — case_001_0000.nii.gz", "Label — case_001.nii.gz", "Annotation — case_001.nii.gz",
+        "Image — case_001_0000.nii.gz", "Label — case_001.nii.gz",
     ]
 
 
@@ -150,12 +147,9 @@ def test_case_display_reuses_layers_and_updates_data_and_geometry() -> None:
         def add_labels(self, data, name, affine=None):
             return self.add_image(data, name, affine)
 
-        def add_points(self, data, name):
-            return self.add_image(data, name)
-
     viewer = Viewer()
-    first = _CaseData((_LayerData("case_001_0000.nii.gz", "image", "first", "first-affine"),), ())
-    second = _CaseData((_LayerData("case_002_0000.nii.gz", "image", "second", "second-affine"),), ())
+    first = _CaseData((_LayerData("case_001_0000.nii.gz", "image", "first", "first-affine"),))
+    second = _CaseData((_LayerData("case_002_0000.nii.gz", "image", "second", "second-affine"),))
 
     _display_case(viewer, first)
     first_layer = viewer.layers[0]
@@ -164,30 +158,6 @@ def test_case_display_reuses_layers_and_updates_data_and_geometry() -> None:
     assert viewer.added == 1
     assert viewer.layers[0] is first_layer
     assert (first_layer.name, first_layer.data, first_layer.affine) == ("case_002_0000.nii.gz", "second", "second-affine")
-
-
-def test_case_display_removes_stale_annotation_layers() -> None:
-    class Layer:
-        def __init__(self, data, name, affine=None) -> None:
-            self.data, self.name, self.affine = data, name, affine
-            self.visible, self.metadata = True, {}
-
-    class Viewer:
-        def __init__(self) -> None:
-            self.layers = []
-
-        def add_image(self, data, name, affine=None):
-            layer = Layer(data, name, affine); self.layers.append(layer); return layer
-
-        add_labels = add_image
-        add_points = add_image
-
-    viewer = Viewer()
-    _display_case(viewer, _CaseData((_LayerData("case_001_0000.nii.gz", "image", "image"),
-                                     _LayerData("case_001.nii.gz", "annotation_labels", "annotation")), ()))
-    _display_case(viewer, _CaseData((_LayerData("case_002_0000.nii.gz", "image", "next image"),), ()))
-
-    assert [layer.name for layer in viewer.layers] == ["case_002_0000.nii.gz"]
 
 
 def test_case_display_resets_z_slider_to_middle_slice() -> None:
@@ -209,10 +179,9 @@ def test_case_display_resets_z_slider_to_middle_slice() -> None:
             self.layers.append(layer); return layer
 
         add_labels = add_image
-        add_points = add_image
 
     viewer = Viewer()
-    _display_case(viewer, _CaseData((_LayerData("case.nii.gz", "image", np.zeros((9, 4, 4))),), ()))
+    _display_case(viewer, _CaseData((_LayerData("case.nii.gz", "image", np.zeros((9, 4, 4))),)))
 
     assert (viewer.dims.axis, viewer.dims.value) == (0, 4)
 
@@ -236,12 +205,12 @@ def test_read_image_supports_2d_images(tmp_path: Path) -> None:
 
 def test_related_files_accept_non_nifti_images(tmp_path: Path) -> None:
     images = tmp_path / "imagesTr"; images.mkdir()
-    annotations = tmp_path / "annotationsTr"; annotations.mkdir()
+    labels = tmp_path / "labelsTr"; labels.mkdir()
     (images / "case_001_0000.png").touch()
-    (annotations / "case_001.png").touch()
+    (labels / "case_001.png").touch()
 
     files = related_files(images / "case_001_0000.png")
 
     assert case_id(images / "case_001_0000.png") == "case_001"
     assert [path.name for path in files.images] == ["case_001_0000.png"]
-    assert [path.name for path in files.annotations] == ["case_001.png"]
+    assert [path.name for path in files.labels] == ["case_001.png"]

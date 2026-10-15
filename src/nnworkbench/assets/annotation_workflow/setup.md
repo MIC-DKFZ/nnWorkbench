@@ -81,7 +81,7 @@ nnUNet_raw/
 
 > **Note:** Put only images with labels, or images you are going to annotate, into `imagesTr`. An image without label file makes the counts no longer match. Keep all other images in a separate folder, e.g. `imagesTs`, to predict them later in [6. Predict](6-predict.md).
 
-> **Note:** We recommend storing images, annotations and labels as NIfTI files (`.nii.gz`). This format is supported by nnU-Net and by most nnInteractive integrations. But in general, other formats are also possible. See [Prepare Your Images](#prepare-your-images-optional) for supported formats and conversion.
+> **Note:** We recommend storing images and labels as NIfTI files (`.nii.gz`). This format is supported by nnU-Net and by most nnInteractive integrations. But in general, other formats are also possible. See [Prepare Your Images](#prepare-your-images-optional) for supported formats and conversion.
 
 Create the dataset folder with the subfolders `imagesTr` and `labelsTr` in `nnUNet_raw` yourself, copy your images (and, in the nnU-Net Workflow, your labels) into them, and add a `dataset.json` as described [below](#create-datasetjson). Make sure no other dataset uses the same ID.
 

@@ -11,11 +11,12 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .path_setup import configured_paths
-from .services.annotation_conversion import convert_annotations
 from .services.checkpoint_reduction import reduce_model_for_sharing
 from .services.dataset_scanner import discover
 from .services.image_stack import stack_image_folder
 from .services.label_analysis import analyse_label_distribution
+
+BUILTIN_COMMANDS = ("status", "compute-statistics", "inspect", "stack-images", "reduce-checkpoints")
 
 
 def find_executable(name: str) -> str:
@@ -36,9 +37,14 @@ def run_with_configured_paths(command: Sequence[str]) -> int:
     """Run *command* with saved nnU-Net paths, returning its exit status."""
     if not command:
         raise ValueError("Specify a command to run.")
+    program = find_executable(command[0])
+    if program == command[0] and shutil.which(program) is None:  # found neither on PATH nor next to Python
+        raise FileNotFoundError(
+            f"'{command[0]}' is neither an nnWorkbench tool ({', '.join(BUILTIN_COMMANDS)}) nor an installed "
+            "program such as nnUNetv2_train. Add --help to a tool to see its options.")
     environment = os.environ.copy()
     environment.update(configured_paths())
-    return subprocess.run([find_executable(command[0]), *command[1:]], env=environment, check=False).returncode
+    return subprocess.run([program, *command[1:]], env=environment, check=False).returncode
 
 
 def raw_dataset_directory(dataset_id: int) -> Path:
@@ -50,23 +56,14 @@ def raw_dataset_directory(dataset_id: int) -> Path:
     raise ValueError(f"No Raw dataset matching ID {dataset_id} was found in {raw_root}.")
 
 
-def run_label_analysis(dataset_id: int, workers: int | None = None) -> int:
-    """Analyse raw training labels and print progress for terminal users."""
+def run_compute_statistics(dataset_id: int, workers: int | None = None) -> int:
+    """Compute statistics (as in the GUI): classes per image and voxels per class, from labelsTr."""
     dataset_directory = raw_dataset_directory(dataset_id)
     analysis = analyse_label_distribution(
         dataset_directory, workers, progress=print,
     )
-    print(f"Label analysis completed: {dataset_directory / 'class_distribution.json'} "
+    print(f"Statistics computed: {dataset_directory / 'class_distribution.json'} "
           f"({analysis['files_analyzed']} file(s))")
-    return 0
-
-
-def run_annotation_conversion(dataset_id: int, workers: int | None = None) -> int:
-    """Convert annotation-workflow maps to labelsTr and print the outcome."""
-    dataset_directory = raw_dataset_directory(dataset_id)
-    result = convert_annotations(dataset_directory, workers, progress=print)
-    print(f"Annotation conversion completed: {len(result.converted)} converted, "
-          f"{len(result.warnings)} skipped or warned.")
     return 0
 
 
@@ -99,7 +96,7 @@ def run_checkpoint_reduction(model_directory: Path, *, reset_trainer_name: bool 
 
 
 def run_dataset_inspection(dataset_id: int, index: int = 1) -> int:
-    """Open a Raw dataset's images, labels and annotations in Napari, starting at the index-th image."""
+    """Open a Raw dataset's images and labels in Napari, starting at the index-th image."""
     try:
         # Imported lazily: the lightweight remote installation has no Qt or Napari.
         from .services.napari_inspector import image_case_ids, open_case, related_files_for_case
@@ -122,22 +119,19 @@ def _run_builtin_command(command: Sequence[str]) -> int | None:
     if not command:
         return None
     name, arguments = command[0], command[1:]
-    if name == "label-analysis":
-        parser = argparse.ArgumentParser(prog="nnworkbench-run label-analysis")
+    if name == "compute-statistics":
+        parser = argparse.ArgumentParser(
+            prog=f"nnworkbench-run {name}",
+            description="Compute statistics (as Compute statistics in the GUI): in how many images each class "
+                        "occurs and how many voxels it covers, read from labelsTr.")
         parser.add_argument("-d", "--dataset", type=int, required=True, help="Dataset ID")
-        parser.add_argument("--workers", type=int, default=None, help="Maximum worker processes")
+        parser.add_argument("--workers", type=int, default=None, help="Worker processes (as in the GUI settings)")
         options = parser.parse_args(arguments)
-        return run_label_analysis(options.dataset, options.workers)
-    if name == "convert-annotations":
-        parser = argparse.ArgumentParser(prog="nnworkbench-run convert-annotations")
-        parser.add_argument("-d", "--dataset", type=int, required=True, help="Dataset ID")
-        parser.add_argument("--workers", type=int, default=None, help="Maximum worker processes")
-        options = parser.parse_args(arguments)
-        return run_annotation_conversion(options.dataset, options.workers)
+        return run_compute_statistics(options.dataset, options.workers)
     if name == "inspect":
         parser = argparse.ArgumentParser(
             prog=f"nnworkbench-run {name}",
-            description="Open a dataset's images, labels and annotations in Napari.")
+            description="Open a dataset's images and labels in Napari.")
         parser.add_argument("-d", "--dataset", type=int, required=True, help="Dataset ID")
         parser.add_argument("-i", "--index", type=int, default=1,
                             help="Image to start with, counting from 1 in filename order (default: 1)")

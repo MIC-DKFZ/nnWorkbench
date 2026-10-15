@@ -36,7 +36,6 @@ _B2ND_SEGMENTATION_SUFFIX = "_seg.b2nd"
 class InspectionFiles:
     images: tuple[Path, ...]
     labels: tuple[Path, ...]
-    annotations: tuple[Path, ...]
 
 
 @dataclass(frozen=True)
@@ -50,7 +49,6 @@ class _LayerData:
 @dataclass(frozen=True)
 class _CaseData:
     layers: tuple[_LayerData, ...]
-    skipped_annotations: tuple[Path, ...]
 
 
 class _PrefetchSignals(QObject):
@@ -95,7 +93,7 @@ def case_id(path: Path) -> str:
 
 
 def related_files(selected: Path) -> InspectionFiles:
-    """Find raw image, label, and annotation files belonging to ``selected``'s case."""
+    """Find the raw image and label files belonging to ``selected``'s case."""
     return related_files_for_case(selected.parent.parent, case_id(selected))
 
 
@@ -110,7 +108,7 @@ def related_files_for_case(dataset: Path, identifier: str) -> InspectionFiles:
                  and (not images_only or has_image_suffix(path)))
         return tuple(sorted(paths, key=lambda path: path.name.casefold()))
 
-    return InspectionFiles(matching("imagesTr", True), matching("labelsTr", True), matching("annotationsTr"))
+    return InspectionFiles(matching("imagesTr", True), matching("labelsTr", True))
 
 
 def image_case_ids(dataset: Path) -> tuple[str, ...]:
@@ -181,12 +179,12 @@ def annotation_target_path(image_path: Path) -> Path:
 
 
 def annotation_source_image(path: Path) -> Path:
-    """Return an imagesTr source for a label or annotation, preferring channel 0000."""
-    if path.parent.name not in {"annotationsTr", "labelsTr"}:
+    """Return an imagesTr source for a label, preferring channel 0000."""
+    if path.parent.name != "labelsTr":
         return path
     images = related_files(path).images
     if not images:
-        raise ValueError(f"No imagesTr file exists for annotation case '{case_id(path)}'.")
+        raise ValueError(f"No imagesTr file exists for label case '{case_id(path)}'.")
     return next((image for image in images if image_layer_name(image).endswith("_0000")), images[0])
 
 
@@ -213,19 +211,6 @@ def _read_image(path: Path) -> tuple[object, object]:
     return data, affine
 
 
-def _read_json_points(path: Path) -> list | None:
-    """Read simple JSON point annotations, returning ``None`` for unsupported content."""
-    try:
-        with path.open(encoding="utf-8") as file:
-            data = json.load(file)
-    except (OSError, json.JSONDecodeError):
-        return None
-    points = data.get("points") if isinstance(data, dict) else data
-    if not isinstance(points, list) or not all(isinstance(point, list) for point in points):
-        return None
-    return points
-
-
 def _layer_name(role: str, path: Path) -> str:
     """Name a layer by what it shows, e.g. "Label — case_001.nii.gz", so layers are easy to tell apart.
 
@@ -245,18 +230,7 @@ def _read_case(dataset: Path, identifier: str) -> _CaseData:
     for path in files.labels:
         data, affine = _read_image(path)
         layers.append(_LayerData(_layer_name("Label", path), "labels", data, affine))
-    skipped: list[Path] = []
-    for path in files.annotations:
-        if has_image_suffix(path):
-            data, affine = _read_image(path)
-            layers.append(_LayerData(_layer_name("Annotation", path), "annotation_labels", data, affine))
-        elif path.suffix.casefold() == ".json":
-            points = _read_json_points(path)
-            if points is None:
-                skipped.append(path)
-            else:
-                layers.append(_LayerData(_layer_name("Annotation points", path), "annotation_points", points))
-    return _CaseData(tuple(layers), tuple(skipped))
+    return _CaseData(tuple(layers))
 
 
 def _read_prediction_case(prediction_folder: Path, image_folder: Path | None, reference_folder: Path | None,
@@ -272,7 +246,7 @@ def _read_prediction_case(prediction_folder: Path, image_folder: Path | None, re
     for path in _matching_case_files(reference_folder, identifier):
         data, affine = _read_image(path)
         layers.append(_LayerData(_layer_name("Label", path), "reference", data, affine))
-    return _CaseData(tuple(layers), ())
+    return _CaseData(tuple(layers))
 
 
 def _read_validation_case(validation_folder: Path, raw_dataset: Path | None, identifier: str) -> _CaseData:
@@ -289,7 +263,7 @@ def _read_validation_case(validation_folder: Path, raw_dataset: Path | None, ide
     for path in _matching_case_files(validation_folder, identifier):
         data, affine = _read_image(path)
         layers.append(_LayerData(_layer_name("Prediction", path), "prediction", data, affine))
-    return _CaseData(tuple(layers), ())
+    return _CaseData(tuple(layers))
 
 
 def _read_preprocessed_case(session_folder: Path, identifier: str) -> _CaseData:
@@ -319,7 +293,7 @@ def _read_preprocessed_case(session_folder: Path, identifier: str) -> _CaseData:
     if segmentation_array.ndim > 3 and segmentation_array.shape[0] == 1:
         segmentation_array = segmentation_array[0]
     layers.append(_LayerData(_layer_name("Label", segmentation_path), "labels", segmentation_array))
-    return _CaseData(tuple(layers), ())
+    return _CaseData(tuple(layers))
 
 
 def _display_case(viewer, case_data: _CaseData) -> None:
@@ -333,10 +307,8 @@ def _display_case(viewer, case_data: _CaseData) -> None:
         slot = (layer_data.kind, position); used.add(slot)
         layer = reusable.get(slot)
         if layer is None:
-            if layer_data.kind in {"labels", "annotation_labels", "prediction", "reference"}:
+            if layer_data.kind in {"labels", "prediction", "reference"}:
                 layer = viewer.add_labels(layer_data.data, name=layer_data.name, affine=layer_data.affine)
-            elif layer_data.kind in {"points", "annotation_points"}:
-                layer = viewer.add_points(layer_data.data, name=layer_data.name)
             else:
                 layer = viewer.add_image(layer_data.data, name=layer_data.name, affine=layer_data.affine)
             reusable[slot] = layer
@@ -349,19 +321,11 @@ def _display_case(viewer, case_data: _CaseData) -> None:
         layer.metadata["nnworkbench_source"] = layer_data.name
     for slot, layer in list(reusable.items()):
         if slot not in used:
-            if slot[0].startswith("annotation_"):
-                # Annotations belong to one case only. Do not leave a stale layer
-                # visible in Napari's layer list when the next case has none.
-                viewer.layers.remove(layer)
-                del reusable[slot]
-            else:
-                layer.visible = False
+            layer.visible = False
     viewer._nnworkbench_case_layers = reusable
     _reset_middle_slice(viewer, case_data)
     if hasattr(viewer, "reset_view"):
         viewer.reset_view()
-    for path in case_data.skipped_annotations:
-        print(f"Skipping unsupported annotation format: {path}")
 
 
 def _reset_middle_slice(viewer, case_data: _CaseData) -> None:
@@ -370,7 +334,7 @@ def _reset_middle_slice(viewer, case_data: _CaseData) -> None:
         return
     volume = next((layer.data for layer in case_data.layers if layer.kind == "image"), None)
     if volume is None:
-        volume = next((layer.data for layer in case_data.layers if layer.kind not in {"points", "annotation_points"}), None)
+        volume = next((layer.data for layer in case_data.layers), None)
     shape = getattr(volume, "shape", ())
     if len(shape) < 3:
         return
@@ -624,7 +588,7 @@ def _set_up_annotation(viewer, image_path: Path, target: Path, image: tuple, ann
         # Always provide nnInteractive with a writable semantic map matching the
         # source image's dimensions and geometry, even before its first save.
         viewer.add_labels(np.zeros(data.shape, dtype=np.uint16), name=semantic_map_name(image_path), affine=affine)
-    _reset_middle_slice(viewer, _CaseData((_LayerData(image_layer_name(image_path), "image", data, affine),), ()))
+    _reset_middle_slice(viewer, _CaseData((_LayerData(image_layer_name(image_path), "image", data, affine),)))
     viewer.reset_view()
     save_widget = AnnotationSaveWidget(viewer, image_path, target)
     save_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)

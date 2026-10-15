@@ -20,7 +20,7 @@ Links: [Paper](https://www.nature.com/articles/s41592-020-01008-z) | [Code](http
 
 ## Prepare and Train
 
-Training uses the images in `imagesTr` and the labels in `labelsTr` (see [Setup](setup.md#create-a-dataset)). **Annotation Workflow:** Create `labelsTr` first with [Convert the Annotations](3-annotate.md#convert-the-annotations).
+Training uses the images in `imagesTr` and the labels in `labelsTr` (see [Setup](setup.md#create-a-dataset)). **Annotation Workflow:** `labelsTr` is filled by saving your annotations in nnWorkbench (see [3. Annotate](3-annotate.md)).
 
 ### 1. Check the Filenames
 
@@ -48,7 +48,7 @@ nnworkbench-run inspect -d 42
 Count in how many images each class occurs and how many voxels it covers, to spot missing or rare classes:
 
 ```bash
-nnworkbench-run label-analysis -d 42
+nnworkbench-run compute-statistics -d 42
 ```
 
 **In nnWorkbench:** On the **Data** page, click **Compute statistics**, then switch the case table to **Statistics** to see the results.

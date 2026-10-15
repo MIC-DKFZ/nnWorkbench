@@ -12,7 +12,7 @@ From the first image to a trained segmentation model, nnWorkbench keeps the enti
 - **All projects in one place:** Browse all configured nnU-Net datasets and keep each dataset’s images, labels, preprocessing, trained models, and validation results connected.
 - **Guided nnU-Net from data to prediction:** Each dataset follows the nnU-Net stages Data, Preprocess, Train, Validate and Predict. Run them through short dialogs with sensible defaults, or copy the exact commands for a terminal or a cluster.
 - **See what is ready and what needs attention:** Coloured stage tabs and status badges show what is done, what can run next and what must be fixed first, for example an incomplete `dataset.json` before preprocessing.
-- **Inspect at every stage:** Open Raw images and labels, annotations, predictions, and validation results in Napari, with matching files loaded together whenever available.
+- **Inspect at every stage:** Open Raw images and labels, predictions, and validation results in Napari, with matching files loaded together whenever available.
 - **Connect nnInteractive and nnU-Net:** Use nnInteractive in Napari to create annotations, save them directly as training labels in `labelsTr`, and continue with nnU-Net preprocessing and training.
 - **Annotation Workflow:** Follow a documented, guided workflow designed to create high-quality labels that support model performance while minimizing manual annotation effort.
 
@@ -121,14 +121,12 @@ It also provides the following dataset tools:
 # Show what is done and what is next for a dataset (the stage states of the GUI; add --json for scripts)
 nnworkbench-run status -d 42
 
-# Open a dataset's images, labels and annotations in Napari, starting at the 12th image
+# Open a dataset's images and labels in Napari, starting at the 12th image
 nnworkbench-run inspect -d 42 -i 12
 
-# Analyse labelsTr and save class_distribution.json
-nnworkbench-run label-analysis -d 42 --workers 4
+# Compute statistics (as on the Data page): classes per image and voxels per class, from labelsTr
+nnworkbench-run compute-statistics -d 42 --workers 4
 
-# Convert annotations made outside nnWorkbench (annotationsTr, annotation IDs) into labelsTr
-nnworkbench-run convert-annotations -d 42 --workers 4
 
 # Stack naturally ordered 2D slices (e.g. TIFF or PNG) into one 3D NIfTI volume
 nnworkbench-run stack-images /path/to/image_slices --file-type .tif --spacing 1 1 1
@@ -137,7 +135,7 @@ nnworkbench-run stack-images /path/to/image_slices --file-type .tif --spacing 1 
 nnworkbench-run reduce-checkpoints /path/to/nnUNet_results/Dataset042_CellSegmentation/MODEL_FOLDER
 ```
 
-`-d` (or `--dataset`) specifies the numeric nnU-Net dataset ID under the saved `nnUNet_raw` path. For example, use `-d 42` for `Dataset042_CellSegmentation`. Annotation conversion requires a valid final `ignore` label in the dataset's `dataset.json`. Run `nnworkbench-get-paths` to view the saved path configuration, and add `--help` to any tool to see all its options.
+`-d` (or `--dataset`) specifies the numeric nnU-Net dataset ID under the saved `nnUNet_raw` path. For example, use `-d 42` for `Dataset042_CellSegmentation`. Run `nnworkbench-get-paths` to view the saved path configuration, and add `--help` to any tool to see all its options.
 
 ## Further documentation
 

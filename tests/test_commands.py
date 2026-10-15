@@ -90,16 +90,10 @@ def test_command_runner_builtin_tools(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(command_runner, "analyse_label_distribution", lambda directory, workers, **kwargs: (
         calls.append(("analysis", (directory, workers, kwargs))) or {"files_analyzed": 2}
     ))
-    monkeypatch.setattr(command_runner, "convert_annotations", lambda directory, workers, **kwargs: (
-        calls.append(("conversion", (directory, workers, kwargs))) or type(
-            "Result", (), {"converted": (tmp_path / "labelsTr" / "case.nii.gz",), "warnings": ()})()
-    ))
 
-    assert command_runner._run_builtin_command(["label-analysis", "-d", "3", "--workers", "3"]) == 0
-    assert command_runner._run_builtin_command(["convert-annotations", "-d", "3", "--workers", "2"]) == 0
+    assert command_runner._run_builtin_command(["compute-statistics", "-d", "3", "--workers", "3"]) == 0
     assert calls == [
         ("analysis", (dataset, 3, {"progress": print})),
-        ("conversion", (dataset, 2, {"progress": print})),
     ]
 
 

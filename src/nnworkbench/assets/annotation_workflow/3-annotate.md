@@ -68,7 +68,7 @@ Every voxel you have not labeled must stay recognizable as unlabeled. The ID 0 i
 
 *(IDs for the Dataset042 example.)*
 
-While annotating, you paint with the annotation IDs. Before training, they must be converted back to the original IDs and saved in `labelsTr`. nnWorkbench does this mapping for you: it shows the annotation IDs in the **nnWorkbench — Annotation saving** panel while you annotate, and writes the original IDs to `labelsTr` when you save. Outside nnWorkbench, convert them as described in [Convert the Annotations](#convert-the-annotations).
+While annotating, you paint with the annotation IDs. Before training, they must be converted back to the original IDs and saved in `labelsTr`. nnWorkbench does this mapping for you: it shows the annotation IDs in the **nnWorkbench — Annotation saving** panel while you annotate, and writes the original IDs to `labelsTr` when you save.
 
 ### nnInteractive
 
@@ -86,7 +86,6 @@ nnInteractive creates instance segmentations, meaning that individual objects ar
   - When nnInteractive produces only a partly correct result, switch to the brush tool and manually correct the segmentation. Do this only as a last step and don't add interactions to this object afterwards.
   - Click **Next Object** and repeat the process.
 - You can also add scribbles directly to the output segmentation layer while working. See the [scribble annotation instructions](#scribble-annotations) below.
-- Save the output layer in the `annotationsTr` folder using the same filename as the corresponding image, but without the `_0000` postfix.
 
 **In nnWorkbench:**
 
@@ -126,19 +125,7 @@ Stop when you are satisfied with the results. When additional annotations produc
 If annotation time is limited, it can be useful to work with smaller annotation batches and retrain more often. This gives you more frequent feedback and helps you focus new annotations on the cases where the model still struggles. If compute time is more limited, it may be better to collect a larger set of annotations before retraining and therefore use fewer iterations.
 
 **Can I use other annotation methods or software?**
-Yes. Other annotation methods and software can also be used, and for some types of data or structures they may even be more suitable. However, use them carefully and make sure they do not introduce systematic biases, for example by favoring certain object sizes, shapes, or easier cases. The annotations should remain representative, consistent, and follow the same class definitions and labeling rules throughout the dataset. Use the same annotation method for all annotations of one class: different methods produce different boundaries (e.g. a nnInteractive mask vs. hand-drawn scribbles), and mixing them within a class makes its labels inconsistent.
-
-## Convert the Annotations
-
-Before training, the annotations have to be converted into training labels: every [annotation ID](#annotation-ids) is reduced by one, and 0 becomes the Ignore ID (the highest ID). The result is stored in `labelsTr`.
-
-```bash
-nnworkbench-run convert-annotations -d 42
-```
-
-Empty annotations and annotations with invalid IDs are skipped and reported. Afterwards, check the class balance of the labels (see [Analyze the Labels](4-train.md#3-analyze-the-labels-optional)).
-
-**In nnWorkbench:** Not needed. Annotations made with the pencil button are saved directly to `labelsTr`.
+Yes. Other annotation methods and software can also be used, and for some types of data or structures they may even be more suitable. However, use them carefully and make sure they do not introduce systematic biases, for example by favoring certain object sizes, shapes, or easier cases. The annotations should remain representative, consistent, and follow the same class definitions and labeling rules throughout the dataset. Use the same annotation method for all annotations of one class: different methods produce different boundaries (e.g. a nnInteractive mask vs. hand-drawn scribbles), and mixing them within a class makes its labels inconsistent. Save such labels directly in `labelsTr`, with the same filename as the image but without the `_0000` postfix, and with the original label IDs from `dataset.json` (Ignore for every unlabeled voxel).
 
 **Reference:** Isensee, F.\*, Rokuss, M.\*, Krämer, L.\*, Dinkelacker, S., Ravindran, A., Stritzke, F., Hamm, B., Wald, T., Langenberg, M., Ulrich, C., Deissler, J., Floca, R., & Maier-Hein, K. (2025). nnInteractive: Redefining 3D Promptable Segmentation. (\*: equal contribution)
 
