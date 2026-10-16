@@ -1,11 +1,15 @@
 # nnWorkbench
 
-> A GUI for nnU-Net workflows and nnInteractive-powered annotation.
-> - **nnU-Net Workflow:** Train, validate and apply nnU-Net on images that already have labels.
-> - **Annotation Workflow:** Extends the nnU-Net Workflow for images without labels: create the labels efficiently with nnInteractive and scribbles, then train, validate and improve the model in iterative annotation rounds.
+<p align="center">
+  <img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-blue">
+  <img alt="Platforms: Windows, macOS, Linux" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey">
+  <img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-green">
+  <!-- CI badge once the repository is public: <img alt="CI" src="https://github.com/OWNER/nnWorkbench/actions/workflows/ci.yml/badge.svg"> -->
+</p>
 
-
-From the first image to a trained segmentation model, nnWorkbench keeps the entire workflow in one place. It provides researchers and domain scientists with a clear workspace to inspect images in Napari, prepare or create labels, and guide an nnU-Net model from dataset preparation to prediction.
+> A GUI for nnU-Net and nnInteractive-powered annotation: from the first image to a trained segmentation model, nnWorkbench keeps the entire workflow in one place.
+> - **nnU-Net Workflow:** train, validate and apply nnU-Net on images that already have labels.
+> - **Annotation Workflow:** for images without labels. Create labels efficiently with nnInteractive and scribbles, then train, validate and improve the model in iterative annotation rounds.
 
 <p align="center">
   <a href="#installation">Installation</a> ·
@@ -13,21 +17,30 @@ From the first image to a trained segmentation model, nnWorkbench keeps the enti
   <a href="#cli-overview">CLI</a> ·
   <a href="#qa">Q&amp;A</a> ·
   <a href="src/nnworkbench/assets/annotation_workflow/README.md">Guide</a> ·
+  <a href="#citation">Citation</a> ·
   <a href="#license">License</a>
 </p>
 
 ## Why nnWorkbench
 
-- **All projects in one place:** Browse all configured nnU-Net datasets and keep each dataset’s images, labels, preprocessing, trained models, and validation results connected.
-- **Guided nnU-Net from data to prediction:** Each dataset follows the nnU-Net stages Data, Preprocess, Train, Validate and Predict. Run them through short dialogs with sensible defaults, or copy the exact commands for a terminal or a cluster.
-- **See what is ready and what needs attention:** Coloured stage tabs and status badges show what is done, what can run next and what must be fixed first, for example an incomplete `dataset.json` before preprocessing.
-- **Inspect at every stage:** Open Raw images and labels, predictions, and validation results in Napari, with matching files loaded together whenever available.
-- **Connect nnInteractive and nnU-Net:** Use nnInteractive in Napari to create annotations, save them directly as training labels in `labelsTr`, and continue with nnU-Net preprocessing and training.
-- **Annotation Workflow:** Follow a documented, guided workflow designed to create high-quality labels that support model performance while minimizing manual annotation effort.
+- **Everything in one place:** All your datasets with their images, labels, preprocessed data, trained models and validation results, connected in one window, from the first image to the final prediction.
+- **nnInteractive and nnU-Net, connected:** Create labels with nnInteractive in Napari, save them directly as nnU-Net training data, and continue with preprocessing and training without any conversion.
+- **Guidance along the way:** Each stage shows what is done, what can run next and what has to be fixed first, with a short how-to on every page and a step-by-step guide built in.
+- **Inspection at every stage:** Open raw images and labels, preprocessed data, predictions and validation results in Napari, with the matching files loaded together, and find the weakest cases with one click.
+- **Simple by default, full control when needed:** nnWorkbench works for users of every experience level. Short dialogs with sensible defaults get you going; planners, trainers and additional arguments are there when you need them, and every step can be copied as the exact nnU-Net command for a terminal or a cluster.
 
-![Annotation Workflow](src/nnworkbench/assets/images/annotation-workflow-header.png)
+## Why Annotation Workflow
 
-# Installation
+No labels yet? The Annotation Workflow gets you from raw images to a trained model with as little manual work as possible:
+
+- **Annotate smart, not hard:** Label only parts of many images instead of everything in a few (*sparse labels*): nnInteractive outlines a whole 3D object in a few clicks, scribbles cover the rest.
+- **Improve in rounds:** Train early, see where the model fails, and annotate exactly there.
+- **Made for sparse labels:** A trainer bundled with nnWorkbench learns from sparse labels and is selected automatically.
+- **Guided from start to finish:** A built-in guide explains every step, from defining your classes to deciding when the model is good enough.
+
+![Annotation Workflow: describe, define, annotate, train, validate, predict, with a loop back to annotation](src/nnworkbench/assets/images/annotation-workflow-header.png)
+
+## Installation
 
 **Requirements:**
 
@@ -57,7 +70,6 @@ nnworkbench-gui
 
 Depending on your system, you may need to install PyTorch manually before installing nnWorkbench, as described on [pytorch.org](https://pytorch.org/get-started/locally/). This is required on Windows to use an NVIDIA GPU.
 For a lightweight installation without the GUI on a remote machine, and for notes on using nnWorkbench on macOS, see the instructions below.
-
 
 <details>
 <summary><b>Windows</b></summary>
@@ -107,13 +119,13 @@ pip install nnworkbench
 pip install -e .
 ```
 
-Save the nnU-Net folders on the remote machine once: 
+Save the nnU-Net folders on the remote machine once:
 
 ```bash
 nnworkbench-set-paths --raw /path/to/nnUNet_raw --preprocessed /path/to/nnUNet_preprocessed --results /path/to/nnUNet_results
 ```
 
-`nnworkbench-run` then uses them for nnU-Net commands and dataset tools. 
+`nnworkbench-run` then uses them for nnU-Net commands and dataset tools.
 Optionally, you can prepare this in the nnWorkbench GUI: on the overview, add a remote path profile with the folders of the remote machine; **Export** then copies the `nnworkbench-set-paths` command above with these paths. The commands themselves can also be configured in the GUI: **Copy command** in the run dialogs gives the matching `nnworkbench-run` command, which uses the paths saved on the remote machine. All commands and dataset tools for the remote machine are listed in the [CLI overview](#cli-overview).
 
 </details>
@@ -127,21 +139,22 @@ Optionally, you can prepare this in the nnWorkbench GUI: on the overview, add a 
 
 </details>
 
-# Quick start
+## Quick start
 
 Start the GUI with `nnworkbench-gui`.
 
-> *[Screenshot placeholder: the start screen with the three nnU-Net folders and the dataset list. To be added with dummy data.]*
+![The start screen: the three nnU-Net folders, all datasets found in them and the details of the selected dataset](src/nnworkbench/assets/images/gui-overview.png)
 
 1. **Set your folders.** On the start screen, select three folders: `nnUNet_raw` for your datasets (images, labels and `dataset.json`), `nnUNet_preprocessed` for the preprocessed data used in training, and `nnUNet_results` for the trained models and their validation results. nnU-Net fills the last two. Empty folders are fine. nnWorkbench lists every dataset it finds in them.
 2. **Create a dataset or select an existing one.** Click **＋ New dataset**, or open a dataset from the list. Put your images into `imagesTr` (and, if you have them, your labels into `labelsTr`), and describe the classes with **Edit** next to `dataset.json`. Red badges on the **Data** page tell you what is still missing.
-3. **Annotate** *(Annotation Workflow only)*. Turn on **Annotation Workflow** in the top bar. On the **Data** page, click the pencil next to an image, annotate in Napari and click **Save annotation**.
+3. **Annotate** *(Annotation Workflow only)*. Turn on **Annotation Workflow** in the top bar. On the **Data** page, click the pencil next to an image, annotate in Napari with nnInteractive or the brush, and click **Save annotation**. Labels can be *dense* (every voxel is labelled; the mask starts as background, e.g. to segment a single organ with nnInteractive) or *sparse* (you annotate only parts of each image; the rest stays *ignore* and is not used for training). For sparse labels, add an `ignore` class with the highest ID to `dataset.json`.
 4. **Preprocess.** On **Preprocess**, click **▶ Preprocess…** and then **▶ Preprocess**, or **Copy command** to run it on a remote machine. The defaults are a good start.
 5. **Train.** On **Train**, click **▶ Train…**, choose the folds and click **▶ Train**, or **Copy command** to run it on a remote machine. The console at the bottom shows the progress.
-6. **Validate.** On **Validate**, click a fold of your model to see its Dice score per case, sort by **Dice** to see the weakest cases first, and open any case in Napari to compare the prediction with your label. *Annotation Workflow:* for another round, select the dataset on the start screen, click **＋ New iteration** and continue with step 3.
-7. **Predict.** On **Predict**, choose a folder of new images and an output folder and click **▶ Predict**, or **Copy command** to run it on a remote machine.
+6. **Validate.** On **Validate**, click a fold of your model to see its Dice score per case, sort by **Dice** to see the weakest cases first, and open any case in Napari to compare the prediction with your label.
+7. **Iterate** *(Annotation Workflow only)*. Where the model is still wrong, start another annotation round: select the dataset on the start screen and click **＋ New iteration**. It copies the images and labels into a new dataset; continue there with step 3 and annotate where the model fails.
+8. **Predict.** On **Predict**, choose a folder of new images and an output folder and click **▶ Predict**, or **Copy command** to run it on a remote machine.
 
-> *[Screenshot placeholder: the Data page of a dataset with sparse labels: cases, dataset.json and the how-to. To be added with dummy data.]*
+![The Data page of a dataset with sparse labels: the cases with their images and labels, dataset.json and the how-to](src/nnworkbench/assets/images/gui-data.png)
 
 Every page has a short how-to on the left, and **? Guide** in the top bar opens the full [nnWorkbench guide](src/nnworkbench/assets/annotation_workflow/README.md). It explains both workflows step by step: how to understand your images, define classes, annotate efficiently, read the validation results, and decide when a model is good enough.
 
@@ -171,7 +184,6 @@ nnworkbench-run inspect -d 42 -i 12
 # Compute statistics (as on the Data page): classes per image and voxels per class, from labelsTr
 nnworkbench-run compute-statistics -d 42 --workers 4
 
-
 # Stack naturally ordered 2D slices (e.g. TIFF or PNG) into one 3D NIfTI volume
 nnworkbench-run stack-images /path/to/image_slices --file-type .tif --spacing 1 1 1
 
@@ -190,15 +202,10 @@ For training, an NVIDIA GPU is strongly recommended; on the CPU, training takes 
 Yes. Use the core installation on the cluster (see *Remote machines and clusters* above) and copy the commands from the GUI (see the [CLI overview](#cli-overview)). If the cluster's `nnUNet_results` folder is mounted on your computer, the GUI shows the training progress and the validation results as if they ran locally.
 
 **Where does my data have to be for a remote setup?**
-Each step needs the output of the previous one, in the nnU-Net folders saved on the machine that runs it:
+Each step needs the folder written by the previous one on the machine that runs it: preprocessing needs `nnUNet_raw`, training needs `nnUNet_preprocessed`, and prediction needs the model in `nnUNet_results`. The GUI on your computer uses `nnUNet_raw` for annotating and `nnUNet_results` for validation. The simplest setup is storage both machines can access, e.g. a mounted network drive; otherwise copy `nnUNet_raw` to the remote machine after each annotation round and copy `nnUNet_results` back.
 
-| Step | Needs | Writes |
-| --- | --- | --- |
-| Preprocessing | `nnUNet_raw` (images, labels, `dataset.json`) | `nnUNet_preprocessed` |
-| Training | `nnUNet_preprocessed` | `nnUNet_results` |
-| Prediction | `nnUNet_results` (the trained model) and the images to predict | the output folder you choose |
-
-On your computer, the GUI uses `nnUNet_raw` for annotating and inspecting, and `nnUNet_results` for validation. The simplest setup is storage that both machines can access (e.g. a mounted network drive). Otherwise, copy `nnUNet_raw` to the remote machine after each annotation round, preprocess and train there, and copy `nnUNet_results` back.
+**Does nnWorkbench work with 2D images?**
+Yes. The nnU-Net Workflow works the same for 2D and 3D images. The Annotation Workflow also works with 2D images, but annotate them with scribbles (the brush in Napari): nnInteractive does not work on 2D images. Preprocessing, training, validation and prediction with nnU-Net work in any case.
 
 **Can I annotate with nnInteractive without a local GPU?**
 Yes. nnInteractive can run on a server with a GPU, while you annotate in Napari on your computer. Set up the server and connect the plugin as described in the [napari-nninteractive documentation](https://github.com/MIC-DKFZ/napari-nninteractive). Without a GPU or a server, nnInteractive runs on the CPU, which is slow (on a Mac always, see *macOS* above).
@@ -207,22 +214,40 @@ Yes. nnInteractive can run on a server with a GPU, while you annotate in Napari 
 
 - [nnWorkbench guide](src/nnworkbench/assets/annotation_workflow/README.md): the nnU-Net Workflow and the Annotation Workflow step by step; also shown in the GUI via **? Guide** in the top bar.
 
+## Citation
 
-# License
+nnWorkbench builds on nnInteractive and nnU-Net. If it helps your research, please cite the methods you used. A citable reference for nnWorkbench itself will follow with the first release.
 
-nnWorkbench is licensed under the [Apache License 2.0](../../LICENSE).
+**nnInteractive** (annotation):
+
+> Isensee, F.\*, Rokuss, M.\*, Krämer, L.\*, Dinkelacker, S., Ravindran, A., Stritzke, F., Hamm, B., Wald, T., Langenberg, M., Ulrich, C., Deissler, J., Floca, R., & Maier-Hein, K. (2025). nnInteractive: Redefining 3D Promptable Segmentation. https://arxiv.org/abs/2503.08373 \
+> \*: equal contribution
+
+**nnU-Net** (preprocessing, training and prediction):
+
+> Isensee, F., Jaeger, P. F., Kohl, S. A., Petersen, J., & Maier-Hein, K. H. (2021). nnU-Net: a self-configuring method for deep learning-based biomedical image segmentation. Nature Methods, 18(2), 203-211.
+
+**nnU-Net Revisited** (the residual encoder planners, including the default `nnUNetPlannerResEncL`):
+
+> Isensee, F., Wald, T., Ulrich, C., Baumgartner, M., Roy, S., Maier-Hein, K., & Jaeger, P. F. (2024). nnU-Net Revisited: A Call for Rigorous Validation in 3D Medical Image Segmentation. MICCAI 2024. https://arxiv.org/abs/2404.09556
+
+
+## License
+
+nnWorkbench is licensed under the [Apache License 2.0](LICENSE).
 
 > **Note:** The [nnInteractive model weights](https://huggingface.co/MIC-DKFZ/nnInteractive), downloaded on first use
 > for interactive annotation, are licensed under
 > [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/): **non-commercial use only**. nnU-Net and the
 > rest of nnWorkbench are not affected.
-> 
-# Acknowledgements
 
-<img src="src/nnworkbench/assets/images/helmholtz-imaging-logo.svg" alt="Helmholtz Imaging" height="40"><br>
-<img src="src/nnworkbench/assets/images/dkfz-logo.svg" alt="German Cancer Research Center (DKFZ)" height="38">&nbsp;&nbsp;&nbsp;
+## Acknowledgements
 
-
+<p>
+  <img src="src/nnworkbench/assets/images/helmholtz-imaging-logo.svg" alt="Helmholtz Imaging" height="40">
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="src/nnworkbench/assets/images/dkfz-logo.svg" alt="German Cancer Research Center (DKFZ)" height="38">
+</p>
 
 This repository is developed and maintained by the Applied Computer Vision Lab (ACVL)
 of [Helmholtz Imaging](https://www.helmholtz-imaging.de/).
