@@ -67,3 +67,35 @@ def test_guide_widget_switches_stages_from_links() -> None:
     assert guide.stages.currentIndex() == 4
     assert guide.browser.verticalScrollBar().value() > 0
     guide.close()
+
+
+def test_every_stage_page_links_to_an_existing_guide_section() -> None:
+    from nnworkbench.ui.stages.data_stage import DataStage
+    from nnworkbench.ui.stages.predict_stage import PredictStage
+    from nnworkbench.ui.stages.preprocess_stage import PreprocessStage
+    from nnworkbench.ui.stages.train_stage import TrainStage
+    from nnworkbench.ui.stages.validate_stage import ValidateStage
+
+    expected = {DataStage: "setup.md", PreprocessStage: "4-train.md", TrainStage: "4-train.md",
+                ValidateStage: "5-validate.md", PredictStage: "6-predict.md"}
+    for page, file_name in expected.items():
+        guide_file, anchor = page.guide
+        assert guide_file == file_name, page.__name__
+        assert not anchor or anchor in _headings(GUIDE_DIRECTORY / guide_file), f"{page.__name__}: #{anchor}"
+
+
+def test_show_file_opens_the_file_at_its_anchor() -> None:
+    app = QApplication.instance() or QApplication([])
+    guide = AnnotationWorkflowGuide()
+    guide.resize(700, 500)
+    guide.show()
+    app.processEvents()
+
+    guide.show_file("4-train.md", "4-preprocess")
+    app.processEvents()
+    assert guide.current_file() == "4-train.md"
+    assert guide.browser.verticalScrollBar().value() > 0
+
+    guide.show_file("unknown.md")
+    assert guide.current_file() == "README.md"
+    guide.close()

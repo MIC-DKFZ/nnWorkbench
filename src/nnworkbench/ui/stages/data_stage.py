@@ -48,12 +48,12 @@ from .common import StagePage, label_mode_badge
 
 def _howto() -> HowToCard:
     return HowToCard("The raw dataset", [
-        "Images go to <b>imagesTr</b>, one file per channel: <span style='font-family:monospace'>case_0000.nii.gz</span>.",
+        "Images go to <b>imagesTr</b>, one file per channel: <span style='font-family:monospace'>cells_001_0000.nii.gz</span>.",
         "Labels go to <b>labelsTr</b> with the same case name, without the channel suffix.",
         ("<b>dataset.json</b> describes channels, labels and the file ending. An optional <b>ignore</b> label marks "
         "voxels that are not annotated; it must have the highest label ID."),
         f"{icon_html('search')} inspects a case in Napari; {icon_html('edit')} annotates it (saved to <b>labelsTr</b>).",
-    ], [], "Prepare your images")
+    ], [], "Setup · Create a dataset")
 
 
 class CaseStatisticsPanel(QFrame):
@@ -194,7 +194,7 @@ class CaseStatisticsPanel(QFrame):
 
 
 class DataStage(StagePage):
-    key, title, guide_stage = "data", "Data", 5
+    key, title, guide = "data", "Data", ("setup.md", "create-a-dataset")
 
     def __init__(self, context: AppContext, parent=None) -> None:
         super().__init__(context, _howto(), parent)

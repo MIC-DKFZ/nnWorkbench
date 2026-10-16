@@ -74,7 +74,7 @@ def _howto() -> HowToCard:
 
 
 class PredictStage(StagePage):
-    key, title, guide_stage = "predict", "Predict", 10
+    key, title, guide = "predict", "Predict", ("6-predict.md", "")
     folder = "results"
 
     def __init__(self, context: AppContext, parent=None) -> None:

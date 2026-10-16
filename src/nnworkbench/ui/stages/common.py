@@ -88,10 +88,10 @@ class StagePage(QWidget):
 
     key = ""
     title = ""
-    guide_stage = 0
+    guide: tuple[str, str] = ("README.md", "")  # guide file and heading anchor opened by "More in the guide"
     folder = "raw"  # nnU-Net folder this stage works in (raw, preprocessed, results)
     navigate = Signal(str)
-    guide_requested = Signal(int)
+    guide_requested = Signal(str, str)
     reload_requested = Signal()
 
     def __init__(self, context: AppContext, howto: HowToCard, parent=None) -> None:
@@ -103,7 +103,7 @@ class StagePage(QWidget):
         row.setContentsMargins(24, 16, 24, 16)
         row.setSpacing(18)
         self.howto = howto
-        self.howto.guide_requested.connect(lambda: self.guide_requested.emit(self.guide_stage))
+        self.howto.guide_requested.connect(lambda: self.guide_requested.emit(*self.guide))
         from ..widgets import scroll
 
         self._howto_area = scroll(self.howto)

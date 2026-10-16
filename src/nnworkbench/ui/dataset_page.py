@@ -21,7 +21,7 @@ STAGES = (("data", "Data"), ("preprocess", "Preprocess"), ("train", "Train"), ("
 
 
 class DatasetPage(QWidget):
-    guide_requested = Signal(int)
+    guide_requested = Signal(str, str)
 
     def __init__(self, context: AppContext, parent=None) -> None:
         super().__init__(parent)

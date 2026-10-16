@@ -63,12 +63,13 @@ def _howto() -> HowToCard:
         "comparison."),
         (f"Click a fold to see its results and cases. Always inspect predictions with {icon_html('search')}: metrics alone can hide "
         "errors."),
-    ], [("purple", (f"{icon_html('edit')} Annotation Workflow (optional): if another iteration is needed, annotate more images and "
-                    "train a new round. During annotation, focus on the weak classes."))], "Validate")
+    ], [("purple", (f"{icon_html('edit')} Annotation Workflow (optional): if another iteration is needed, start it with "
+                    "<b>＋ New iteration</b> on the overview, annotate more and train again. During annotation, focus "
+                    "on the weak classes."))], "Validate")
 
 
 class ValidateStage(StagePage):
-    key, title, guide_stage = "validate", "Validate", 9
+    key, title, guide = "validate", "Validate", ("5-validate.md", "")
     folder = "results"
 
     def __init__(self, context: AppContext, parent=None) -> None:

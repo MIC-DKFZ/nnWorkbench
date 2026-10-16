@@ -85,7 +85,7 @@ def _howto() -> HowToCard:
 
 
 class TrainStage(StagePage):
-    key, title, guide_stage = "train", "Train", 8
+    key, title, guide = "train", "Train", ("4-train.md", "")
     folder = "results"
 
     def __init__(self, context: AppContext, parent=None) -> None:
@@ -107,7 +107,7 @@ class TrainStage(StagePage):
         legend.setContentsMargins(16, 6, 16, 8)
         legend.setSpacing(12)
         legend.addWidget(section_label("Training status"))
-        for state, text in (("done", "trained"), ("training", "training"), ("stopped", "stopped"),
+        for state, text in (("done", "done"), ("training", "training"), ("stopped", "stopped"),
                             ("reduced", "final checkpoint only")):
             chip = QLabel("")
             chip.setFixedSize(16, 16)
@@ -136,9 +136,9 @@ class TrainStage(StagePage):
         self.center.addWidget(self._folds_card, 1)
         # Right: details of the selected fold. New runs start from "▶ Train…" in the header (form in a dialog).
         self.right.addWidget(self._build_details())
-        self._run_dialog = RunDialog(self, "Train a fold", self._build_panel(), on_open=self.update_actions)
+        self._run_dialog = RunDialog(self, "Train", self._build_panel(), on_open=self.update_actions)
         self.header_actions.addWidget(button("▶ Train…", primary=True, clicked=self._open_defaults,
-                                             tooltip="Train a fold with the default trainer, plans and "
+                                             tooltip="Train one or more folds with the default trainer, plans and "
                                                      "configuration. To train the next fold of an existing model, "
                                                      "select it and use ▶ Next fold…"))
 

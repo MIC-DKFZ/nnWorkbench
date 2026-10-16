@@ -57,7 +57,7 @@ class MainWindow(QMainWindow):
         self.app_bar.back_requested.connect(self.show_overview)
         self.app_bar.switcher_requested.connect(self._open_switcher)
         self.app_bar.settings_requested.connect(self._open_settings)
-        self.app_bar.guide_requested.connect(lambda: self._open_guide(0))
+        self.app_bar.guide_requested.connect(lambda: self._open_guide("README.md"))
         self.app_bar.about_requested.connect(self._open_about)
         self.app_bar.annotation_toggled.connect(self.context.set_annotation_workflow)
         self.app_bar.set_annotation(self.context.settings.annotation_workflow)
@@ -145,7 +145,7 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             self.context.save_settings(dialog.settings())
 
-    def _open_guide(self, stage: int) -> None:
+    def _open_guide(self, file_name: str, anchor: str = "") -> None:
         from .workflow_guide import AnnotationWorkflowGuide
 
         if self._guide is None:
@@ -155,9 +155,8 @@ class MainWindow(QMainWindow):
             layout = QVBoxLayout(self._guide)
             self._guide_view = AnnotationWorkflowGuide(parent=self._guide)
             layout.addWidget(self._guide_view)
-        stage = max(0, min(stage, self._guide_view.stages.count() - 1))
-        self._guide_view.show_stage(stage)
-        self._guide.show()
+        self._guide.show()  # first, so the page is laid out before scrolling to the anchor
+        self._guide_view.show_file(file_name, anchor)
         self._guide.raise_()
 
     def _create_dataset(self) -> None:

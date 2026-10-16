@@ -227,6 +227,11 @@ class AnnotationWorkflowGuide(QWidget):
         if not anchor or not self.browser.scroll_to_anchor(anchor):
             self.browser.verticalScrollBar().setValue(0)
 
+    def show_file(self, file_name: str, anchor: str = "") -> None:
+        """Open a guide file (e.g. "4-train.md") at a heading anchor; the overview when the file is unknown."""
+        index = next((i for i, (_title, stage_file) in enumerate(GUIDE_STAGES) if stage_file == file_name), 0)
+        self.show_stage(index, anchor)
+
     def current_file(self) -> str:
         return GUIDE_STAGES[self.stages.currentIndex()][1]
 

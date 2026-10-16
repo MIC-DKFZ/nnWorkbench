@@ -60,7 +60,7 @@ def _howto() -> HowToCard:
         "Analyses your images (<b>fingerprint</b>): sizes, spacing, intensities.",
         "Plans the network, patch size and preprocessing for your GPU (<b>plans</b>).",
         ("Resamples and normalises all cases and stores them in a <b>plans folder</b> (e.g. "
-        "<span style='font-family:monospace'>nnUNetPlans_3d_fullres</span>). Training reads its data from "
+        "<span style='font-family:monospace'>nnUNetResEncUNetLPlans&#8203;_3d_fullres</span>). Training reads its data from "
         "this folder."),
     ], [("blue", (f"{icon_html('bulb')} Select a suitable planner (GPU memory, training time per fold on an A100):<br>"
                  "<b>ExperimentPlanner</b> <span style='white-space:nowrap'>(~8 GB, ~9 h)</span><br>"
@@ -72,7 +72,7 @@ def _howto() -> HowToCard:
 
 
 class PreprocessStage(StagePage):
-    key, title, guide_stage = "preprocess", "Preprocess", 8
+    key, title, guide = "preprocess", "Preprocess", ("4-train.md", "4-preprocess")
     folder = "preprocessed"
 
     def __init__(self, context: AppContext, parent=None) -> None:
