@@ -195,20 +195,61 @@ nnworkbench-run reduce-checkpoints /path/to/nnUNet_results/Dataset042_CellSegmen
 
 ## Q&A
 
-**Do I need a GPU?**
+<details>
+<summary><b>Do I need a GPU?</b></summary>
+
 For training, an NVIDIA GPU is strongly recommended; on the CPU, training takes days per fold. Everything else (managing datasets, annotating, inspecting, validating, predicting) also works without one. **Info** (top right in the GUI) shows which device was found.
 
-**Can I train on a cluster and keep working in the nnWorkbench GUI on my computer?**
+</details>
+
+<details>
+<summary><b>I already use nnU-Net. Can I use my existing datasets and models?</b></summary>
+
+Yes. nnWorkbench works directly on the standard nnU-Net folders: choose your existing `nnUNet_raw`, `nnUNet_preprocessed` and `nnUNet_results` on the start screen, and all datasets, plans and trained models appear. Nothing is converted or moved.
+
+</details>
+
+<details>
+<summary><b>Are my data and trained models still compatible with nnU-Net?</b></summary>
+
+Yes. Datasets, preprocessed data and models stay in the standard nnU-Net folders and formats, and every step runs a regular nnU-Net command, so you can continue with nnU-Net alone at any time. Models trained with the bundled `nnUNetTrainerBetterIgnoreSampling` need this trainer for prediction: use `nnworkbench-run nnUNetv2_predict …`, or make the model usable with plain nnU-Net via `nnworkbench-run reduce-checkpoints MODEL_FOLDER --reset-trainer-name`, which removes what prediction does not need and sets the trainer to `nnUNetTrainer`.
+
+</details>
+
+<details>
+<summary><b>Can I train on a cluster and keep working in the nnWorkbench GUI on my computer?</b></summary>
+
 Yes. Use the core installation on the cluster (see *Remote machines and clusters* above) and copy the commands from the GUI (see the [CLI overview](#cli-overview)). If the cluster's `nnUNet_results` folder is mounted on your computer, the GUI shows the training progress and the validation results as if they ran locally.
 
-**Where does my data have to be for a remote setup?**
+</details>
+
+<details>
+<summary><b>Where does my data have to be for a remote setup?</b></summary>
+
 Each step needs the folder written by the previous one on the machine that runs it: preprocessing needs `nnUNet_raw`, training needs `nnUNet_preprocessed`, and prediction needs the model in `nnUNet_results`. The GUI on your computer uses `nnUNet_raw` for annotating and `nnUNet_results` for validation. The simplest setup is storage both machines can access, e.g. a mounted network drive; otherwise copy `nnUNet_raw` to the remote machine after each annotation round and copy `nnUNet_results` back.
 
-**Does nnWorkbench work with 2D images?**
+</details>
+
+<details>
+<summary><b>Which file formats are supported?</b></summary>
+
+The formats nnU-Net reads: for 3D images `.nii.gz` / `.nii` (recommended), `.nrrd`, `.mha`, `.gipl` and `.tif` / `.tiff`; for 2D images `.png`, `.bmp` and `.tif`. JPEG is not supported, because its lossy compression alters the images. All images and labels of a dataset use the same file ending, set in `dataset.json`. A folder of 2D slices can be combined into one 3D volume with `nnworkbench-run stack-images` (see the [CLI overview](#cli-overview)); more in the guide under [Prepare Your Images](src/nnworkbench/assets/annotation_workflow/setup.md#prepare-your-images-optional).
+
+</details>
+
+<details>
+<summary><b>Does nnWorkbench work with 2D images?</b></summary>
+
 Yes. The nnU-Net Workflow works the same for 2D and 3D images. The Annotation Workflow also works with 2D images, but annotate them with scribbles (the brush in Napari): nnInteractive does not work on 2D images. Preprocessing, training, validation and prediction with nnU-Net work in any case.
 
-**Can I annotate with nnInteractive without a local GPU?**
+</details>
+
+<details>
+<summary><b>Can I annotate with nnInteractive without a local GPU?</b></summary>
+
 Yes. nnInteractive can run on a server with a GPU, while you annotate in Napari on your computer. Set up the server and connect the plugin as described in the [napari-nninteractive documentation](https://github.com/MIC-DKFZ/napari-nninteractive). Without a GPU or a server, nnInteractive runs on the CPU, which is slow (on a Mac always, see *macOS* above).
+
+</details>
 
 ## Further documentation
 
