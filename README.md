@@ -1,4 +1,6 @@
-# nnWorkbench
+<p align="center">
+  <img src="src/nnworkbench/assets/images/readme-header.png" alt="nnWorkbench: from the first image to a trained segmentation model" width="720">
+</p>
 
 <p align="center">
   <img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-blue">
@@ -7,7 +9,7 @@
   <!-- CI badge once the repository is public: <img alt="CI" src="https://github.com/OWNER/nnWorkbench/actions/workflows/ci.yml/badge.svg"> -->
 </p>
 
-> A GUI for nnU-Net and nnInteractive-powered annotation: from the first image to a trained segmentation model, nnWorkbench keeps the entire workflow in one place.
+> A GUI for nnU-Net and nnInteractive-powered annotation that keeps the entire workflow in one place.
 > - **nnU-Net Workflow:** train, validate and apply nnU-Net on images that already have labels.
 > - **Annotation Workflow:** for images without labels. Create labels efficiently with nnInteractive and scribbles, then train, validate and improve the model in iterative annotation rounds.
 
@@ -16,7 +18,7 @@
   <a href="#quick-start">Quick start</a> ·
   <a href="#cli-overview">CLI</a> ·
   <a href="#qa">Q&amp;A</a> ·
-  <a href="src/nnworkbench/assets/annotation_workflow/README.md">Guide</a> ·
+  <a href="#documentation">Documentation</a> ·
   <a href="#citation">Citation</a> ·
   <a href="#license">License</a>
 </p>
@@ -251,9 +253,22 @@ Yes. nnInteractive can run on a server with a GPU, while you annotate in Napari 
 
 </details>
 
-## Further documentation
+## Documentation
 
-- [nnWorkbench guide](src/nnworkbench/assets/annotation_workflow/README.md): the nnU-Net Workflow and the Annotation Workflow step by step; also shown in the GUI via **? Guide** in the top bar.
+The **[nnWorkbench guide](src/nnworkbench/assets/annotation_workflow/README.md)** explains both workflows step by step, with the matching command for each step. It is also built into the GUI: **? Guide** in the top bar and **More in the guide ›** on every page.
+
+- **[Setup](src/nnworkbench/assets/annotation_workflow/setup.md):** nnU-Net folders, remote machines, creating a dataset and `dataset.json`.
+- **[1. Describe](src/nnworkbench/assets/annotation_workflow/1-describe.md)** and **[2. Define](src/nnworkbench/assets/annotation_workflow/2-define.md):** understanding your images, defining classes, dense or sparse labels.
+- **[3. Annotate](src/nnworkbench/assets/annotation_workflow/3-annotate.md):** annotating efficiently with nnInteractive and scribbles.
+- **[4. Train](src/nnworkbench/assets/annotation_workflow/4-train.md):** preprocessing, planners and GPU memory, trainers, folds and device.
+- **[5. Validate](src/nnworkbench/assets/annotation_workflow/5-validate.md):** inspecting predictions, metrics, typical errors and the next annotation round.
+- **[6. Predict](src/nnworkbench/assets/annotation_workflow/6-predict.md):** applying and sharing a trained model.
+
+**Underlying tools:**
+
+- **[nnU-Net](https://github.com/MIC-DKFZ/nnUNet)** and its **[documentation](https://github.com/MIC-DKFZ/nnUNet/tree/master/documentation):** dataset format, planners, trainers and everything below nnWorkbench.
+- **[nnInteractive](https://github.com/MIC-DKFZ/nnInteractive):** the interactive 3D segmentation model behind the annotation.
+- **[napari-nninteractive](https://github.com/MIC-DKFZ/napari-nninteractive):** the Napari plugin for nnInteractive, including an nnInteractive server for annotating without a local GPU.
 
 ## Citation
 
