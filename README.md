@@ -4,7 +4,7 @@
 
 <p align="center">
   <img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-blue">
-  <img alt="Platforms: Windows, macOS, Linux" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey">
+  <img alt="Platforms: Linux, Windows, macOS" src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey">
   <img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-green">
   <!-- CI badge once the repository is public: <img alt="CI" src="https://github.com/OWNER/nnWorkbench/actions/workflows/ci.yml/badge.svg"> -->
 </p>
@@ -14,13 +14,13 @@
 > - **Annotation Workflow:** for images without labels. Create labels efficiently with nnInteractive and scribbles, then train, validate and improve the model in iterative annotation rounds.
 
 <p align="center">
-  <a href="#installation">Installation</a> ·
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#cli-overview">CLI</a> ·
-  <a href="#qa">Q&amp;A</a> ·
-  <a href="#documentation">Documentation</a> ·
-  <a href="#citation">Citation</a> ·
-  <a href="#license">License</a>
+  <a href="#installation"><b>Installation</b></a> ·
+  <a href="#quick-start"><b>Quick start</b></a> ·
+  <a href="#cli-overview"><b>CLI</b></a> ·
+  <a href="#qa"><b>Q&amp;A</b></a> ·
+  <a href="#documentation"><b>Documentation</b></a> ·
+  <a href="#citation"><b>Citation</b></a> ·
+  <a href="#license"><b>License</b></a>
 </p>
 
 ## Why nnWorkbench
