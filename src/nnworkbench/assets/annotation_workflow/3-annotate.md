@@ -57,7 +57,9 @@ Napari and MITK support both nnInteractive and scribble annotations using the br
 
 ### Annotation IDs
 
-Every voxel you have not labeled must stay recognizable as unlabeled. The ID 0 is the most convenient choice for this: it is displayed as transparent, so unlabeled areas stay clear and you keep a good overview of what you have already annotated. Therefore, while annotating, Ignore gets the annotation ID 0 and all class IDs from [2. Define](2-define.md) are shifted up by one. This applies to both annotation methods, nnInteractive and scribbles.
+The IDs you paint with depend on whether your labels are sparse or dense, i.e. whether `dataset.json` has an `ignore` class (see [Dense or Sparse Labeling](2-define.md#dense-or-sparse-labeling)). nnWorkbench shows the right IDs in the **nnWorkbench — Annotation saving** panel either way.
+
+**Sparse labels (with Ignore):** Every voxel you have not labeled must stay recognizable as unlabeled. The ID 0 is the most convenient choice for this: it is displayed as transparent, so unlabeled areas stay clear and you keep a good overview of what you have already annotated. Therefore, while annotating, Ignore gets the annotation ID 0 and all class IDs from [2. Define](2-define.md) are shifted up by one. This applies to both annotation methods, nnInteractive and scribbles.
 
 | Class | Original ID (`dataset.json`, `labelsTr`) | Annotation ID (while annotating) |
 | --- | --- | --- |
@@ -68,7 +70,9 @@ Every voxel you have not labeled must stay recognizable as unlabeled. The ID 0 i
 
 *(IDs for the Dataset042 example.)*
 
-While annotating, you paint with the annotation IDs. Before training, they must be converted back to the original IDs and saved in `labelsTr`. nnWorkbench does this mapping for you: it shows the annotation IDs in the **nnWorkbench — Annotation saving** panel while you annotate, and writes the original IDs to `labelsTr` when you save.
+**Dense labels (no Ignore):** No Ignore class is needed and nothing is shifted: you paint with the IDs from `dataset.json`, and a new annotation starts as Background (ID 0), so every voxel you do not paint is background. Use this when you label every object of an image, e.g. a single organ segmented with nnInteractive.
+
+With sparse labels, the annotation IDs must be converted back to the original IDs before training. nnWorkbench does this mapping for you: it shows the annotation IDs in the **nnWorkbench — Annotation saving** panel while you annotate, and writes the original IDs to `labelsTr` when you save.
 
 ### nnInteractive
 
@@ -92,7 +96,13 @@ nnInteractive creates instance segmentations, meaning that individual objects ar
 - Turn on the **Annotation Workflow** switch in the top bar. On the **Data** page, click the pencil button (**Annotate**) next to a case. The same button continues a saved annotation.
 - Napari opens with the image, its semantic map (empty or previously saved) and the nnInteractive controls, with the semantic map output already enabled.
 - Initialize nnInteractive and segment each object as described above. Use the [annotation IDs](#annotation-ids) listed in the **nnWorkbench — Annotation saving** panel.
-- Click **Save annotation**. The semantic map is saved to `labelsTr` with the correct filename and the original IDs.
+- Click **Save annotation**. The semantic map is saved to `labelsTr` with the correct filename and the original IDs. **Close Napari (Ctrl+C)** closes the window when you are done.
+
+![Napari during annotation in nnWorkbench: nnInteractive is initialized, a positive point segments the next cell, Label Aggregation writes it to the semantic map with Class ID 2, and the nnWorkbench — Annotation saving panel lists the annotation IDs](images/annotate-nninteractive.png)
+
+*Annotating `cells_001` of the Dataset042 example (sparse labels). nnInteractive is initialized and **Point (P)** is selected: a positive point on the next cell gives its prediction (brown). **Label Aggregation** writes it to the semantic map with **Class ID** 2 (cell) when you click **Next Object**. Cells annotated before are blue (cell, ID 2) with purple nuclei (nucleus, ID 3); everything else is still unlabeled (ID 0, Ignore).*
+
+> **Tip:** With **On overlap: keep existing**, labels already in the semantic map are not overwritten. Segment the nuclei first (Class ID 3) and then the cells around them (Class ID 2): the nuclei stay nucleus.
 
 ### Scribble Annotations
 
@@ -107,7 +117,14 @@ Besides the general annotation principles and selection strategies, follow these
 - **Be efficient.** Scribbles do not need pixel-perfect precision. A few well-placed strokes usually provide the best balance between annotation effort and segmentation quality.
 - **Don't forget the background.** This is also a class we have to label, so don't forget to add enough background annotations. Otherwise, the model may not learn boundaries of other classes accurately, resulting in fuzzy or imprecise borders.
 
-**In nnWorkbench:** Open the case with the pencil button as described [above](#nninteractive), select the semantic map layer, paint with the brush tool using the [annotation IDs](#annotation-ids) from the saving panel, and click **Save annotation**.
+**In nnWorkbench:** Open the case with the pencil button as described [above](#nninteractive). The brush is Napari's own tool, not part of the nnInteractive controls:
+
+1. In the **layer list**, select the semantic map layer (`semantic map - <case>`).
+2. In the **layer controls**, click the brush button (or press `2`).
+3. Set **label** to the [annotation ID](#annotation-ids) of the class, as listed in the saving panel, and adjust the **brush size**.
+4. Paint the scribbles, then click **Save annotation**.
+
+![The brush tool in Napari: the semantic map layer selected in the layer list and the brush button in the layer controls](images/annotate-brush.png)
 
 **Example scribble annotations:**
 
@@ -125,7 +142,7 @@ Stop when you are satisfied with the results. When additional annotations produc
 If annotation time is limited, it can be useful to work with smaller annotation batches and retrain more often. This gives you more frequent feedback and helps you focus new annotations on the cases where the model still struggles. If compute time is more limited, it may be better to collect a larger set of annotations before retraining and therefore use fewer iterations.
 
 **Can I use other annotation methods or software?**
-Yes. Other annotation methods and software can also be used, and for some types of data or structures they may even be more suitable. However, use them carefully and make sure they do not introduce systematic biases, for example by favoring certain object sizes, shapes, or easier cases. The annotations should remain representative, consistent, and follow the same class definitions and labeling rules throughout the dataset. Use the same annotation method for all annotations of one class: different methods produce different boundaries (e.g. a nnInteractive mask vs. hand-drawn scribbles), and mixing them within a class makes its labels inconsistent. Save such labels directly in `labelsTr`, with the same filename as the image but without the `_0000` postfix, and with the original label IDs from `dataset.json` (Ignore for every unlabeled voxel).
+Yes. Other annotation methods and software can also be used, and for some types of data or structures they may even be more suitable. However, use them carefully and make sure they do not introduce systematic biases, for example by favoring certain object sizes, shapes, or easier cases. The annotations should remain representative, consistent, and follow the same class definitions and labeling rules throughout the dataset. Use the same annotation method for all annotations of one class: different methods produce different boundaries (e.g. a nnInteractive mask vs. hand-drawn scribbles), and mixing them within a class makes its labels inconsistent. Save such labels directly in `labelsTr`, with the same filename as the image but without the `_0000` postfix, and with the original label IDs from `dataset.json` (for sparse labels, Ignore for every unlabeled voxel).
 
 **Reference:** Isensee, F.\*, Rokuss, M.\*, Krämer, L.\*, Dinkelacker, S., Ravindran, A., Stritzke, F., Hamm, B., Wald, T., Langenberg, M., Ulrich, C., Deissler, J., Floca, R., & Maier-Hein, K. (2025). nnInteractive: Redefining 3D Promptable Segmentation. (\*: equal contribution)
 

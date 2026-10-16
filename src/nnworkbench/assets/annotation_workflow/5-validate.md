@@ -10,8 +10,8 @@ nnUNet_results/
     └── nnUNetTrainerBetterIgnoreSampling__nnUNetResEncUNetLPlans__3d_fullres/
         ├── fold_0/
         │   └── validation/
-        │       ├── <case_1>
-        │       ├── <case_2>
+        │       ├── cells_003.nii.gz
+        │       ├── cells_008.nii.gz
         │       ├── ...
         │       └── summary.json
         ├── fold_1/
@@ -28,7 +28,7 @@ When using cross-validation, repeat this review for all folds. Each image is use
 
 Open each validation prediction together with its image and your labels from `labelsTr`, overlay them, and compare the prediction with your labels.
 
-**In nnWorkbench:** On the **Validate** page, click a finished fold of a model, then the magnifier button (**Open in Napari**) next to a case. Napari opens the image, your labels and the prediction together.
+**In nnWorkbench:** On the **Validate** page, click a finished fold of a model in the **Models** table. The **Cases** table lists its validation cases with their **Dice** and **Weakest class**; click **Dice** to sort the weakest cases first. The magnifier button (**Open in Napari**) next to a case opens the image, your labels and the prediction together.
 
 ## What to Look For
 
@@ -40,7 +40,7 @@ Open each validation prediction together with its image and your labels from `la
 
 The `summary.json` file contains validation metrics for each case and class, together with average values across the validation set. The most common metric is the Dice score, which measures the overlap between prediction and labels (0 = no overlap, 1 = perfect). These values are useful for tracking progress and comparing training runs.
 
-**In nnWorkbench:** On the **Validate** page, click a fold: the mean Dice per class is shown above the cases, and the right panel shows the `summary.json` values of the fold or of the selected case.
+**In nnWorkbench:** On the **Validate** page, the right panel shows the **Mean Dice** of the selected model over its folds (fold `all` excluded), the **Dice per fold** and the **Dice per class**. Click a case to see its values from `summary.json`.
 
 ## Next Step
 
@@ -86,7 +86,7 @@ Create a new dataset for each round. The previous dataset and its trained model 
    - Add new images to `imagesTr` and annotate them if the errors occur in image types that are underrepresented, e.g. noisy images or one imaging session.
 3. **Train again:** update `numTraining` in `dataset.json` if you added images, then preprocess and train the new dataset as described in [4. Train](4-train.md).
 
-**In nnWorkbench:** On the overview, select the dataset and click **＋ New iteration** (shown with the Annotation Workflow). nnWorkbench suggests the next free dataset ID and a name ending in `_iter1` (then `_iter2`, …), and copies `imagesTr`, `labelsTr` and `dataset.json` into the new dataset. In the new dataset, use the pencil button (**Annotate**) to extend existing annotations and to annotate newly added images, then preprocess and train.
+**In nnWorkbench:** On the overview, select the dataset and click **＋ New iteration** (shown with the Annotation Workflow). The **Source dataset** is the selected dataset and can be changed; nnWorkbench suggests the next free **Dataset ID** and a **Name** ending in `_iter1` (then `_iter2`, …), and copies `imagesTr`, `labelsTr` and `dataset.json` into the new dataset. In the new dataset, use the pencil button (**Annotate**) to extend existing annotations and to annotate newly added images, then preprocess and train.
 
 ---
 

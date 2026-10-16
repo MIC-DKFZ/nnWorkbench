@@ -21,6 +21,8 @@ This guide explains how to train and apply nnU-Net segmentation models with nnWo
 
 In the Annotation Workflow, stages 3 to 5 form a loop: based on the validation results, either return to Stage 3 for another annotation round or continue to Stage 6.
 
+**In nnWorkbench:** The stages map to the pages of a dataset: Setup to the overview and the **Data** page, 3. Annotate to the pencil button (**Annotate**) on the **Data** page, 4. Train to the **Preprocess** and **Train** pages, 5. Validate to **Validate** and 6. Predict to **Predict**. 1. Describe and 2. Define happen outside the app. The icon on each page tab shows its state: green ✓ done, orange ring ready to run (or running), orange ! outdated, red ! must be fixed; hover over a tab for the reason. **More in the guide ›** at the bottom of each page opens the matching section of this guide.
+
 ## What You Need
 
 ### Both Workflows
@@ -31,7 +33,7 @@ In the Annotation Workflow, stages 3 to 5 form a loop: based on the validation r
 
 **Access to a GPU.** Training nnU-Net needs a GPU with 8 to 40 GB of memory, depending on the model size (24 GB for the recommended setup, see [Planners and GPU Memory](4-train.md#planners-and-gpu-memory)). The GPU does not have to be in your local machine: training can also run on a remote machine or cluster, while you work locally in nnWorkbench.
 
-**Time.** Each training run takes several hours up to about a day.
+**Time.** Training one fold takes hours to days, depending on the planner and the GPU (see [Planners and GPU Memory](4-train.md#planners-and-gpu-memory)).
 
 ### nnU-Net Workflow
 

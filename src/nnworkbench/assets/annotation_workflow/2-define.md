@@ -11,6 +11,18 @@ Decide first how completely you want to label your images:
 
 Sparse labeling is the default in this workflow. It needs much less effort per image, so you can spread your annotations over many different images and cover more of the variability in your data. Dense labeling only makes sense if each image contains very few objects, for example a single liver in an abdominal CT, and these can be labeled quickly, e.g. in 2D or with nnInteractive. It is also an option if complete labels already exist.
 
+**How nnWorkbench tells them apart:** only by the `ignore` class in `dataset.json`.
+
+| | Sparse labels | Dense labels |
+| --- | --- | --- |
+| `ignore` class in `dataset.json` | **yes**, with the highest ID | **no** |
+| Unlabeled voxels | Ignore: not used for training | not allowed: every voxel needs a class |
+| A new, empty annotation starts as | Ignore (nothing labeled yet) | Background |
+| Annotation IDs while annotating | shifted by one (see [Annotation IDs](3-annotate.md#annotation-ids)) | the same as in `dataset.json` |
+| Preselected trainer | `nnUNetTrainerBetterIgnoreSampling` | `nnUNetTrainer` |
+
+Both work in the Annotation Workflow: for example, sparse scribbles and a few nnInteractive objects for cells, or a dense mask of a single organ segmented with nnInteractive.
+
 ## Class Definitions
 
 Define all classes required for the segmentation task and assign each class a unique ID. Use continuous numbering starting at 0.
@@ -21,13 +33,13 @@ Define all classes required for the segmentation task and assign each class a un
 | 1 | *First class* |
 | 2 | *Second class* |
 | … | … |
-| last | Ignore |
+| last | Ignore *(sparse labels only)* |
 
 > **Note:** Background is a class and must be explicitly defined and labeled.
 
-> **Note:** Ignore is always required and must have the highest ID. It refers to all voxels that are not labeled and for which we provide no information to the model. With dense labeling, it simply stays unused.
+> **Note:** For sparse labeling, Ignore is required and must have the highest ID. It refers to all voxels that are not labeled and for which we provide no information to the model. For dense labeling, leave Ignore out: nnWorkbench then treats the labels as dense, starts an empty annotation as background and preselects nnU-Net's default trainer.
 
-These are the IDs stored in [`dataset.json`](setup.md#create-datasetjson). While annotating, they are shifted by one so that unlabeled voxels (Ignore) can be 0; see [Annotation IDs](3-annotate.md#annotation-ids).
+These are the IDs stored in [`dataset.json`](setup.md#create-datasetjson). With sparse labels, they are shifted by one while annotating so that unlabeled voxels (Ignore) can be 0; see [Annotation IDs](3-annotate.md#annotation-ids).
 
 ## Class Descriptions
 

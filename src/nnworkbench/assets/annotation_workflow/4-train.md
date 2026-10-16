@@ -27,8 +27,8 @@ Training uses the images in `imagesTr` and the labels in `labelsTr` (see [Setup]
 Images end in a channel postfix, labels do not. Most images have one channel (`_0000`); further channels are stored as separate files (`_0001`, …) and listed in `channel_names` in `dataset.json`.
 
 ```text
-imagesTr:  Case001_0000.nii.gz  (+ Case001_0001.nii.gz, … for more channels)
-labelsTr:  Case001.nii.gz
+imagesTr:  cells_001_0000.nii.gz  (+ cells_001_0001.nii.gz, … for more channels)
+labelsTr:  cells_001.nii.gz
 ```
 
 **In nnWorkbench:** The **Data** page marks images without a label with a red ✗ and checks the file names and channels.
@@ -41,7 +41,7 @@ Open a few images together with their labels in a viewer such as Napari and chec
 nnworkbench-run inspect -d 42
 ```
 
-**In nnWorkbench:** On the **Data** page, click the magnifier button (**Open in Napari**) next to a case. Napari opens the image together with its label.
+**In nnWorkbench:** On the **Data** page, click the magnifier button (**Open in Napari**) next to a case. Napari opens the image together with its label; **Previous (A)** and **Next (D)** step through the cases.
 
 ### 3. Analyze the Labels (Optional)
 
@@ -62,12 +62,13 @@ nnworkbench-run nnUNetv2_plan_and_preprocess -d 42 -c 3d_fullres \
     -pl nnUNetPlannerResEncL --verify_dataset_integrity
 ```
 
-**In nnWorkbench:** On the **Preprocess** page, click **▶ Preprocess…**, choose a planner and the configurations, then click **▶ Preprocess** (see [Planners and GPU Memory](#planners-and-gpu-memory)).
+**In nnWorkbench:** On the **Preprocess** page, click **▶ Preprocess…**, choose the **Planner** and the **Configurations**, then click **▶ Preprocess** (see [Planners and GPU Memory](#planners-and-gpu-memory)). **Processes** sets how many cases are preprocessed in parallel (fewer use less RAM), and **Verify dataset integrity** checks the dataset first. Afterwards, the **Plans** table lists every preprocessed plans and configuration; select one to see its details, open preprocessed cases in Napari with the magnifier button, or click **↻ Run again…**, e.g. after the labels changed (the plans are then marked *outdated*).
 
-nnU-Net offers different model configurations. Two are relevant here:
+nnU-Net offers different model configurations:
 
 - **`2d`:** The model looks at one 2D slice at a time. Use it for 2D images, and for 3D data with only few, thick slices.
 - **`3d_fullres`:** The model looks at 3D blocks of the volume at full resolution, so it also sees the context above and below a slice. Use it for 3D data; this is usually the best choice.
+- **`3d_lowres`:** The model looks at a downsampled version of the volume. Only useful for very large images, where `3d_fullres` sees too little context.
 
 ### 5. Train the Model
 
@@ -95,13 +96,19 @@ nnworkbench-run nnUNetv2_train 42 3d_fullres 0 \
 
 To train a single model on all images instead, use fold `all` in place of `0`.
 
-**In nnWorkbench:** On the **Train** page, click **▶ Train…** and choose the plans (e.g. `nnUNetResEncUNetLPlans`), the configuration, the trainer and one fold, then click **▶ Train**. `nnUNetTrainer` is preselected; with an `ignore` label in `dataset.json`, `nnUNetTrainerBetterIgnoreSampling` is preselected instead.
+**In nnWorkbench:** On the **Train** page, click **▶ Train…** and choose the **Trainer**, the **Plans** (e.g. `nnUNetResEncUNetLPlans`), the **Configuration** and the **Folds**, then click **▶ Train**. Several folds train one after another; at least one fold stays selected. `nnUNetTrainer` is preselected; with an `ignore` label in `dataset.json` (sparse labels), `nnUNetTrainerBetterIgnoreSampling` is preselected instead. **Device** chooses where the training runs (see [Device](#device-gpu-or-cpu)).
 
 ### 6. Follow the Training
 
-Training runs unattended and can take hours. nnU-Net writes a log and a `progress.png` plot of the training curves into each fold folder in `nnUNet_results`.
+Training runs unattended and takes hours to days per fold (see [Planners and GPU Memory](#planners-and-gpu-memory)). nnU-Net writes a log and a `progress.png` plot of the training curves into each fold folder in `nnUNet_results`. `nnworkbench-run status -d 42` shows the state of all folds in a terminal.
 
-**In nnWorkbench:** The **Train** page lists every model with its folds and shows the current epoch and pseudo Dice of a running fold. The console at the bottom shows the training output.
+**In nnWorkbench:** The **Models** table on the **Train** page lists every model with its **Mean Dice** and **Folds**; click a model to see its folds with **Status**, **Epoch**, **Dice** and **Pseudo Dice**. The status of a fold is *done*, *training* (its log was updated in the last 15 minutes), *stopped* (can be continued) or *final checkpoint only* (a shared model). Select a fold for its details and actions:
+
+- **▶ Continue…** resumes a stopped fold from its latest checkpoint (`--c`).
+- **↻ Run again…** trains the fold again from the start with the same settings.
+- **▶ Next fold…** trains the next missing fold of this model with the same settings.
+
+The console at the bottom shows the training output. Closing nnWorkbench stops a running training; resume it later with **▶ Continue…**.
 
 ## Options Explained
 
@@ -113,8 +120,8 @@ The planner decides how large the network is, and therefore how much GPU memory 
 
 | Planner (`-pl`) | Plans (`-p`) | GPU memory | Training time* |
 | --- | --- | --- | --- |
-| `ExperimentPlanner` | `nnUNetPlans` | 8 GB | ~9 h |
-| `nnUNetPlannerResEncM` | `nnUNetResEncUNetMPlans` | 9 GB | ~12 h |
+| `ExperimentPlanner` | `nnUNetPlans` | ~8 GB | ~9 h |
+| `nnUNetPlannerResEncM` | `nnUNetResEncUNetMPlans` | 9–11 GB | ~12 h |
 | **`nnUNetPlannerResEncL`** *(recommended)* | **`nnUNetResEncUNetLPlans`** | 24 GB | ~35 h |
 | `nnUNetPlannerResEncXL` | `nnUNetResEncUNetXLPlans` | 40 GB | ~66 h |
 
@@ -134,8 +141,8 @@ If **Info** shows `CPU only` although your computer has an NVIDIA GPU, PyTorch w
 
 The trainer defines how the model is trained. Which one to use depends on your labels:
 
-- **nnU-Net Workflow:** nnU-Net's default `nnUNetTrainer`, for complete labels.
-- **Annotation Workflow:** **`nnUNetTrainerBetterIgnoreSampling`**, which is bundled with nnWorkbench and made for sparse labels. During training, nnU-Net cuts small blocks (patches) out of your images. This trainer places the annotated structures at varying positions within these patches instead of always centering them, which gives the model more varied examples and reduces errors near patch borders.
+- **Dense labels** (nnU-Net Workflow): nnU-Net's default `nnUNetTrainer`, for complete labels.
+- **Sparse labels** (Annotation Workflow): **`nnUNetTrainerBetterIgnoreSampling`**, which is bundled with nnWorkbench and made for sparse labels. Dense labels created in the Annotation Workflow use `nnUNetTrainer`. During training, nnU-Net cuts small blocks (patches) out of your images. This trainer places the annotated structures at varying positions within these patches instead of always centering them, which gives the model more varied examples and reduces errors near patch borders.
 
 The `nnUNetTrainerBetterIgnoreSampling` variants below differ only in *data augmentation*: random changes such as rotations, scaling or mirroring that nnU-Net applies to the images during training so the model sees more variation. Keep the default unless you have a reason to change it:
 
@@ -152,7 +159,10 @@ By default, nnU-Net uses *5-fold cross-validation*: the training images are spli
 
 Alternatively, fold `all` trains a single model on all images. Its validation predictions are made on the training images, so they are only useful for inspection, not for scores (see [5. Validate](5-validate.md)).
 
-**Reference:** Isensee, F., Jaeger, P. F., Kohl, S. A., Petersen, J., & Maier-Hein, K. H. (2021). nnU-Net: a self-configuring method for deep learning-based biomedical image segmentation. *Nature Methods*, 18(2), 203–211.
+**References:**
+
+- Isensee, F., Jaeger, P. F., Kohl, S. A., Petersen, J., & Maier-Hein, K. H. (2021). nnU-Net: a self-configuring method for deep learning-based biomedical image segmentation. *Nature Methods*, 18(2), 203–211.
+- Isensee, F., Wald, T., Ulrich, C., Baumgartner, M., Roy, S., Maier-Hein, K., & Jaeger, P. F. (2024). nnU-Net Revisited: A Call for Rigorous Validation in 3D Medical Image Segmentation. MICCAI 2024. (the residual encoder planners)
 
 ---
 

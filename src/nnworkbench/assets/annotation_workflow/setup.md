@@ -32,7 +32,7 @@ To train on a remote machine or cluster, see [Work with a Remote Machine](#work-
 
 If your computer has no suitable GPU, you can keep working in nnWorkbench on your computer (annotating, validating, inspecting) and run the GPU-heavy commands, training and prediction, on a remote machine or cluster.
 
-**Set up the remote machine once:** Install the lightweight remote version of nnWorkbench there (see the nnWorkbench README) and save the remote folder paths:
+**Set up the remote machine once:** Install the core installation of nnWorkbench there, without the GUI (see *Remote machines and clusters* in the nnWorkbench README) and save the remote folder paths:
 
 ```bash
 nnworkbench-set-paths --raw /remote/path/to/nnUNet_raw \
@@ -42,7 +42,7 @@ nnworkbench-set-paths --raw /remote/path/to/nnUNet_raw \
 
 **In nnWorkbench:** On the overview, click **＋ Add remote profile**, enter the remote paths, and click **Export** to copy this command.
 
-**Run commands:** In the nnWorkbench dialogs, click **Copy command** and run the command in a terminal on the remote machine. The `nnworkbench-run` prefix makes it use the remote paths.
+**Run commands:** In the nnWorkbench dialogs, click **Copy command** and run the command in a terminal on the remote machine. The `nnworkbench-run` prefix makes it use the remote paths. `nnworkbench-run status -d 42` shows there what is done and what is next for a dataset, like the page tabs in nnWorkbench.
 
 **Sync the folders:** If your computer and the remote machine do not share the same storage, copy the dataset's folders (e.g. `Dataset042_CellSegmentation`) before and after each command. Each command only needs some of them:
 
@@ -54,7 +54,7 @@ nnworkbench-set-paths --raw /remote/path/to/nnUNet_raw \
 
 - Preprocessing needs no GPU. You can run it on your computer and copy only `nnUNet_preprocessed` to the remote machine; `nnUNet_raw` is not needed there for training.
 - Copy `nnUNet_results` back to your computer after training, so you can review the results in [5. Validate](5-validate.md).
-- Keep `nnUNet_raw` on your computer: annotating, converting and inspecting need it.
+- Keep `nnUNet_raw` on your computer: annotating and inspecting need it.
 
 nnInteractive can also run on a remote GPU; see the [napari-nninteractive documentation](https://github.com/MIC-DKFZ/napari-nninteractive).
 
@@ -65,14 +65,14 @@ Each dataset is a folder in `nnUNet_raw` named `DatasetXXX_DatasetName`, where X
 ```text
 nnUNet_raw/
 └── Dataset042_CellSegmentation/
-    ├── imagesTr/                # Training images
-    │   ├── Case001_0000.nii.gz  # _0000 = channel 0 (more channels: _0001, …)
+    ├── imagesTr/                  # Training images
+    │   ├── cells_001_0000.nii.gz  # _0000 = channel 0 (more channels: _0001, …)
     │   └── ...
-    ├── labelsTr/                # Training labels, one per image
-    │   ├── Case001.nii.gz
+    ├── labelsTr/                  # Training labels, one per image
+    │   ├── cells_001.nii.gz
     │   └── ...
-    ├── imagesTs/                # Optional: images to predict later
-    └── dataset.json             # Describes channels, classes and file format
+    ├── imagesTs/                  # Optional: images to predict later
+    └── dataset.json               # Describes channels, classes and file format
 ```
 
 **Annotation Workflow:** In nnWorkbench you annotate the labels in `labelsTr` directly; nnWorkbench converts between the annotation IDs used in Napari and the label IDs nnU-Net needs when it loads and saves a case (see [Annotation IDs](3-annotate.md#annotation-ids)).
@@ -104,17 +104,17 @@ The `dataset.json` file describes the channels, the classes and the file format;
         "nucleus": 2,
         "ignore": 3
     },
-    "numTraining": 20,
+    "numTraining": 40,
     "file_ending": ".nii.gz"
 }
 ```
 
 - **`labels`:** Class IDs start at 0 for the background and are numbered continuously.
-  - **Annotation Workflow:** Use the classes from [2. Define](2-define.md). The `ignore` class is required and must have the highest ID.
+  - **Annotation Workflow:** Use the classes from [2. Define](2-define.md). For sparse labels, add an `ignore` class with the highest ID; without it, the labels are dense (see [Dense or Sparse Labeling](2-define.md#dense-or-sparse-labeling)).
   - **nnU-Net Workflow:** Use the IDs in your label files. Add `ignore` only if some voxels are not labeled.
-- **`numTraining`:** The number of cases in `labelsTr`.
+- **`numTraining`:** The number of training cases, i.e. images in `imagesTr`.
 
-**In nnWorkbench:** **＋ New dataset** creates a `dataset.json` template. Fill it in with **Edit** on the **Data** page: the keys are fixed, and you can change the values, rename and renumber labels and channels, and add or remove them. Saving checks for missing names, non-continuous IDs and an `ignore` label that is not the highest ID.
+**In nnWorkbench:** **＋ New dataset** creates a `dataset.json` template. Fill it in with **Edit** on the **Data** page: the keys are fixed, and you can change the values, rename and renumber labels and channels, and add or remove them. Saving checks for missing names, non-continuous IDs and an `ignore` label that is not the highest ID; if `numTraining` does not match `imagesTr`, **Set to …** corrects it.
 
 ## Prepare Your Images (Optional)
 
@@ -131,13 +131,15 @@ JPEG is not supported because its lossy compression alters the images.
 nnworkbench-run stack-images /path/to/slices --file-type .tif --spacing 1.0 1.0 1.0
 ```
 
-`--spacing` is the voxel size in X Y Z; use your real acquisition values. The result is saved next to the folder; rename it to `CaseXXX_0000.nii.gz` and move it into `imagesTr`.
+`--spacing` is the voxel size in X Y Z; use your real acquisition values. The result is saved next to the folder; rename it like the other cases, e.g. `cells_041_0000.nii.gz`, and move it into `imagesTr`.
 
 **Custom preprocessing** such as cropping or downsampling can be done with your usual tools (e.g. Fiji/ImageJ or Python). Apply it identically to all training images and to every image you predict later. Do not normalize intensities; nnU-Net does this itself.
 
 ## Commands and Console
 
-The preprocessing, training and prediction dialogs in nnWorkbench all offer **Copy command** and run exactly the displayed command. Use **Additional arguments** for further nnU-Net options, e.g. `--np 8`. Only one command runs at a time; its output appears in the console at the bottom and in the terminal that started nnWorkbench. Use **Terminate command** to stop it.
+The preprocessing, training and prediction dialogs in nnWorkbench all offer **Copy command** and run exactly the displayed command. Common options have their own fields (e.g. **Processes**, **Device**); use **Additional arguments** for further nnU-Net options, e.g. `--npz` for training. Only one command runs at a time; its output appears in the **Console** at the bottom (**▴ Expand** shows the full output, **Copy output** copies it) and in the terminal that started nnWorkbench. Use **■ Terminate** to stop it. Closing nnWorkbench also stops a running command.
+
+**⚙ Settings** (top right) sets the worker processes for **Compute statistics** and how many neighbouring cases Napari loads in advance (**Previous cases**, **Next cases**, **Prefetch radius**).
 
 ---
 
