@@ -17,6 +17,7 @@
   <a href="#installation"><b>Installation</b></a> ·
   <a href="#quick-start"><b>Quick start</b></a> ·
   <a href="#cli-overview"><b>CLI</b></a> ·
+  <a href="#work-with-an-ai-agent"><b>AI agents</b></a> ·
   <a href="#qa"><b>Q&amp;A</b></a> ·
   <a href="#documentation"><b>Documentation</b></a> ·
   <a href="#citation"><b>Citation</b></a> ·
@@ -177,11 +178,31 @@ These use the recommended `nnUNetPlannerResEncL`, which the GUI also preselects.
 It also provides the following dataset tools:
 
 ```bash
-# Show what is done and what is next for a dataset (the stage states of the GUI; add --json for scripts)
+# Create a dataset with imagesTr, labelsTr and dataset.json (add --ignore for sparse labels)
+nnworkbench-run create-dataset -d 42 --name CellSegmentation --labels background,cell,nucleus --ignore --channels fluorescence
+
+# Show what is done and what is next for a dataset, and the device (GPU / MPS / CPU) (add --json for scripts)
 nnworkbench-run status -d 42
 
-# Open a dataset's images and labels in Napari, starting at the 12th image
-nnworkbench-run inspect -d 42 -i 12
+# The command the GUI would prefill for preprocess, train or predict, and why each option was chosen
+nnworkbench-run suggest -d 42 --step train
+
+# Validation results: Dice per fold and class, and the weakest cases first (as the Validate page; add --json)
+nnworkbench-run validation -d 42
+# ... and open a validation case in Napari: image, label and prediction
+nnworkbench-run validation -d 42 --open cells_017
+
+# Open predictions with their input images in Napari
+nnworkbench-run inspect-predictions /path/to/output --images /path/to/input
+
+# Start the next annotation round: copy images, labels and dataset.json into a new dataset
+nnworkbench-run new-iteration -d 42
+
+# Open a dataset's images and labels in Napari, starting at a case (or -i 12 for the 12th image)
+nnworkbench-run inspect -d 42 --case cells_012
+
+# Annotate a case in Napari with nnInteractive (as the pencil in the GUI; saves to labelsTr)
+nnworkbench-run annotate -d 42 --case cells_012
 
 # Compute statistics (as on the Data page): classes per image and voxels per class, from labelsTr
 nnworkbench-run compute-statistics -d 42 --workers 4
@@ -190,10 +211,19 @@ nnworkbench-run compute-statistics -d 42 --workers 4
 nnworkbench-run stack-images /path/to/image_slices --file-type .tif --spacing 1 1 1
 
 # Remove everything a trained model folder does not need for prediction, e.g. before sharing (in place, cannot be undone)
-nnworkbench-run reduce-checkpoints /path/to/nnUNet_results/Dataset042_CellSegmentation/MODEL_FOLDER
+nnworkbench-run reduce-checkpoints /path/to/nnUNet_results/Dataset042_CellSegmentation/MODEL_FOLDER --yes
 ```
 
-`-d` (or `--dataset`) specifies the numeric nnU-Net dataset ID under the saved `nnUNet_raw` path. For example, use `-d 42` for `Dataset042_CellSegmentation`. Run `nnworkbench-get-paths` to view the saved path configuration, and add `--help` to any tool to see all its options.
+Add `--json` to any tool that returns a result for machine-readable output, e.g. for scripts or agents. Steps that cannot be undone ask for confirmation: `reduce-checkpoints` and training a fold that already has results need `--yes`; add `--dry-run` to see what would happen without changing anything. `-d` (or `--dataset`) specifies the numeric nnU-Net dataset ID under the saved `nnUNet_raw` path. For example, use `-d 42` for `Dataset042_CellSegmentation`. Run `nnworkbench-get-paths` to view the saved path configuration, and add `--help` to any tool to see all its options.
+
+## Work with an AI agent
+
+nnWorkbench is ready for AI coding agents such as Claude Code or Codex. Open the repository (or your working folder with it) in
+the agent and describe your goal, e.g. *"Help me train a model that segments the nuclei in my microscopy images in
+/data/images."* The agent follows [AGENTS.md](AGENTS.md): it asks about your images and labels in plain words, sets
+up the dataset, runs preprocessing and training, and summarises the results. You do what needs your eyes and
+expertise: it opens the images for you to annotate and the predictions for you to check, and continues when you are
+done.
 
 ## Q&A
 
@@ -214,7 +244,7 @@ Yes. nnWorkbench works directly on the standard nnU-Net folders: choose your exi
 <details>
 <summary><b>Are my data and trained models still compatible with nnU-Net?</b></summary>
 
-Yes. Datasets, preprocessed data and models stay in the standard nnU-Net folders and formats, and every step runs a regular nnU-Net command, so you can continue with nnU-Net alone at any time. Models trained with the bundled `nnUNetTrainerBetterIgnoreSampling` need this trainer for prediction: use `nnworkbench-run nnUNetv2_predict …`, or make the model usable with plain nnU-Net via `nnworkbench-run reduce-checkpoints MODEL_FOLDER --reset-trainer-name`, which removes what prediction does not need and sets the trainer to `nnUNetTrainer`.
+Yes. Datasets, preprocessed data and models stay in the standard nnU-Net folders and formats, and every step runs a regular nnU-Net command, so you can continue with nnU-Net alone at any time. Models trained with the bundled `nnUNetTrainerBetterIgnoreSampling` need this trainer for prediction: use `nnworkbench-run nnUNetv2_predict …`, or make the model usable with plain nnU-Net via `nnworkbench-run reduce-checkpoints MODEL_FOLDER --reset-trainer-name --yes`, which removes what prediction does not need and sets the trainer to `nnUNetTrainer`.
 
 </details>
 
@@ -263,6 +293,8 @@ The **[nnWorkbench guide](src/nnworkbench/assets/annotation_workflow/README.md)*
 - **[4. Train](src/nnworkbench/assets/annotation_workflow/4-train.md):** preprocessing, planners and GPU memory, trainers, folds and device.
 - **[5. Validate](src/nnworkbench/assets/annotation_workflow/5-validate.md):** inspecting predictions, metrics, typical errors and the next annotation round.
 - **[6. Predict](src/nnworkbench/assets/annotation_workflow/6-predict.md):** applying and sharing a trained model.
+
+**For AI agents:** [AGENTS.md](AGENTS.md) guides an agent (e.g. Claude Code or Codex) through the whole process with CLI commands, and tells it where you take over (annotating, looking at results).
 
 **Underlying tools:**
 
