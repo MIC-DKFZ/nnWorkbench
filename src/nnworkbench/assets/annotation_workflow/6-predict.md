@@ -54,7 +54,8 @@ The output folder contains one segmentation file for each input case. Review the
 A trained model folder contains much more than prediction needs. To share a model with colleagues, reduce it first:
 
 ```bash
-nnworkbench-run reduce-checkpoints MODEL_FOLDER
+nnworkbench-run reduce-checkpoints MODEL_FOLDER --dry-run   # shows what would be changed
+nnworkbench-run reduce-checkpoints MODEL_FOLDER --yes       # reduces the model
 ```
 
 `MODEL_FOLDER` is the trained model's folder in `nnUNet_results`, named after trainer, plans and configuration, e.g. `Dataset042_CellSegmentation/nnUNetTrainerBetterIgnoreSampling__nnUNetResEncUNetLPlans__3d_fullres`.

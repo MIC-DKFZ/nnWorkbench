@@ -15,6 +15,14 @@ from qtpy.QtWidgets import (
 )
 
 from nnworkbench.services.commands import training_command
+from nnworkbench.services.defaults import (
+    DENSE_TRAINER,
+    SPARSE_TRAINER,
+    default_configuration,
+    default_plans,
+    next_fold,
+    trainer_for,
+)
 from nnworkbench.services.device_probe import (
     DEVICE_CHOICES,
     default_choice,
@@ -64,10 +72,6 @@ from .common import (
     models_table,
     size_models_table,
 )
-
-SPARSE_TRAINER = "nnUNetTrainerBetterIgnoreSampling"
-DENSE_TRAINER = "nnUNetTrainer"
-DEFAULT_PLANS = "nnUNetResEncUNetLPlans"  # written by the default planner (nnUNetPlannerResEncL)
 
 
 def _howto() -> HowToCard:
@@ -224,13 +228,11 @@ class TrainStage(StagePage):
         """▶ Train… in the header: always the defaults, independent of the selected model."""
         if self.state is None:
             return
-        trainer = SPARSE_TRAINER if self.state.sparse else DENSE_TRAINER
-        names = [plans.name for plans in self.state.plans]  # only plans that exist in nnUNet_preprocessed
-        plans = DEFAULT_PLANS if DEFAULT_PLANS in names else (names[0] if names else "")
+        trainer = trainer_for(self.state.sparse)
+        plans = default_plans(plans.name for plans in self.state.plans)  # only plans in nnUNet_preprocessed
         self._plans.setCurrentText(plans)  # refreshes the configurations of these plans
-        configurations = [self._configuration.itemText(index) for index in range(self._configuration.count())]
-        configuration = "3d_fullres" if "3d_fullres" in configurations else (configurations[0] if configurations
-                                                                              else "")
+        configuration = default_configuration(self._configuration.itemText(index)
+                                              for index in range(self._configuration.count()))
         model = next((item for item in self.state.models if (item.trainer, item.plans, item.configuration)
                       == (trainer, plans, configuration)), None)
         self._fill_form(trainer, plans, configuration, self._free_fold(model) or "0", False)
@@ -255,9 +257,7 @@ class TrainStage(StagePage):
         """First fold of splits_final.json (then all) that this model has not trained yet."""
         if self.state is None:
             return None
-        existing = {fold.name for fold in model.folds} if model else set()
-        folds = [str(index) for index in range(self.state.fold_count)] + ["all"]
-        return next((fold for fold in folds if fold not in existing), None)
+        return next_fold(self.state.fold_count, (fold.name for fold in model.folds) if model else ())
 
     def _build_panel(self) -> QWidget:
         panel = Card()
@@ -526,7 +526,7 @@ class TrainStage(StagePage):
 
     def _update_trainer_hint(self) -> None:
         sparse = bool(self.state and self.state.sparse)
-        default = self._trainer.currentText() == (SPARSE_TRAINER if sparse else DENSE_TRAINER)
+        default = self._trainer.currentText() == trainer_for(sparse)
         self._trainer_hint.setText(("default, because dataset.json has an ignore label (sparse labels)" if sparse
                                     else "default for dense labels") if default else "")
         self._trainer_hint.setVisible(default)

@@ -17,6 +17,7 @@ from qtpy.QtWidgets import (
 )
 
 from nnworkbench.services.commands import prediction_command
+from nnworkbench.services.defaults import PREDICTION_PROCESSES, prediction_folds
 from nnworkbench.services.device_probe import (
     DEVICE_CHOICES,
     default_choice,
@@ -155,7 +156,7 @@ class PredictStage(StagePage):
         self._continue.toggled.connect(self._update_command)
         self._continue_hint = form_hint("")
         # Processes for preprocessing (-npp) and segmentation export (-nps); nnU-Net's default is 3 each.
-        self._npp, self._nps = NumberField(1, 99, 3), NumberField(1, 99, 3)
+        self._npp, self._nps = NumberField(1, 99, PREDICTION_PROCESSES), NumberField(1, 99, PREDICTION_PROCESSES)
         processes = QWidget()
         processes_grid = QGridLayout(processes)  # under each other: side by side is too wide for the panel
         processes_grid.setContentsMargins(0, 0, 0, 0)
@@ -165,7 +166,7 @@ class PredictStage(StagePage):
                   (self._nps, "export", "-nps: processes for writing the segmentations")]
         for row, (field, name, purpose) in enumerate(fields):
             field.setRange(1, max(1, os.cpu_count() or 1))
-            field.setValue(3)
+            field.setValue(PREDICTION_PROCESSES)
             field.setFixedWidth(60)
             field.setToolTip(purpose)
             field.valueChanged.connect(self._update_command)
@@ -269,9 +270,7 @@ class PredictStage(StagePage):
         self._model_name.setText(breakable(f"{model.trainer}\n{model.plans} · {model.configuration}") if model
                                  else "No model with a finished fold yet")
         finished = [fold.name for fold in model.finished_folds] if model else []
-        # Default: the cross-validation folds; fold "all" only when it is the only finished fold.
-        default = [name for name in finished if name != "all"] or finished
-        self._folds.set_options(finished, selected=default)
+        self._folds.set_options(finished, selected=prediction_folds(finished))  # same default as `suggest`
         running = [fold.name for fold in model.folds if not fold.finished] if model else []
         self._folds_hint.setText("finished folds of this model" + (
             f" · fold {', '.join(running)} {'is' if len(running) == 1 else 'are'} not finished" if running else ""))

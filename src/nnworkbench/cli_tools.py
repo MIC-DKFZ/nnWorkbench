@@ -1,0 +1,284 @@
+"""`nnworkbench-run create-dataset / new-iteration / validation`: the GUI's dataset steps for terminals and agents.
+
+Qt-free, so they also work in the core installation (e.g. on a cluster).
+"""
+
+from __future__ import annotations
+
+import json
+import shlex
+import sys
+from pathlib import Path
+
+from .json_output import print_json
+from .services.commands import wrapped_command
+from .services.dataset_contents import json_object
+from .services.dataset_creator import (
+    create_dataset,
+    create_next_iteration,
+    next_free_dataset_id,
+    next_iteration_name,
+)
+from .services.dataset_scanner import scan_datasets
+from .services.workflow_status import (
+    label_names,
+    mean_class_dice,
+    models_overview,
+    validation_cases,
+)
+
+
+def _print(value: dict, as_json: bool, text: str) -> None:
+    if as_json:
+        print_json(value)
+        return
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")  # never fail on a console without UTF-8
+    print(text)
+
+
+def _roots_list(roots: dict[str, Path | None]) -> list[Path | None]:
+    return [roots.get("raw"), roots.get("preprocessed"), roots.get("results")]
+
+
+def run_create_dataset(roots: dict[str, Path | None], dataset_id: int, name: str, labels: list[str],
+                       channels: list[str], *, ignore: bool = False, file_ending: str = ".nii.gz",
+                       description: str = "", as_json: bool = False) -> int:
+    """Create ``DatasetXXX_Name`` with imagesTr, labelsTr and a complete dataset.json (as New dataset in the GUI)."""
+    names = [label.strip() for label in labels if label.strip()]
+    if not names or names[0].casefold() != "background":
+        names.insert(0, "background")  # nnU-Net needs background as label 0
+    if any(label.casefold() == "ignore" for label in names):
+        raise ValueError("Use --ignore instead of listing 'ignore' as a label; it must have the highest ID.")
+    if len({label.casefold() for label in names}) != len(names):
+        raise ValueError("Label names must be unique.")
+    channel_names = [channel.strip() for channel in channels if channel.strip()]
+    if not channel_names:
+        raise ValueError("Give at least one channel name, e.g. --channels fluorescence.")
+    destination = create_dataset(roots.get("raw"), _roots_list(roots), dataset_id, name)
+    manifest = {
+        "name": destination.name.split("_", 1)[1],
+        "description": description,
+        "channel_names": {str(index): channel for index, channel in enumerate(channel_names)},
+        "labels": {label: index for index, label in enumerate(names)} | ({"ignore": len(names)} if ignore else {}),
+        "numTraining": 0,
+        "file_ending": file_ending,
+    }
+    (destination / "dataset.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    result = {"dataset": destination.name, "path": str(destination), "dataset_json": manifest}
+    _print(result, as_json, f"Created {destination}\n  labels: "
+           + ", ".join(f"{label} = {value}" for label, value in manifest["labels"].items())
+           + f"\n  channels: {', '.join(channel_names)} · file ending {file_ending}\n"
+           "Copy the images into imagesTr (and labels into labelsTr), then set numTraining "
+           "(nnworkbench-run status shows what is missing).")
+    return 0
+
+
+def run_new_iteration(roots: dict[str, Path | None], source_id: int, dataset_id: int | None = None,
+                      name: str | None = None, *, as_json: bool = False) -> int:
+    """Copy imagesTr, labelsTr and dataset.json of a dataset into the next round (as New iteration in the GUI)."""
+    records = scan_datasets(roots.get("raw"), roots.get("preprocessed"), roots.get("results"))
+    source = next((record for record in records if record.dataset_id == source_id and record.raw_path), None)
+    if source is None:
+        raise ValueError(f"No dataset with ID {source_id} in nnUNet_raw.")
+    new_id = dataset_id or next_free_dataset_id(source_id + 1, _roots_list(roots))
+    new_name = name or next_iteration_name(source.name)
+    destination = create_next_iteration(roots.get("raw"), _roots_list(roots), source.raw_path, new_id, new_name)
+    result = {"source": source.directory_name, "dataset": destination.name, "dataset_id": new_id,
+              "path": str(destination)}
+    _print(result, as_json, f"Created {destination}\n  from {source.directory_name} (images, labels and "
+           "dataset.json). Annotate there, then preprocess and train the new dataset.")
+    return 0
+
+
+def validation_report(roots: dict[str, Path | None], dataset_id: int, model: str = "", fold: str = "") -> dict:
+    """Validation results per model: Dice per fold and class, and every validation case, weakest first."""
+    records = scan_datasets(roots.get("raw"), roots.get("preprocessed"), roots.get("results"))
+    record = next((item for item in records if item.dataset_id == dataset_id), None)
+    if record is None:
+        raise ValueError(f"No dataset with ID {dataset_id} in the saved nnU-Net folders.")
+    manifest = json_object(record.raw_path / "dataset.json") if record.raw_path else None
+    if manifest is None and record.preprocessed_path:
+        manifest = json_object(record.preprocessed_path / "dataset.json")
+    names = label_names(manifest)
+    models = []
+    for info in models_overview(record.results_path):
+        if model and model not in info.label:
+            continue
+        folds, class_values, cases = {}, {}, []
+        for fold_info in info.folds:
+            if fold and fold_info.name != fold:
+                continue
+            summary = json_object(fold_info.path / "validation" / "summary.json")
+            if summary is None:
+                continue
+            folds[fold_info.name] = fold_info.dice
+            if fold_info.name != "all":  # validated on its own training cases: not a validation score
+                for class_name, dice in mean_class_dice(summary, names):
+                    class_values.setdefault(class_name, []).append(dice)
+            for case in validation_cases(summary, names):
+                cases.append({"case": case.case_id, "fold": fold_info.name, "dice": case.mean_dice,
+                              "weakest_class": case.weakest[0] if case.weakest else None,
+                              "weakest_dice": case.weakest[1] if case.weakest else None,
+                              "prediction": case.prediction_file})
+        if not folds:
+            continue
+        cases.sort(key=lambda case: (case["dice"] is None, case["dice"] if case["dice"] is not None else 0))
+        models.append({"model": info.label, "trainer": info.trainer, "plans": info.plans,
+                       "configuration": info.configuration, "mean_dice": info.mean_dice, "folds": folds,
+                       "classes": {name: sum(values) / len(values) for name, values in class_values.items()},
+                       "cases": cases})
+    return {"dataset": record.directory_name, "models": models}
+
+
+def _format_validation(report: dict, limit: int) -> str:
+    lines = [report["dataset"]]
+    if not report["models"]:
+        lines.append("  No validation results yet (train a fold first; nnU-Net validates it at the end).")
+    for model in report["models"]:
+        mean = f"{model['mean_dice']:.3f}" if model["mean_dice"] is not None else "-"
+        lines += ["", f"  {model['model']}   mean Dice {mean} (fold all excluded)"]
+        lines.append("    folds    " + " | ".join(
+            f"{name}: {dice:.3f}" if dice is not None else f"{name}: -" for name, dice in model["folds"].items()))
+        if model["classes"]:
+            lines.append("    classes  " + " | ".join(f"{name}: {dice:.3f}" for name, dice in model["classes"].items()))
+        shown = model["cases"][:limit] if limit else model["cases"]
+        lines.append(f"    weakest cases ({len(shown)} of {len(model['cases'])}):")
+        for case in shown:
+            dice = f"{case['dice']:.3f}" if case["dice"] is not None else "-"
+            weakest = (f"  weakest class {case['weakest_class']} ({case['weakest_dice']:.3f})"
+                       if case["weakest_class"] else "")
+            lines.append(f"      {case['case']:<24} fold {case['fold']:<4} Dice {dice}{weakest}")
+    return "\n".join(lines)
+
+
+def run_validation(roots: dict[str, Path | None], dataset_id: int, *, model: str = "", fold: str = "",
+                   limit: int = 10, as_json: bool = False, open_case: str = "") -> int:
+    report = validation_report(roots, dataset_id, model, fold)
+    if open_case:
+        return _open_validation_case(roots, report, dataset_id, open_case)
+    _print(report, as_json, _format_validation(report, limit))
+    return 0
+
+
+def _open_validation_case(roots: dict[str, Path | None], report: dict, dataset_id: int, case: str) -> int:
+    """Open a validation case in Napari: image, label and the model's prediction (as on the Validate page)."""
+    matches = [(entry, item) for entry in report["models"] for item in entry["cases"] if item["case"] == case]
+    if not matches:
+        raise ValueError(f"No validation result for case '{case}'. Use --model and --fold to choose, or check the "
+                         "case name in the validation output.")
+    if len({entry["model"] for entry, _item in matches}) > 1:
+        raise ValueError(f"Case '{case}' was validated by several models; choose one with --model.")
+    entry, item = matches[0]
+    records = scan_datasets(roots.get("raw"), roots.get("preprocessed"), roots.get("results"))
+    record = next(record for record in records if record.dataset_id == dataset_id)
+    prediction = Path(item["prediction"])
+    if not prediction.is_file() and record.results_path:  # summary.json may hold paths from another machine
+        prediction = record.results_path / entry["model"] / f"fold_{item['fold']}" / "validation" / prediction.name
+    if not prediction.is_file():
+        raise ValueError(f"Prediction file not found: {prediction}")
+    try:
+        from .services.napari_inspector import open_validation_prediction
+    except ImportError as error:
+        raise RuntimeError("Napari is not installed. Use the full installation to inspect results.") from error
+    print(f"Opening {case} (fold {item['fold']}, {entry['model']}): image, label and prediction")
+    open_validation_prediction(prediction, record.raw_path)
+    return 0
+
+
+# ---------------------------------------------------------------- suggest: the command the GUI would prefill
+
+
+def suggestion(roots: dict[str, Path | None], dataset_id: int, step: str, *, device=None, model: str = "",
+               input_directory: str = "", output_directory: str = "") -> dict:
+    """The command the GUI prefills for a step, with the reason for each choice (shared rules: services.defaults)."""
+    from .services.commands import prediction_command, preprocessing_command, training_command
+    from .services.defaults import (
+        DEFAULT_CONFIGURATION,
+        DEFAULT_PLANNER,
+        PREDICTION_PROCESSES,
+        default_configuration,
+        default_plans,
+        next_fold,
+        prediction_folds,
+        preprocessing_processes,
+        trainer_for,
+    )
+    from .services.device_probe import default_choice, device_argument
+    from .status_report import find_state
+
+    state = find_state(dataset_id, roots)
+    dataset = state.record.dataset_id
+    choice = default_choice(device)
+    device_flag = device_argument(choice)
+    device_reason = (f"device: {choice} ({device.summary})" if device is not None
+                     else "device: GPU (nnU-Net's default; device not checked)")
+    if step == "preprocess":
+        processes = preprocessing_processes()
+        command = preprocessing_command(dataset, [DEFAULT_CONFIGURATION], DEFAULT_PLANNER, processes=processes)
+        reasons = [(f"planner {DEFAULT_PLANNER}: the default (needs ~24 GB of GPU memory for training; with less, "
+                    "use nnUNetPlannerResEncM or ExperimentPlanner)"),
+                   f"configuration {DEFAULT_CONFIGURATION}: for 3D images (use 2d for 2D images)",
+                   f"{processes} processes (-np): up to 8, never more than CPU cores",
+                   "--verify_dataset_integrity: checks the dataset before preprocessing"]
+    elif step == "train":
+        preprocessed = [plans for plans in state.plans if any(config.preprocessed for config in plans.configurations)]
+        if not preprocessed:
+            raise ValueError("No preprocessed data yet: preprocess first (suggest --step preprocess).")
+        plans_name = default_plans(plans.name for plans in preprocessed)
+        plans = next(item for item in preprocessed if item.name == plans_name)
+        configuration = default_configuration(config.name for config in plans.configurations if config.preprocessed)
+        trainer = trainer_for(state.sparse)
+        existing = next((item for item in state.models
+                         if (item.trainer, item.plans, item.configuration) == (trainer, plans_name, configuration)), None)
+        fold = next_fold(state.fold_count, (item.name for item in existing.folds) if existing else ())
+        if fold is None:
+            raise ValueError(f"All folds of {trainer}__{plans_name}__{configuration} exist already. To resume a "
+                             "stopped fold, add --c to its command; to train one again, use the GUI or the "
+                             "command with that fold.")
+        command = training_command(dataset, plans_name, configuration, trainer, fold, device=device_flag)
+        reasons = [f"trainer {trainer}: " + ("sparse labels (dataset.json has an ignore label)" if state.sparse
+                                             else "dense labels (no ignore label)"),
+                   f"plans {plans_name}: " + ("the default plans" if plans_name == "nnUNetResEncUNetLPlans"
+                                              else "the first preprocessed plans (the default ones are missing)"),
+                   f"configuration {configuration}: " + ("the default" if configuration == DEFAULT_CONFIGURATION
+                                                         else "the first preprocessed configuration"),
+                   (f"fold {fold}: the next fold this model does not have yet ({state.fold_count} folds in "
+                    "splits_final.json, then all)"),
+                   device_reason]
+    elif step == "predict":
+        models = [item for item in state.models if item.finished_folds and (not model or model in item.label)]
+        if not models:
+            raise ValueError("No model with a finished fold" + (f" matching '{model}'" if model else "") + ".")
+        chosen = models[0]
+        folds = prediction_folds(fold.name for fold in chosen.finished_folds)
+        command = prediction_command(dataset, input_directory or "INPUT_FOLDER", output_directory or "OUTPUT_FOLDER",
+                                     chosen.plans, chosen.configuration, trainer=chosen.trainer,
+                                     folds=" ".join(folds), continue_prediction=True,
+                                     preprocessing_processes=PREDICTION_PROCESSES,
+                                     export_processes=PREDICTION_PROCESSES, device=device_flag)
+        reasons = [f"model {chosen.label}: " + ("the first model with finished folds" if not model
+                                                else f"the first model matching '{model}'"),
+                   f"folds {' '.join(folds)}: the finished cross-validation folds (fold all only if it is the only one)",
+                   "mirroring (test-time augmentation) on: best quality (add --disable_tta to be faster)",
+                   "--continue_prediction: skips cases that already have a prediction in the output folder",
+                   f"{PREDICTION_PROCESSES} processes for preprocessing (-npp) and export (-nps), nnU-Net's default",
+                   device_reason]
+        if not input_directory or not output_directory:
+            reasons.append("replace INPUT_FOLDER and OUTPUT_FOLDER (or pass --input and --output)")
+    else:
+        raise ValueError("Step must be preprocess, train or predict.")
+    arguments = ["nnworkbench-run", *shlex.split(command)]
+    return {"dataset": state.record.directory_name, "step": step, "command": wrapped_command(command),
+            "arguments": arguments, "reasons": reasons}
+
+
+def run_suggest(roots: dict[str, Path | None], dataset_id: int, step: str, *, check_device: bool = True,
+                model: str = "", input_directory: str = "", output_directory: str = "", as_json: bool = False) -> int:
+    from .services.device_probe import probe_device
+
+    device = probe_device() if check_device and step in ("train", "predict") else None
+    result = suggestion(roots, dataset_id, step, device=device, model=model, input_directory=input_directory,
+                        output_directory=output_directory)
+    _print(result, as_json, result["command"] + "\n\nWhy:\n" + "\n".join(f"  - {reason}" for reason in result["reasons"]))
+    return 0

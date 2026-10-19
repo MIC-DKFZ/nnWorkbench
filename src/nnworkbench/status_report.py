@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
+from .json_output import print_json
 from .services.dataset_scanner import scan_datasets
+from .services.device_probe import probe_device
 from .ui.dataset_state import DatasetState, load_state
 
 # ASCII markers, so the report prints in every console (including the Windows command prompt)
@@ -23,7 +24,14 @@ def find_state(dataset_id: int, roots: dict[str, Path | None]) -> DatasetState:
     return load_state(record)
 
 
-def build_status(state: DatasetState) -> dict:
+def device_status(info) -> dict:
+    """The device check (services.device_probe) as plain data."""
+    return {"kind": info.kind, "summary": info.summary,
+            "gpus": [{"name": name, "memory_gb": round(memory, 1)} for name, memory in info.gpus],
+            "torch": info.torch_version or None, "cuda": info.cuda_build, "problem": info.problem or None}
+
+
+def build_status(state: DatasetState, device: dict | None = None) -> dict:
     """The status as plain data (also the --json output)."""
     raw = state.raw
     stages = {}
@@ -42,6 +50,7 @@ def build_status(state: DatasetState) -> dict:
         "labels": "sparse" if state.sparse else "dense",
         "ignore_label": state.ignore_id,
         "problems": state.data_problems(),
+        "device": device,
         "stages": stages,
         "plans": [{"name": plans.name, "planner": plans.planner,
                    "configurations": [config.name for config in plans.configurations if config.preprocessed_cases],
@@ -49,7 +58,7 @@ def build_status(state: DatasetState) -> dict:
         "models": [{"trainer": model.trainer, "plans": model.plans, "configuration": model.configuration,
                     "mean_dice": model.mean_dice,
                     "folds": [{"fold": fold.name, "status": fold.status, "epoch": fold.epoch,
-                               "total_epochs": fold.total_epochs, "dice": fold.dice}
+                               "total_epochs": fold.total_epochs, "pseudo_dice": fold.pseudo_dice, "dice": fold.dice}
                               for fold in model.folds]}
                    for model in state.models],
     }
@@ -60,6 +69,9 @@ def format_status(status: dict) -> str:
     lines = [status["dataset"],
              f"  {status['cases']} cases · {status['channels']} channel(s) · {status['labels']} labels"
              + (f" (ignore = {status['ignore_label']})" if status["ignore_label"] is not None else ""), ""]
+    if status.get("device"):
+        device = status["device"]
+        lines.insert(2, f"  device: {device['summary']}" + (f"  [fix] {device['problem']}" if device["problem"] else ""))
     for title, _method in _STAGES:
         stage = status["stages"][title.lower()]
         lines.append(f"  {title:<11} {_MARKERS.get(stage['state'], '[ - ]'):<10} {stage['detail']}")
@@ -85,11 +97,17 @@ def format_status(status: dict) -> str:
     return "\n".join(lines)
 
 
-def run_status(dataset_id: int, roots: dict[str, Path | None], as_json: bool = False) -> int:
+def run_status(dataset_id: int, roots: dict[str, Path | None], as_json: bool = False,
+               check_device: bool = True) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")  # never fail on a console without UTF-8
-    status = build_status(find_state(dataset_id, roots))
-    print(json.dumps(status, indent=2) if as_json else format_status(status))
+    state = find_state(dataset_id, roots)
+    device = device_status(probe_device()) if check_device else None
+    status = build_status(state, device)
+    if as_json:
+        print_json(status)
+    else:
+        print(format_status(status))
     return 0
 
 

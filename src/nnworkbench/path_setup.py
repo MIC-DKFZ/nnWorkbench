@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from shlex import quote
 
+from .json_output import print_json
+
 
 def configuration_path() -> Path:
     """Return the platform-appropriate user configuration file."""
@@ -73,16 +75,29 @@ def set_paths_main() -> None:
     parser.add_argument("--raw", required=True, help="Path to nnUNet_raw")
     parser.add_argument("--preprocessed", required=True, help="Path to nnUNet_preprocessed")
     parser.add_argument("--results", required=True, help="Path to nnUNet_results")
+    parser.add_argument("--json", action="store_true", help="Print the result as JSON, e.g. for scripts")
     arguments = parser.parse_args()
     save_paths(arguments.raw, arguments.preprocessed, arguments.results)
-    print(f"Saved nnWorkbench paths to {configuration_path()}")
+    if arguments.json:
+        print_json({"saved": str(configuration_path()), "paths": configured_paths()})
+    else:
+        print(f"Saved nnWorkbench paths to {configuration_path()}")
 
 
 def get_paths_main() -> None:
     """Print paths saved by :func:`set_paths_main`."""
+    parser = argparse.ArgumentParser(description="Show nnWorkbench's saved nnU-Net directory paths.")
+    parser.add_argument("--json", action="store_true", help="Print the paths as JSON, e.g. for scripts")
+    arguments = parser.parse_args()
     try:
-        print(paths_report())
+        if arguments.json:
+            print_json({"config": str(configuration_path()), "paths": configured_paths()})
+        else:
+            print(paths_report())
     except (RuntimeError, TypeError) as error:
+        if arguments.json:
+            print_json({"error": str(error)})
+            raise SystemExit(1) from error
         raise SystemExit(str(error)) from error
 
 

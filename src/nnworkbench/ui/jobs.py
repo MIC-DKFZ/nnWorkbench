@@ -178,6 +178,7 @@ class JobRunner(QObject):
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("PYTHONUNBUFFERED", "1")
         environment.insert("PYTHONIOENCODING", "utf-8")  # the output is read as UTF-8 (Windows default: ANSI code page)
+        environment.insert("NNWORKBENCH_YES", "1")  # the GUI asks before replacing a training (command_runner)
         process.setProcessEnvironment(environment)
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.readyReadStandardOutput.connect(lambda: self._read(process, job))

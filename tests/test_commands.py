@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -127,7 +128,7 @@ def test_stack_images_command(monkeypatch, tmp_path) -> None:
 def test_reduce_checkpoints_command(monkeypatch, tmp_path) -> None:
     captured: dict[str, object] = {}
     model_directory = tmp_path / "trained_model"; model_directory.mkdir()
-    fold = model_directory / "fold_0"
+    fold = model_directory / "fold_0"; fold.mkdir()
     monkeypatch.setattr(
         command_runner,
         "reduce_model_for_sharing",
@@ -135,7 +136,7 @@ def test_reduce_checkpoints_command(monkeypatch, tmp_path) -> None:
     )
 
     assert command_runner._run_builtin_command([
-        "reduce-checkpoints", str(model_directory), "--reset-trainer-name",
+        "reduce-checkpoints", str(model_directory), "--reset-trainer-name", "--yes",
     ]) == 0
     assert captured == {
         "directory": model_directory,
@@ -149,13 +150,13 @@ def test_inspect_command(monkeypatch) -> None:
     monkeypatch.setattr(
         command_runner,
         "run_dataset_inspection",
-        lambda dataset, index: captured.update(dataset=dataset, index=index) or 0,
+        lambda dataset, index, case: captured.update(dataset=dataset, index=index, case=case) or 0,
     )
 
     assert command_runner._run_builtin_command(["inspect", "-d", "42", "-i", "12"]) == 0
-    assert captured == {"dataset": 42, "index": 12}
+    assert captured == {"dataset": 42, "index": 12, "case": ""}
     assert command_runner._run_builtin_command(["inspect", "-d", "42"]) == 0
-    assert captured == {"dataset": 42, "index": 1}
+    assert captured == {"dataset": 42, "index": 1, "case": ""}
 
 
 def test_dataset_inspection_opens_selected_image(monkeypatch, tmp_path) -> None:
@@ -208,6 +209,10 @@ def test_status_command_reports_stages_and_problems(tmp_path, monkeypatch, capsy
         "numTraining": 2, "file_ending": ".nii.gz"}), encoding="utf-8")
     monkeypatch.setattr(command_runner, "configured_paths", lambda: {
         "nnUNet_raw": str(tmp_path / "raw"), "nnUNet_preprocessed": "", "nnUNet_results": ""})
+    from nnworkbench import status_report
+    from nnworkbench.services.device_probe import DeviceInfo
+
+    monkeypatch.setattr(status_report, "probe_device", lambda: DeviceInfo("cuda", "2.8.0", "12.8", (("RTX 4090", 24.0),)))
 
     assert command_runner._run_builtin_command(["status", "-d", "12"]) == 0
     text = capsys.readouterr().out
@@ -219,3 +224,195 @@ def test_status_command_reports_stages_and_problems(tmp_path, monkeypatch, capsy
     status = json.loads(capsys.readouterr().out)
     assert status["stages"]["data"]["state"] == "error" and status["stages"]["preprocess"]["state"] == "none"
     assert status["cases"] == 2 and status["models"] == []
+    assert status["device"]["kind"] == "cuda" and status["device"]["gpus"] == [{"name": "RTX 4090", "memory_gb": 24.0}]
+    assert command_runner._run_builtin_command(["status", "-d", "12", "--json", "--no-device"]) == 0
+    assert json.loads(capsys.readouterr().out)["device"] is None
+
+
+def _roots(tmp_path, monkeypatch) -> None:
+    for name in ("raw", "preprocessed", "results"):
+        (tmp_path / name).mkdir(exist_ok=True)
+    monkeypatch.setattr(command_runner, "configured_paths", lambda: {
+        f"nnUNet_{name}": str(tmp_path / name) for name in ("raw", "preprocessed", "results")})
+
+
+def test_create_dataset_and_new_iteration_commands(tmp_path, monkeypatch, capsys) -> None:
+    import json
+
+    _roots(tmp_path, monkeypatch)
+    assert command_runner._run_builtin_command(["create-dataset", "-d", "42", "--name", "Cell Segmentation",
+                                                "--labels", "cell,nucleus", "--ignore",
+                                                "--channels", "fluorescence", "--json"]) == 0
+    created = json.loads(capsys.readouterr().out)
+    folder = tmp_path / "raw" / "Dataset042_Cell_Segmentation"
+    assert created["path"] == str(folder) and (folder / "imagesTr").is_dir() and (folder / "labelsTr").is_dir()
+    manifest = json.loads((folder / "dataset.json").read_text(encoding="utf-8"))
+    assert manifest["labels"] == {"background": 0, "cell": 1, "nucleus": 2, "ignore": 3}
+    assert manifest["channel_names"] == {"0": "fluorescence"} and manifest["file_ending"] == ".nii.gz"
+    with pytest.raises(ValueError, match="already exists"):
+        command_runner._run_builtin_command(["create-dataset", "-d", "42", "--name", "Other", "--labels", "a"])
+    with pytest.raises(ValueError, match="--ignore"):
+        command_runner._run_builtin_command(["create-dataset", "-d", "7", "--name", "X", "--labels", "a,ignore"])
+
+    (folder / "labelsTr" / "c.nii.gz").touch()
+    assert command_runner._run_builtin_command(["new-iteration", "-d", "42", "--json"]) == 0
+    iteration = json.loads(capsys.readouterr().out)
+    assert iteration["dataset"] == "Dataset043_Cell_Segmentation_iter1"
+    assert (tmp_path / "raw" / iteration["dataset"] / "labelsTr" / "c.nii.gz").is_file()
+
+
+def test_validation_command_sorts_cases_weakest_first(tmp_path, monkeypatch, capsys) -> None:
+    import json
+
+    _roots(tmp_path, monkeypatch)
+    raw = tmp_path / "raw" / "Dataset042_Cells"; (raw / "imagesTr").mkdir(parents=True)
+    (raw / "dataset.json").write_text(json.dumps({"labels": {"background": 0, "cell": 1, "nucleus": 2}}),
+                                      encoding="utf-8")
+    model = tmp_path / "results" / "Dataset042_Cells" / "nnUNetTrainer__nnUNetPlans__3d_fullres"
+    for fold, cases in (("0", {"a": (0.9, 0.8), "b": (0.5, 0.7)}), ("1", {"c": (0.95, 0.4)})):
+        validation = model / f"fold_{fold}" / "validation"; validation.mkdir(parents=True)
+        (model / f"fold_{fold}" / "checkpoint_final.pth").touch()
+        (model / f"fold_{fold}" / "checkpoint_best.pth").touch()
+        per_case = [{"reference_file": f"/gt/{case}.nii.gz", "prediction_file": f"/val/{case}.nii.gz",
+                     "metrics": {"1": {"Dice": cell}, "2": {"Dice": nucleus}}} for case, (cell, nucleus) in cases.items()]
+        dice = sum(sum(values) / 2 for values in cases.values()) / len(cases)
+        (validation / "summary.json").write_text(json.dumps({
+            "foreground_mean": {"Dice": dice}, "mean": {"1": {"Dice": 0.8}, "2": {"Dice": 0.6}},
+            "metric_per_case": per_case}), encoding="utf-8")
+
+    assert command_runner._run_builtin_command(["validation", "-d", "42", "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    [entry] = report["models"]
+    assert entry["model"] == "nnUNetTrainer__nnUNetPlans__3d_fullres" and set(entry["folds"]) == {"0", "1"}
+    assert entry["classes"] == {"cell": pytest.approx(0.8), "nucleus": pytest.approx(0.6)}
+    assert [case["case"] for case in entry["cases"]] == ["b", "c", "a"]  # weakest first
+    assert entry["cases"][0]["weakest_class"] == "cell" and entry["cases"][1]["weakest_class"] == "nucleus"
+
+    assert command_runner._run_builtin_command(["validation", "-d", "42", "--cases", "1"]) == 0
+    text = capsys.readouterr().out
+    assert "weakest cases (1 of 3)" in text and "b " in text
+
+    from nnworkbench.services import napari_inspector
+
+    opened = []
+    monkeypatch.setattr(napari_inspector, "open_validation_prediction",
+                        lambda prediction, raw: opened.append((prediction.parent.parent.name, prediction.name, raw.name)))
+    (model / "fold_0" / "validation" / "b.nii.gz").touch()  # summary.json has paths of another machine
+    assert command_runner._run_builtin_command(["validation", "-d", "42", "--open", "b"]) == 0
+    assert opened == [("fold_0", "b.nii.gz", "Dataset042_Cells")]
+    with pytest.raises(ValueError, match="No validation result"):
+        command_runner._run_builtin_command(["validation", "-d", "42", "--open", "x"])
+
+
+def test_annotate_and_inspect_open_the_case_by_name(tmp_path, monkeypatch) -> None:
+    from nnworkbench.services import napari_inspector
+
+    _roots(tmp_path, monkeypatch)
+    images = tmp_path / "raw" / "Dataset042_Cells" / "imagesTr"; images.mkdir(parents=True)
+    for case in ("cells_001", "cells_002"):
+        (images / f"{case}_0000.nii.gz").touch()
+    opened = []
+    monkeypatch.setattr(napari_inspector, "open_annotation", lambda path: opened.append(("annotate", path.name)))
+    monkeypatch.setattr(napari_inspector, "open_case", lambda path: opened.append(("inspect", path.name)))
+
+    assert command_runner._run_builtin_command(["annotate", "-d", "42", "--case", "cells_002"]) == 0
+    assert command_runner._run_builtin_command(["inspect", "-d", "42", "--case", "cells_001"]) == 0
+    assert command_runner._run_builtin_command(["annotate", "-d", "42", "-i", "1"]) == 0
+    assert opened == [("annotate", "cells_002_0000.nii.gz"), ("inspect", "cells_001_0000.nii.gz"),
+                      ("annotate", "cells_001_0000.nii.gz")]
+    with pytest.raises(ValueError, match="No case 'cells_009'"):
+        command_runner._run_builtin_command(["annotate", "-d", "42", "--case", "cells_009"])
+
+
+def test_json_output_for_statistics_and_reduction_keeps_progress_on_stderr(tmp_path, monkeypatch, capsys) -> None:
+    import json
+
+    _roots(tmp_path, monkeypatch)
+    (tmp_path / "raw" / "Dataset042_Cells" / "labelsTr").mkdir(parents=True)
+
+    def analyse(directory, workers, progress):
+        progress("Analyzed label 1/1: a.nii.gz")
+        return {"files_analyzed": 1, "classes": [{"id": 1, "name": "cell"}]}
+
+    monkeypatch.setattr(command_runner, "analyse_label_distribution", analyse)
+    assert command_runner._run_builtin_command(["compute-statistics", "-d", "42", "--json"]) == 0
+    output = capsys.readouterr()
+    result = json.loads(output.out)
+    assert result["dataset"] == "Dataset042_Cells" and result["files_analyzed"] == 1
+    assert "Analyzed label" in output.err  # progress does not break the JSON
+
+    def reduce(model, reset_trainer_name, progress):
+        progress("Reduced fold_0")
+        return [model / "fold_0", model / "fold_1"]
+
+    monkeypatch.setattr(command_runner, "reduce_model_for_sharing", reduce)
+    monkeypatch.setattr(command_runner, "reduction_plan", lambda model, reset_trainer_name: [])
+    assert command_runner._run_builtin_command(["reduce-checkpoints", str(tmp_path / "model"), "--json", "--yes"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["folds"] == ["fold_0", "fold_1"] and result["schema_version"] == 1
+
+
+def test_errors_are_json_with_the_json_flag(tmp_path, monkeypatch, capfd) -> None:
+    import json
+    import sys
+
+    _roots(tmp_path, monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["nnworkbench-run", "validation", "-d", "99", "--json"])
+    with pytest.raises(SystemExit) as stop:
+        command_runner.main()
+    assert stop.value.code == 1
+    assert "No dataset with ID 99" in json.loads(capfd.readouterr().out)["error"]  # stdout holds only JSON
+
+
+def test_get_paths_json(tmp_path, monkeypatch, capsys) -> None:
+    import json
+    import sys
+
+    monkeypatch.setattr(path_setup, "configuration_path", lambda: tmp_path / "paths.json")
+    path_setup.save_paths("/r", "/p", "/s")
+    monkeypatch.setattr(sys, "argv", ["nnworkbench-get-paths", "--json"])
+    path_setup.get_paths_main()
+    paths = json.loads(capsys.readouterr().out)["paths"]
+    assert paths["nnUNet_raw"] == "/r" and paths["nnUNet_results"] == "/s"
+
+
+def test_reduce_checkpoints_needs_yes_and_dry_run_changes_nothing(tmp_path, capsys) -> None:
+    import json
+
+    model = tmp_path / "nnUNetTrainer__nnUNetPlans__3d_fullres"
+    (model / "fold_0" / "validation").mkdir(parents=True)
+    (model / "fold_0" / "checkpoint_best.pth").touch()
+
+    assert command_runner._run_builtin_command(["reduce-checkpoints", str(model), "--dry-run", "--json"]) == 0
+    actions = json.loads(capsys.readouterr().out)["actions"]
+    assert {(item["action"], Path(item["path"]).name) for item in actions} == {
+        ("delete", "checkpoint_best.pth"), ("delete folder", "validation")}
+    with pytest.raises(ValueError, match="--yes"):
+        command_runner._run_builtin_command(["reduce-checkpoints", str(model)])
+    assert (model / "fold_0" / "checkpoint_best.pth").is_file() and (model / "fold_0" / "validation").is_dir()
+
+
+def test_training_an_existing_fold_again_needs_yes(tmp_path, monkeypatch, capsys) -> None:
+    _roots(tmp_path, monkeypatch)
+    fold = tmp_path / "results" / "Dataset042_Cells" / "nnUNetTrainer__nnUNetResEncUNetLPlans__3d_fullres" / "fold_0"
+    fold.mkdir(parents=True)
+    (fold / "training_log_1.txt").touch()
+    command = ["nnUNetv2_train", "42", "3d_fullres", "0", "-p", "nnUNetResEncUNetLPlans"]
+    calls = []
+    monkeypatch.setattr(command_runner, "find_executable", lambda name: name)
+    monkeypatch.setattr(command_runner.shutil, "which", lambda name: name)
+    monkeypatch.setattr(command_runner.subprocess, "run",
+                        lambda arguments, **_kwargs: calls.append(arguments) or SimpleNamespace(returncode=0))
+    monkeypatch.delenv(command_runner.YES_ENVIRONMENT, raising=False)
+
+    with pytest.raises(ValueError, match="already has a training"):
+        command_runner.run_with_configured_paths(command)
+    assert calls == []
+    assert command_runner.run_with_configured_paths([*command, "--dry-run"]) == 0
+    assert "replaces its results (needs --yes)" in capsys.readouterr().out and calls == []
+    assert command_runner.run_with_configured_paths([*command, "--c"]) == 0  # continuing is fine
+    assert command_runner.run_with_configured_paths([*command, "--yes"]) == 0
+    assert calls[-1] == command  # --yes is not passed on to nnU-Net
+    monkeypatch.setenv(command_runner.YES_ENVIRONMENT, "1")  # the GUI asks the user itself
+    assert command_runner.run_with_configured_paths(command) == 0
+    assert command_runner.run_with_configured_paths(["nnUNetv2_train", "42", "3d_fullres", "1"]) == 0  # new fold

@@ -22,6 +22,13 @@ from qtpy.QtWidgets import (
 
 from nnworkbench.services.commands import preprocessing_command
 from nnworkbench.services.dataset_contents import json_value
+from nnworkbench.services.defaults import (
+    CONFIGURATIONS,
+    DEFAULT_CONFIGURATION,
+    DEFAULT_PLANNER,
+    PLANNERS,
+    preprocessing_processes,
+)
 from nnworkbench.services.nnunet_discovery import available_planners
 from nnworkbench.services.workflow_status import PlansInfo
 
@@ -50,9 +57,6 @@ from ..widgets import (
     with_stepper,
 )
 from .common import CommandBox, RunDialog, StagePage, arguments_field, detail_row
-
-DEFAULT_PLANNER = "nnUNetPlannerResEncL"
-CONFIGURATIONS = ("3d_fullres", "2d", "3d_lowres")
 
 
 def _howto() -> HowToCard:
@@ -196,16 +200,16 @@ class PreprocessStage(StagePage):
         self._planner = EditableDropdownComboBox()
         self._planner.setEditable(True)
         self._planner.setProperty("mono", True)
-        self._planner.addItems(["ExperimentPlanner", "nnUNetPlannerResEncM", DEFAULT_PLANNER, "nnUNetPlannerResEncXL"])
+        self._planner.addItems(list(PLANNERS))
         self._planner.setCurrentText(DEFAULT_PLANNER)
 
         self._planner.currentTextChanged.connect(self._update_command)
         self._configurations = ChoiceGroup(exclusive=False)
-        self._configurations.set_options(CONFIGURATIONS, selected=["3d_fullres"])
+        self._configurations.set_options(CONFIGURATIONS, selected=[DEFAULT_CONFIGURATION])
         self._configurations.changed.connect(self._update_command)
         self._processes = NumberField(1, 99, 8)
         self._processes.setRange(1, max(1, os.cpu_count() or 1))
-        self._processes.setValue(min(8, os.cpu_count() or 1))
+        self._processes.setValue(preprocessing_processes())
         self._processes.valueChanged.connect(self._update_command)
         self._verify = QCheckBox("Verify dataset integrity")
         self._verify.setChecked(True)
@@ -433,7 +437,7 @@ class PreprocessStage(StagePage):
     def _command_text(self) -> str:
         if self.state is None:
             return ""
-        configurations = self._configurations.selected() or ["3d_fullres"]
+        configurations = self._configurations.selected() or [DEFAULT_CONFIGURATION]
         return preprocessing_command(self.state.record.dataset_id, configurations,
                                      self._planner.currentText().strip() or DEFAULT_PLANNER,
                                      self._arguments.text(), processes=self._processes.value(),

@@ -281,3 +281,56 @@ def test_choice_group_keep_one_never_deselects_the_last_option() -> None:
     parent.close()
     parent.deleteLater()
     assert application is not None
+
+
+def test_labels_editor_adds_ignore_with_the_highest_id_once() -> None:
+    from qtpy.QtWidgets import QWidget
+
+    from nnworkbench.ui.json_editor import _PairEditor
+
+    application = _application()
+    parent = QWidget()
+    editor = _PairEditor({"background": 0, "cell": 1, "nucleus": 2}, value_is_id=True, add_text="＋ add label",
+                         add_ignore=True, parent=parent)
+    assert editor._add_ignore.isEnabled()
+    editor._add_ignore.click()
+    assert editor.value() == {"background": 0, "cell": 1, "nucleus": 2, "ignore": 3}
+    assert not editor._add_ignore.isEnabled()  # only one ignore label
+    editor._remove(editor._rows[-1])
+    assert editor._add_ignore.isEnabled()
+    parent.close()
+    parent.deleteLater()
+    assert application is not None
+
+
+def test_suggest_gives_the_same_commands_as_the_gui(tmp_path: Path) -> None:
+    import shlex
+
+    from nnworkbench.cli_tools import suggestion
+
+    application = _application()
+    window = MainWindow()
+    try:
+        record, state = _results_dataset(tmp_path)
+        window.dataset_page.record = record
+        window.dataset_page._apply_state(state)
+        roots = {"raw": tmp_path / "raw", "preprocessed": tmp_path / "preprocessed", "results": tmp_path / "results"}
+        pages = window.dataset_page.pages
+
+        pages["train"]._open_defaults()  # ▶ Train… in the header
+        gui_train = pages["train"]._command_text()[0]
+        pages["train"]._run_dialog.close()
+        suggested = suggestion(roots, 8, "train")
+        assert suggested["arguments"][1:] == shlex.split(gui_train)
+
+        gui_predict = pages["predict"]._command_text()  # the GUI remembers the last folders
+        folders = {"input_directory": pages["predict"]._input.text().strip(),
+                   "output_directory": pages["predict"]._output.text().strip()}
+        assert suggestion(roots, 8, "predict", **folders)["arguments"][1:] == shlex.split(gui_predict)
+
+        gui_preprocess = pages["preprocess"]._command_text()
+        assert suggestion(roots, 8, "preprocess")["arguments"][1:] == shlex.split(gui_preprocess)
+    finally:
+        window.close()
+        window.deleteLater()
+    assert application is not None
