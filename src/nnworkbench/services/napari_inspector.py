@@ -378,12 +378,13 @@ def save_semantic_annotation(viewer, image_path: Path, target: Path) -> None:
 
 
 def annotation_label_summary(image_path: Path) -> tuple[tuple[int, str], ...]:
-    """Return dataset labels translated to nnInteractive semantic-map IDs.
+    """Return dataset labels translated to the IDs used while annotating.
 
-    nnInteractive reserves ``0`` for ignored voxels. The dataset's ``ignore``
-    label is therefore shown as ``0`` and all remaining nnU-Net label IDs are
-    shifted by one for annotation.
+    Sparse labels (with an ``ignore`` label): ``ignore`` is shown as ``0`` and all other label IDs are
+    shifted by one. Dense labels (no ``ignore``): the IDs are unchanged and ``0`` is background.
     """
+    from .workflow_status import ignore_label_id
+
     try:
         with (image_path.parent.parent / "dataset.json").open(encoding="utf-8") as file:
             manifest = json.load(file)
@@ -392,7 +393,7 @@ def annotation_label_summary(image_path: Path) -> tuple[tuple[int, str], ...]:
     labels = manifest.get("labels", {}) if isinstance(manifest, dict) else {}
     if not isinstance(labels, dict):
         return ()
-    sparse = any(isinstance(name, str) and name.strip().casefold() == "ignore" for name in labels)
+    sparse = ignore_label_id(manifest) is not None  # the same rule as loading and saving
     translated: list[tuple[int, str]] = []
     for name, value in labels.items():
         if not isinstance(name, str) or isinstance(value, bool) or not isinstance(value, int):
@@ -559,18 +560,25 @@ def open_annotation(selected_path: Path) -> None:
               and has_image_suffix(selected_path) else annotation_target_path(image_path))
     viewer = napari.Viewer(title=f"nnWorkbench annotation — {case_id(image_path)}")
 
-    def load() -> tuple:
-        from .label_mapping import label_to_annotation
-
-        image = _read_image(image_path)
-        if not target.is_file():
-            return image, None
-        label, affine = _read_image(target)
-        return image, (label_to_annotation(label, _dataset_ignore_id(image_path)), affine)
-
-    _load_in_background(viewer, case_id(image_path), load,
+    _load_in_background(viewer, case_id(image_path), lambda: load_annotation_case(image_path, target),
                         lambda loaded: _set_up_annotation(viewer, image_path, target, *loaded))
     napari.run()
+
+
+def load_annotation_case(image_path: Path, target: Path) -> tuple[tuple, tuple | None]:
+    """Load an image and its saved label for annotating (the pencil), in annotation IDs.
+
+    Sparse labels (dataset.json has an ignore label) are shifted: ignore becomes 0 and every class n
+    becomes n + 1. Dense labels are used as they are, so 0 stays background. Inspection never calls this
+    and always shows the original label IDs.
+    """
+    from .label_mapping import label_to_annotation
+
+    image = _read_image(image_path)
+    if not target.is_file():
+        return image, None
+    label, affine = _read_image(target)
+    return image, (label_to_annotation(label, _dataset_ignore_id(image_path)), affine)
 
 
 def _set_up_annotation(viewer, image_path: Path, target: Path, image: tuple, annotation: tuple | None) -> None:

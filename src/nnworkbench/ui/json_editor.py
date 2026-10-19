@@ -39,19 +39,54 @@ _STANDARD = ("channel_names", "labels", "numTraining", "file_ending", "name", "d
 class _PairEditor(QWidget):
     """Editable ``key: value`` rows of a nested object with ✕ to remove and ＋ to add."""
 
-    def __init__(self, values: dict, *, value_is_id: bool, add_text: str, parent=None) -> None:
+    def __init__(self, values: dict, *, value_is_id: bool, add_text: str, add_ignore: bool = False,
+                 parent=None) -> None:
         super().__init__(parent)
         self._value_is_id = value_is_id
         self._rows: list[tuple[QWidget, QLineEdit, QLineEdit]] = []
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(16, 0, 0, 0)
         self._layout.setSpacing(4)
+        self._add_ignore: QPushButton | None = None
+        if add_ignore:  # labels only: one click adds the ignore label for sparse labels
+            self._add_ignore = QPushButton("＋ add ignore")
+            self._add_ignore.setObjectName("link")
+            self._add_ignore.clicked.connect(self._add_ignore_row)
         for key, value in values.items():
             self._add_row(str(key), str(value))
+        buttons = QWidget()
+        buttons_row = QHBoxLayout(buttons)
+        buttons_row.setContentsMargins(0, 0, 0, 0)
+        buttons_row.setSpacing(16)
         add = QPushButton(add_text)
         add.setObjectName("link")
         add.clicked.connect(lambda: self._add_row("", ""))
-        self._layout.addWidget(add, 0, Qt.AlignmentFlag.AlignLeft)
+        buttons_row.addWidget(add)
+        if self._add_ignore is not None:
+            buttons_row.addWidget(self._add_ignore)
+        buttons_row.addStretch()
+        self._layout.addWidget(buttons)
+        self._update_ignore_button()
+
+    def _has_ignore(self) -> bool:
+        return any(key_field.text().strip().casefold() == "ignore" for _row, key_field, _value in self._rows)
+
+    def _add_ignore_row(self) -> None:
+        """Add "ignore" with the next free ID above all other labels (it must be the highest ID)."""
+        if self._has_ignore():
+            return
+        ids = [int(value.text()) for _row, _key, value in self._rows if value.text().strip().lstrip("-").isdigit()]
+        self._add_row("ignore", str(max(ids) + 1 if ids else 1))
+
+    def _update_ignore_button(self) -> None:
+        if self._add_ignore is None:
+            return
+        present = self._has_ignore()
+        self._add_ignore.setEnabled(not present)
+        self._add_ignore.setToolTip(
+            "dataset.json already has an ignore label." if present else
+            "Add the ignore label with the highest ID, for sparse labels (only parts of each image are annotated; "
+            "the rest is ignore and not used for training). Dense labels need no ignore label.")
 
     def _add_row(self, key: str, value: str) -> None:
         row = QWidget()
@@ -79,13 +114,16 @@ class _PairEditor(QWidget):
         layout.addWidget(remove)
         entry = (row, key_field, value_field)
         remove.clicked.connect(lambda: self._remove(entry))
+        key_field.textChanged.connect(lambda _text: self._update_ignore_button())
         self._rows.append(entry)
         self._layout.insertWidget(len(self._rows) - 1, row)
+        self._update_ignore_button()
 
     def _remove(self, entry) -> None:
         if entry in self._rows:
             self._rows.remove(entry)
             entry[0].deleteLater()
+            self._update_ignore_button()
 
     def value(self) -> dict:
         result: dict = {}
@@ -202,7 +240,7 @@ class DatasetJsonPanel(QFrame):
             if key in _STRUCTURED and isinstance(value, dict):
                 grid.addWidget(key_label, row, 0, 1, 2)
                 row += 1
-                editor = _PairEditor(value, value_is_id=key == "labels",
+                editor = _PairEditor(value, value_is_id=key == "labels", add_ignore=key == "labels",
                                      add_text="＋ add label" if key == "labels" else "＋ add channel")
                 grid.addWidget(editor, row, 0, 1, 2)
             else:

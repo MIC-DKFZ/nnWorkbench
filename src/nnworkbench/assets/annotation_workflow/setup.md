@@ -114,7 +114,7 @@ The `dataset.json` file describes the channels, the classes and the file format;
   - **nnU-Net Workflow:** Use the IDs in your label files. Add `ignore` only if some voxels are not labeled.
 - **`numTraining`:** The number of training cases, i.e. images in `imagesTr`.
 
-**In nnWorkbench:** **＋ New dataset** creates a `dataset.json` template. Fill it in with **Edit** on the **Data** page: the keys are fixed, and you can change the values, rename and renumber labels and channels, and add or remove them. Saving checks for missing names, non-continuous IDs and an `ignore` label that is not the highest ID; if `numTraining` does not match `imagesTr`, **Set to …** corrects it.
+**In nnWorkbench:** **＋ New dataset** creates a `dataset.json` template. Fill it in with **Edit** on the **Data** page: the keys are fixed, and you can change the values, rename and renumber labels and channels, and add or remove them. **＋ add ignore** adds the `ignore` label with the next highest ID for sparse labels. Saving checks for missing names, non-continuous IDs and an `ignore` label that is not the highest ID; if `numTraining` does not match `imagesTr`, **Set to …** corrects it.
 
 ## Prepare Your Images (Optional)
 

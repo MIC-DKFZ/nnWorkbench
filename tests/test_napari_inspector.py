@@ -13,6 +13,7 @@ from nnworkbench.services.napari_inspector import (
     annotation_target_path,
     case_id,
     image_case_ids,
+    load_annotation_case,
     prediction_case_ids,
     prefetch_indices,
     preprocessed_case_id,
@@ -214,3 +215,42 @@ def test_related_files_accept_non_nifti_images(tmp_path: Path) -> None:
     assert case_id(images / "case_001_0000.png") == "case_001"
     assert [path.name for path in files.images] == ["case_001_0000.png"]
     assert [path.name for path in files.labels] == ["case_001.png"]
+
+
+def test_annotation_label_summary_keeps_ids_for_dense_labels(tmp_path: Path) -> None:
+    images = tmp_path / "imagesTr"; images.mkdir()
+    image = images / "case_001_0000.nii.gz"; image.touch()
+    (tmp_path / "dataset.json").write_text('{"labels": {"background": 0, "liver": 1}}', encoding="utf-8")
+
+    assert annotation_label_summary(image) == ((0, "background"), (1, "liver"))
+
+
+@pytest.mark.parametrize(("labels", "original", "annotation_ids"), [
+    # sparse: ignore (3) becomes 0, every class n becomes n + 1
+    ({"background": 0, "cell": 1, "nucleus": 2, "ignore": 3}, [3, 0, 1, 2], [0, 1, 2, 3]),
+    # dense: no ignore label, nothing is shifted and 0 stays background
+    ({"background": 0, "liver": 1, "tumour": 2}, [0, 1, 2, 0], [0, 1, 2, 0]),
+])
+def test_pencil_shifts_only_sparse_labels_and_inspection_keeps_original_ids(tmp_path: Path, labels, original,
+                                                                            annotation_ids) -> None:
+    mitk = pytest.importorskip("mitk")
+    np = pytest.importorskip("numpy")
+    import json
+
+    (tmp_path / "dataset.json").write_text(json.dumps({"labels": labels}), encoding="utf-8")
+    images = tmp_path / "imagesTr"; images.mkdir()
+    image_path = images / "case_001_0000.nii.gz"
+    mitk.Image(np.zeros((1, 1, 4), dtype=np.float32)).save(image_path)
+    target = annotation_target_path(image_path)
+    target.parent.mkdir()
+    mitk.Image(np.array(original, dtype=np.uint8).reshape(1, 1, 4)).save(target)
+
+    _image, (annotation, _affine) = load_annotation_case(image_path, target)  # the pencil
+    assert np.asarray(annotation).ravel().tolist() == annotation_ids
+
+    viewer = SimpleNamespace(layers={semantic_map_name(image_path): SimpleNamespace(data=annotation)})
+    save_semantic_annotation(viewer, image_path, target)  # Save annotation
+    assert np.asarray(mitk.Image(target)).ravel().tolist() == original
+
+    label_layer = next(layer for layer in _read_case(tmp_path, "case_001").layers if layer.kind == "labels")
+    assert np.asarray(label_layer.data).ravel().tolist() == original  # inspection: original IDs
