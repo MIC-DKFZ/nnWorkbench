@@ -33,6 +33,30 @@ def test_main_window_starts_on_the_overview() -> None:
         application.processEvents()
 
 
+def test_closing_with_a_running_job_asks_first(tmp_path: Path, monkeypatch) -> None:
+    import sys
+
+    application = _application()
+    window = MainWindow()
+    jobs = window.context.jobs
+    jobs._log_folder = tmp_path
+    asked = []
+    try:
+        assert jobs._start("Train · fold 0", "Cells", "one fold",
+                           [("fold 0", sys.executable, ["-c", "import time; time.sleep(30)"])])
+        monkeypatch.setattr(window, "_ask_about_job", lambda job, windows: asked.append(job) or "cancel")
+        assert not window._confirm_quit() and jobs.busy  # Cancel: the window and the job stay
+        detached = []
+        monkeypatch.setattr(window, "_ask_about_job", lambda job, windows: "keep")
+        monkeypatch.setattr(jobs, "detach", lambda: detached.append(True))
+        assert window._confirm_quit() and detached == [True] and asked[0].title == "Train · fold 0"
+    finally:
+        monkeypatch.undo()
+        jobs.shutdown()
+        window.close()
+        application.processEvents()
+
+
 def test_dataset_page_shows_cases_and_stage_states(tmp_path: Path) -> None:
     from nnworkbench.ui.dataset_state import load_state
 

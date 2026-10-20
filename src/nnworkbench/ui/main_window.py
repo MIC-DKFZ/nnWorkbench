@@ -207,5 +207,49 @@ class MainWindow(QMainWindow):
             self.open_dataset(record)
 
     def closeEvent(self, event) -> None:
+        if not self._confirm_quit():
+            event.ignore()
+            return
         self.context.shutdown()
         super().closeEvent(event)
+
+    def _confirm_quit(self) -> bool:
+        """Ask before quitting while a job runs (keep it running or stop it) or Napari windows are open."""
+        jobs, napari = self.context.jobs, self.context.napari_windows
+        windows = (f"\n\nThe {napari} Napari window{'s' if napari != 1 else ''} opened from nnWorkbench close as "
+                   "well; save your annotations first." if napari else "")
+        job = jobs.current
+        if job is not None:
+            answer = self._ask_about_job(job, windows)
+            if answer == "keep":
+                jobs.detach()
+            return answer in {"keep", "stop"}
+        if napari:
+            return QMessageBox.question(
+                self, "Quit nnWorkbench?", windows.strip(),
+                QMessageBox.StandardButton.Close | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel) == QMessageBox.StandardButton.Close
+        return True
+
+    def _ask_about_job(self, job, windows: str) -> str:
+        """"keep", "stop" or "cancel"."""
+        progress = f" ({job.progress})" if job.progress else ""
+        later = ""
+        if job.steps:
+            names = ", ".join(step[0] or "the next step" for step in job.steps)
+            later = f" The steps after it ({names}) do not start; start them again later."
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("A job is running")
+        box.setText(f"{job.label}{progress} is still running.")
+        box.setInformativeText(
+            "Keep it running: it goes on without nnWorkbench and writes its output to the log file\n"
+            f"{job.log}\nA training shows up on the Train page again when you reopen nnWorkbench." + later + windows)
+        keep = box.addButton("Keep running and quit", QMessageBox.ButtonRole.AcceptRole)
+        stop = box.addButton("Stop job and quit", QMessageBox.ButtonRole.DestructiveRole)
+        cancel = box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(cancel)
+        box.exec()
+        clicked = box.clickedButton()
+        box.deleteLater()
+        return "keep" if clicked is keep else "stop" if clicked is stop else "cancel"

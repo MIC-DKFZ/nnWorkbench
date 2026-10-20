@@ -1,4 +1,8 @@
-"""Run one command at a time (analysis, preprocessing, training, prediction) and keep its output."""
+"""Run one command at a time (analysis, preprocessing, training, prediction) and keep its output.
+
+Every job writes its output to a log file (``job_log_folder()``); the GUI shows a copy. Quitting the GUI can leave a
+job running (``JobRunner.detach``): the command goes on and keeps writing to its log file.
+"""
 
 from __future__ import annotations
 
@@ -31,6 +35,7 @@ class Job:
     step_prefix: str = ""  # e.g. "fold 2 (3/5) · " in front of the progress hint
     cases_total: int | None = None
     cases_done: int = 0
+    log: Path | None = None  # the job's output, also after the GUI quit
 
     @property
     def label(self) -> str:
@@ -59,6 +64,26 @@ def update_progress(job: Job, line: str) -> None:
             job.progress = f"{done}/{total}"
 
 
+def job_log_folder() -> Path:
+    """Where job output is kept: next to the saved nnU-Net paths (per user)."""
+    from nnworkbench.path_setup import configuration_path
+
+    return configuration_path().parent / "jobs"
+
+
+def _log_name(job: Job) -> str:
+    title = re.sub(r"[^\w.-]+", "_", f"{job.dataset} {job.title}".strip()).strip("_") or "job"
+    return f"{job.started:%Y-%m-%d_%H-%M-%S}_{title}.log"
+
+
+def start_logged_process(process: QProcess, program: str, arguments: list[str], log: Path) -> None:
+    """Launch a child through the runner that writes its output to *log* (and copies it to the GUI); on POSIX in its
+    own process group, so its worker processes can be stopped too."""
+    process.setProperty("isolated_process_group", os.name == "posix")
+    process.start(sys.executable, ["-m", "nnworkbench.services.process_runner", "--log", str(log), program,
+                                   *arguments])
+
+
 def start_process_group(process: QProcess, program: str, arguments: list[str]) -> None:
     """Launch a child in its own process group, so its worker processes can be stopped too."""
     process.setProperty("isolated_process_group", False)
@@ -77,8 +102,8 @@ def stop_process_group(process: QProcess, wait_ms: int = 0) -> None:
     if isolated:
         try:
             os.killpg(process_id, signal.SIGTERM)
-        except ProcessLookupError:
-            return
+        except ProcessLookupError:  # just started: the runner has not made its own group yet
+            process.terminate()
         except PermissionError:
             process.terminate()
     elif os.name == "nt" and process_id > 0:
@@ -101,6 +126,14 @@ def stop_process_group(process: QProcess, wait_ms: int = 0) -> None:
         process.waitForFinished(1_000)
 
 
+def _disconnect(process: QProcess) -> None:
+    for signal_ in (process.readyReadStandardOutput, process.finished, process.errorOccurred):
+        try:
+            signal_.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+
+
 class JobRunner(QObject):
     """Owns the single running job and the history of jobs of this session."""
 
@@ -109,8 +142,9 @@ class JobRunner(QObject):
     job_finished = Signal(object)
     busy_changed = Signal(bool)
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, log_folder: Path | None = None) -> None:
         super().__init__(parent)
+        self._log_folder = log_folder
         self.jobs: list[Job] = []
         self._process: QProcess | None = None
         self._job: Job | None = None
@@ -155,6 +189,7 @@ class JobRunner(QObject):
         if self.busy or not steps:
             return False
         job = Job(title, dataset, display, steps=list(steps))
+        job.log = (self._log_folder or job_log_folder()) / _log_name(job)
         self.jobs.append(job)
         self._launch(job, total=len(steps))
         self.job_started.emit(job)
@@ -170,10 +205,17 @@ class JobRunner(QObject):
         runner = ["-m", "nnworkbench.command_runner"]
         shown = (shlex.join(["nnworkbench-run", *arguments[2:]]) if arguments[:2] == runner
                  else shlex.join([program, *arguments]))
+        header = f"$ {shown}\n" if number == 1 else f"\n$ {shown}\n"
         if number == 1:
-            job.output.append(f"$ {shown}\n")
+            job.output.append(f"Log file: {job.log}\n{header}")
         else:
-            self._append(job, f"\n$ {shown}\n")
+            self._append(job, header)
+        try:
+            job.log.parent.mkdir(parents=True, exist_ok=True)
+            with job.log.open("a", encoding="utf-8") as log:
+                log.write(header)
+        except OSError:
+            pass  # the runner reports a log file it cannot write
         process = QProcess(self)
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("PYTHONUNBUFFERED", "1")
@@ -186,7 +228,7 @@ class JobRunner(QObject):
         process.errorOccurred.connect(lambda error: self._failed(process, job, error))
         self._process, self._job = process, job
         print(f"Run: {shown}")
-        start_process_group(process, program, arguments)
+        start_logged_process(process, program, arguments, job.log)
 
     def terminate(self) -> None:
         if self._process is None or self._job is None:
@@ -197,10 +239,24 @@ class JobRunner(QObject):
         stop_process_group(process)
         QTimer.singleShot(5_000, lambda: stop_process_group(process, wait_ms=1))
 
+    def detach(self) -> Job | None:
+        """Leave the running job running when the GUI quits: stop only the runner that copies its output; the command
+        goes on and writes to its log file. Later steps of the job (e.g. the next folds) do not start."""
+        process, job = self._process, self._job
+        if process is None or job is None:
+            return None
+        _disconnect(process)
+        process.kill()  # the runner only (not its process group or tree)
+        process.waitForFinished(2_000)
+        job.status = "running in the background"
+        self._process, self._job = None, None
+        return job
+
     def shutdown(self) -> None:
         if self._process is not None:
+            _disconnect(self._process)  # the app is closing: no finished handling on half-deleted objects
             stop_process_group(self._process, wait_ms=2_000)
-        self._process = None
+        self._process, self._job = None, None
 
     def _read(self, process: QProcess, job: Job) -> None:
         text = bytes(process.readAllStandardOutput()).decode(errors="replace")

@@ -191,7 +191,8 @@ def class_table_block(classes: list[tuple[int, str]]) -> str:
     rows = [f"| {value} | {name} |" for value, name in sorted(classes)]
     note = ("\n\n*Ignore* (highest ID) marks voxels that are not annotated; it needs no description."
             if any(_is_ignore(name) for _value, name in classes) else "")
-    return "<!-- classes -->\n" + "\n".join(["| ID | Class |", "| --- | --- |", *rows]) + note + "\n<!-- end -->"
+    # a blank line before the end marker: right below a table, Markdown would render it as an empty row
+    return "<!-- classes -->\n" + "\n".join(["| ID | Class |", "| --- | --- |", *rows]) + note + "\n\n<!-- end -->"
 
 
 def description_classes(text: str) -> list[tuple[int, str]] | None:
@@ -202,7 +203,7 @@ def description_classes(text: str) -> list[tuple[int, str]] | None:
 def channel_table_block(channels: list[tuple[int, str]]) -> str:
     """The editable channel table: the channel index is the file ending _0000, _0001, … of the images."""
     rows = [f"| {index} | {name} |" for index, name in sorted(channels)]
-    return "<!-- channels -->\n" + "\n".join(["| Channel | Name |", "| --- | --- |", *rows]) + "\n<!-- end -->"
+    return "<!-- channels -->\n" + "\n".join(["| Channel | Name |", "| --- | --- |", *rows]) + "\n\n<!-- end -->"
 
 
 def _table_rows(block: re.Match | None) -> list[tuple[int, str]] | None:

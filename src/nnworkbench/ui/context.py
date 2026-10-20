@@ -140,6 +140,11 @@ class AppContext(QObject):
         process.errorOccurred.connect(lambda error: self._napari_failed(process, error))
         start_process_group(process, sys.executable, command)
 
+    @property
+    def napari_windows(self) -> int:
+        """Napari windows opened from nnWorkbench that are still open (they close with nnWorkbench)."""
+        return len(self._napari)
+
     def _forget(self, process: QProcess) -> None:
         if process in self._napari:
             self._napari.remove(process)

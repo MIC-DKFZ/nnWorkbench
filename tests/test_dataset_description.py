@@ -241,3 +241,10 @@ def test_a_question_added_to_the_template_later_is_inserted_on_saving(tmp_path: 
     assert read_answers(text, folder)["classes"].text.startswith("cell and nucleus")
     assert text.index("<!-- field: structures -->") < text.index("<!-- field: classes -->") < text.index(
         "<!-- field: class_variation -->")
+
+
+def test_tables_end_with_a_blank_line_so_markdown_adds_no_empty_row(tmp_path: Path) -> None:
+    from nnworkbench.services.dataset_description import channel_table_block, class_table_block
+
+    for block in (channel_table_block([(0, "CT")]), class_table_block([(0, "background"), (1, "liver")])):
+        assert block.endswith("|\n\n<!-- end -->")
