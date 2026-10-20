@@ -334,3 +334,99 @@ def test_suggest_gives_the_same_commands_as_the_gui(tmp_path: Path) -> None:
         window.close()
         window.deleteLater()
     assert application is not None
+
+
+def test_description_dialog_views_edits_and_saves(tmp_path: Path) -> None:
+    from qtpy.QtWidgets import QWidget
+
+    from nnworkbench.ui.description_dialog import DescriptionDialog
+
+    application = _application()
+    path = tmp_path / "dataset-description.md"
+    path.write_text("# Cells\n\n*Type:* confocal\n", encoding="utf-8")
+    parent = QWidget()
+    dialog = DescriptionDialog(path, parent)
+    assert "Cells" in dialog._viewer.toPlainText()  # shown rendered
+    dialog._start_edit()
+    assert dialog._editor.toPlainText().startswith("# Cells")
+    dialog._editor.setPlainText("# Cells\n\nType: confocal, 40 volumes\n")
+    dialog._save_edit()
+    assert "40 volumes" in path.read_text(encoding="utf-8") and "40 volumes" in dialog._viewer.toPlainText()
+    dialog.close()
+    parent.close()
+    parent.deleteLater()
+    assert application is not None
+
+
+def test_description_tab_creates_fills_and_saves_the_form(tmp_path: Path) -> None:
+    import json
+
+    from qtpy.QtWidgets import QWidget
+
+    from nnworkbench.ui.description_panel import DescriptionPanel
+
+    application = _application()
+    folder = tmp_path / "Dataset042_Cells"; (folder / "imagesTr").mkdir(parents=True)
+    (folder / "dataset.json").write_text(json.dumps({"labels": {"background": 0, "cell": 1}}), encoding="utf-8")
+    parent = QWidget()
+    panel = DescriptionPanel(parent)
+    panel.set_dataset(folder)
+    assert panel._stack.currentIndex() == 0  # no description yet: Create description
+    panel._create()
+    assert panel.editing and "type" in panel._editors
+    sections = {name: panel._class_sections[token] for token, _value, name in panel._class_table.rows()}
+    sections["cell"].editors["visual"].text.setPlainText("Bright membrane; touching cells both count.")
+    # the class sections follow the table: a new row gets a section, a renamed row keeps its text
+    panel._class_table._add_row(2, "nucleus")
+    assert len(panel._class_sections) == 3
+    row = next(entry for entry in panel._class_table._rows if entry[3].text() == "cell")
+    row[3].setText("cells")
+    assert panel._form_answers()["class:cells:visual"].text == "Bright membrane; touching cells both count."
+    # the form opens folded (an overview); a class added while editing opens; folded sections show a summary
+    assert all(card.collapsed for card in panel._cards)
+    assert not panel._class_sections[next(token for token, _value, name in panel._class_table.rows()
+                                          if name == "nucleus")].collapsed
+    panel._set_all_collapsed(True)
+    assert all(card.collapsed for card in panel._cards) and "1 of 4 answered" in panel._class_sections[
+        next(token for token, _value, name in panel._class_table.rows() if name == "cells")]._summary_label.text()
+    panel._set_all_collapsed(False)
+    panel._channel_table._add_row(1, "DAPI")
+    channels_row, channels_text = panel._sync_rows["channels"]
+    assert not channels_row.isHidden() and "channel 1 (DAPI) is only in the description" in channels_text.text()
+    assert panel._save_form()
+    text = (folder / "nnworkbench" / "dataset-description.md").read_text(encoding="utf-8")
+    assert "| 1 | DAPI |" in text
+    assert not panel.editing and "touching cells both count" in panel._viewer.toPlainText()
+    assert "### 1. cells" in text and "### 2. nucleus" in text and "touching cells both count" in text
+    parent.close()
+    parent.deleteLater()
+    assert application is not None
+
+
+def test_description_tab_warns_about_class_differences_and_pushes(tmp_path: Path, monkeypatch) -> None:
+    import json
+
+    from qtpy.QtWidgets import QMessageBox, QWidget
+
+    from nnworkbench.ui.description_panel import DescriptionPanel
+
+    application = _application()
+    folder = tmp_path / "Dataset042_Cells"; (folder / "imagesTr").mkdir(parents=True)
+    (folder / "dataset.json").write_text(json.dumps({"channel_names": {"0": "x"}, "labels": {"background": 0, "cell": 1},
+                                                     "file_ending": ".nii.gz"}), encoding="utf-8")
+    parent = QWidget()
+    panel = DescriptionPanel(parent)
+    pushed = []
+    panel.dataset_json_changed.connect(lambda: pushed.append(True))
+    panel.set_dataset(folder)
+    panel._create()
+    assert panel._sync.isHidden()  # same classes
+    panel._class_table._add_row(2, "nucleus")
+    assert not panel._sync.isHidden() and "nucleus (2) is only in the description" in panel._sync_text.text()
+    monkeypatch.setattr(QMessageBox, "question", lambda *args, **kwargs: QMessageBox.StandardButton.Yes)
+    panel._push_classes()
+    assert json.loads((folder / "dataset.json").read_text(encoding="utf-8"))["labels"]["nucleus"] == 2
+    assert pushed == [True] and panel._sync.isHidden() and not panel.editing  # saved with the form
+    parent.close()
+    parent.deleteLater()
+    assert application is not None

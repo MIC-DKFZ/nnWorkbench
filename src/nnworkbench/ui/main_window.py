@@ -14,6 +14,7 @@ from nnworkbench.services.dataset_creator import (
     next_free_dataset_id,
     next_iteration_name,
 )
+from nnworkbench.services.dataset_description import create_description
 from nnworkbench.services.dataset_scanner import scan_datasets
 
 from .app_bar import AppBar
@@ -169,6 +170,8 @@ class MainWindow(QMainWindow):
             return
         try:
             created = create_dataset(raw, [raw, preprocessed, results], dialog.dataset_id.value(), dialog.name.text())
+            if dialog.description is not None and dialog.description.isChecked():
+                create_description(created)
         except ValueError as error:
             QMessageBox.warning(self, "Dataset not created", str(error))
             return

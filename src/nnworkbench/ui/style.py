@@ -55,6 +55,11 @@ QLabel[mono="true"] {{ font-family: "{MONO}"; font-size: 12px; }}
 QLabel#h1 {{ font-size: 22px; font-weight: 700; }}
 QLabel#h2 {{ font-size: 15px; font-weight: 700; }}
 QLabel#h3 {{ font-size: 13px; font-weight: 700; }}
+QPushButton#formSection, QPushButton#formClass {{
+    background: transparent; border: 0; padding: 0; text-align: left; font-weight: 700; color: {TEXT};
+}}
+QPushButton#formSection {{ font-size: 19px; }}
+QPushButton#formClass {{ font-size: 15px; }}
 QLabel#sectionLabel {{ color: {MUTED}; font-size: 11px; font-weight: 700; letter-spacing: 1px; }}
 QLabel#bigNumber {{ font-size: 28px; font-weight: 700; }}
 

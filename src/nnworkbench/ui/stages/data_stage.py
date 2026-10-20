@@ -19,6 +19,7 @@ from nnworkbench.services.workflow_status import CaseRow, geometries_match, read
 
 from ..context import AppContext
 from ..dataset_state import DatasetState
+from ..description_panel import DescriptionPanel
 from ..json_editor import DatasetJsonPanel
 from ..label_statistics_dialog import LabelStatisticsView
 from ..widgets import (
@@ -215,9 +216,11 @@ class DataStage(StagePage):
         self._path = label("", mono=True)
         head.addWidget(self._path)
         head.addStretch()
-        self._toggle = ToggleGroup(["Files", "Statistics"], icons=["file", "chart"])
+        self._toggle = ToggleGroup(["Files", "Statistics", "Description"], icons=["file", "chart", "edit"])
         self._toggle.set_tooltip(1, "Statistics of the whole dataset (run Compute statistics first); "
                                     "the chart button in a row shows one case")
+        self._toggle.set_tooltip(2, "dataset-description.md: describe the images and define the classes "
+                                    "(guide: 1. Describe and 2. Define), with example images")
         self._toggle.changed.connect(self._toggle_view)
         head.addWidget(self._toggle)
         self._views = QStackedWidget()
@@ -251,6 +254,9 @@ class DataStage(StagePage):
         self._stats_layout = QVBoxLayout(self._stats_holder)
         self._stats_layout.setContentsMargins(0, 0, 0, 0)
         self._views.addWidget(self._stats_holder)
+        self._description = DescriptionPanel()
+        self._views.addWidget(self._description)
+        self._description.dataset_json_changed.connect(self.reload_requested.emit)  # dataset.json panel and checks
         files.body.addWidget(self._views, 1)
         self.center.addWidget(files, 1)
         # Right: dataset.json or case statistics
@@ -275,6 +281,7 @@ class DataStage(StagePage):
         self._path.setText(f"nnUNet_raw/{record.directory_name}" if record.raw_path else "no raw data in nnUNet_raw")
         self._counts_text = (f"imagesTr <b style='color:#1e293b'>{raw.image_files}</b>  ·  labelsTr "
                              f"<b style='color:#1e293b'>{raw.label_files}</b>  ·  dataset.json")
+        self._description.set_dataset(record.raw_path)
         self._fill_table(annotation)
         self._fill_statistics(state)
         note = ""

@@ -416,3 +416,19 @@ def test_training_an_existing_fold_again_needs_yes(tmp_path, monkeypatch, capsys
     monkeypatch.setenv(command_runner.YES_ENVIRONMENT, "1")  # the GUI asks the user itself
     assert command_runner.run_with_configured_paths(command) == 0
     assert command_runner.run_with_configured_paths(["nnUNetv2_train", "42", "3d_fullres", "1"]) == 0  # new fold
+
+
+def test_describe_and_create_dataset_add_the_description(tmp_path, monkeypatch, capsys) -> None:
+    import json
+
+    _roots(tmp_path, monkeypatch)
+    assert command_runner._run_builtin_command(["create-dataset", "-d", "42", "--name", "Cells", "--labels", "cell",
+                                                "--add-description", "--json"]) == 0
+    created = json.loads(capsys.readouterr().out)
+    assert Path(created["description"]).name == "dataset-description.md"
+    assert command_runner._run_builtin_command(["create-dataset", "-d", "43", "--name", "Liver", "--labels", "liver"]) == 0
+    capsys.readouterr()
+    assert command_runner._run_builtin_command(["describe", "-d", "43", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["created"] is True
+    assert command_runner._run_builtin_command(["describe", "-d", "43", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["created"] is False  # never replaced

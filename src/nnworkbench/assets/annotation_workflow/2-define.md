@@ -47,7 +47,15 @@ For each class document:
 
 - **Description:** What is the structure?
 - **Visual Description:** What do objects in this class look like? Define what should be included or excluded, where the boundaries are, and how uncertain or unusual cases should be handled.
+- **Labeling Instructions (optional):** How is the class annotated (nnInteractive or brush), and what should annotators watch out for?
 - **Example images:** Add representative examples.
+
+**In nnWorkbench:** The class definitions go into section 3. Define Classes of `dataset-description.md` (see
+[1. Describe](1-describe.md)): a class table and one section per class with the fields above (**Data** page →
+**Description** → **Edit**). Edit ID and name in the table (**＋ add class**, **＋ add ignore**, ✕ to remove); the class
+sections below follow it, and a renamed class keeps its text. If it
+differs from `dataset.json`, an orange note lists the differences: **Push to dataset.json** writes the table into
+`dataset.json`, **Import from dataset.json** takes the classes from there.
 
 ## Example Definition
 

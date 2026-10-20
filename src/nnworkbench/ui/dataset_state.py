@@ -13,7 +13,7 @@ from nnworkbench.services.dataset_json import (
     manifest_source,
     num_training_error,
 )
-from nnworkbench.services.label_analysis import load_label_analysis
+from nnworkbench.services.label_analysis import analysis_path, load_label_analysis
 from nnworkbench.services.workflow_status import (
     ModelInfo,
     PlansInfo,
@@ -127,7 +127,7 @@ def _analysis_outdated(raw_path: Path | None, analysis: dict | None) -> int:
     if raw_path is None or analysis is None:
         return 0
     try:
-        analysed = (raw_path / "class_distribution.json").stat().st_mtime
+        analysed = analysis_path(raw_path).stat().st_mtime
     except OSError:
         return 0
     labels = raw_path / "labelsTr"

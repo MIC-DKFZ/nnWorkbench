@@ -9,7 +9,7 @@ to the final model. Humans start better with the [README](README.md) and the
 
 ```bash
 nnworkbench-set-paths --raw R --preprocessed P --results S          # once per computer
-nnworkbench-run create-dataset -d 42 --name Cells --labels background,cell --ignore --channels fluorescence
+nnworkbench-run create-dataset -d 42 --name Cells --labels background,cell --ignore --channels fluorescence --add-description
 nnworkbench-run status -d 42 --json                                   # where are we, what is missing, which device
 nnworkbench-run annotate -d 42 --case cells_001                       # human annotates in Napari (pencil)
 nnworkbench-run suggest -d 42 --step preprocess --json                # the command the GUI would prefill, and why
@@ -72,7 +72,8 @@ Find out early, from how they write or by asking "Have you trained a segmentatio
    `nnworkbench-gui` prints an install hint in the core installation: annotating and inspecting need the full one
    (`pip install -e ".[all]"` from source, later `pip install "nnworkbench[all]"`).
 2. **Folders:** `nnworkbench-get-paths`. If not set, ask where the data should live (step 2 below).
-3. **Project notes:** read `project-notes.md` in the dataset folder (`nnUNet_raw/DatasetXXX_Name/`) if it exists.
+3. **Project notes:** read `nnworkbench/project-notes.md` in the dataset folder (`nnUNet_raw/DatasetXXX_Name/`) if it
+   exists.
 4. **State:** `nnworkbench-run status -d <ID> --json`, then pick the next step:
 
 | `status` shows | Next step |
@@ -90,10 +91,12 @@ Find out early, from how they write or by asking "Have you trained a segmentatio
 
 ## Project notes
 
-Keep the decisions where the next session finds them: `nnUNet_raw/DatasetXXX_Name/project-notes.md` (nnU-Net
-ignores extra files there). Write the interview answers, the chosen planner and trainer, which folds run where (and
-job IDs on a cluster), and per round what was annotated and the validation result. Copy the file into each new
-round after `new-iteration`.
+Keep the decisions where the next session finds them: `nnUNet_raw/DatasetXXX_Name/nnworkbench/project-notes.md`.
+The `nnworkbench/` folder of a raw dataset holds everything nnWorkbench adds (description, its images, these notes,
+the statistics `class_distribution.json`); nnU-Net ignores it, so put nothing of yours next to `imagesTr`. Write the
+interview answers, the chosen planner and trainer, which folds run where (and job IDs on a cluster), and per round
+what was annotated and the validation result. `new-iteration` copies the folder into the next round (without the
+statistics, which belong to the old labels).
 
 **Handovers are part of the notes.** Whenever you hand work to the human, write what you asked for, e.g.
 "2026-10-19: asked to annotate cells_003, cells_017, cells_021 (nucleus weakest)" or "asked to check cells_017 in
@@ -143,13 +146,50 @@ Ask one or two questions at a time. Each answer below says what it decides.
 6. **"Where should the data live?"** Three folders (empty is fine): `nnUNet_raw` (images, labels), `nnUNet_preprocessed`,
    `nnUNet_results`. For a cluster: storage both machines see is easiest (see *Remote machines* below).
 
-Summarise the answers back to the user in two or three sentences and write them into the project notes.
+Summarise the answers back to the user in two or three sentences. Write the answers about the data and the classes
+into `dataset-description.md` (below) and your own decisions (planner, trainer, jobs) into the project notes.
+
+## Dataset description
+
+`nnworkbench/dataset-description.md` in the dataset folder is the user's document about the data, in three sections:
+1. Describe Images (with the channel table) and 2. Describe Target Structures (the questions of guide step 1, with
+facts filled in by nnWorkbench) and 3. Define Classes (guide step 2: the class table and one section per class with Description, Visual
+Description, Labeling Instructions (optional) and Example Images in `nnworkbench/description_images/`, linked relatively), then
+optional Notes. Create it with
+`nnworkbench-run create-dataset … --add-description` or, for an existing dataset, `nnworkbench-run describe -d 42`
+(never replaces an existing file). Fill it from the interview: replace the italic placeholders with the user's
+answers in their words, ask about class boundaries and unclear cases ("Where exactly does a cell end?", "What about
+dividing cells?", "What counts as background?"), and suggest example images (open a case with `inspect --case`; the
+user saves a screenshot, you link it). In the GUI the user views and edits it on the Data page under **Description**
+(**Edit** opens a form with one foldable card per section, folded at first; the class sections follow the class
+table as it is edited, a renamed class keeps its text). `new-iteration` copies it into the next round; record changes
+under Notes.
+
+When you edit the file yourself, keep its invisible markers: each answer sits between `<!-- field: KEY -->` and
+`<!-- end -->`, right after its `**Label:**` (images as `![caption](description_images/file.png)` lines inside the
+same block). Replace only the italic placeholder question. Blocks between `<!-- auto: … -->` and `<!-- end -->`
+(facts, sparse/dense) are rewritten by nnWorkbench; do not edit them. Text outside the markers is kept as it is.
+
+The channel table between `<!-- channels -->` and `<!-- end -->`, right after the Type field (rows
+`| index | name |`, index = file ending `_0000`, `_0001`, …), works like the class table below: compared with
+`channel_names` in `dataset.json`, with **Import from dataset.json** and **Push to dataset.json** (push rewrites only
+`channel_names`, never the image files).
+
+The class table between `<!-- classes -->` and `<!-- end -->` is the description's own list of classes (rows
+`| ID | name |`, background 0, IDs without gaps, `ignore` last). nnWorkbench rebuilds the class sections (`### ID.
+name` up to `<!-- classes-end -->`) in table order whenever it saves: a class without a row loses its section, so
+change the table and the `### ID. name` heading together and keep the field keys (`class:<name>:description`, …)
+matching the name. The user may edit it while the classes are still
+being defined; the GUI warns when it differs from `dataset.json` and offers **Import from dataset.json** and
+**Push to dataset.json** (push rewrites only `labels`). Do not change the table and `dataset.json` independently:
+when the classes change, update `dataset.json` and make the table match, and never push new class IDs once
+`labelsTr` holds label files without telling the user that the existing labels keep their old numbers.
 
 ## 2. Set up and prepare the data
 
 ```bash
 nnworkbench-set-paths --raw /data/nnUNet_raw --preprocessed /data/nnUNet_preprocessed --results /data/nnUNet_results
-nnworkbench-run create-dataset -d 42 --name CellSegmentation --labels background,cell,nucleus --ignore --channels fluorescence --json
+nnworkbench-run create-dataset -d 42 --name CellSegmentation --labels background,cell,nucleus --ignore --channels fluorescence --add-description --json
 ```
 
 - Pick an unused dataset ID (`create-dataset` refuses used ones). `--ignore` only for sparse labels.
@@ -269,7 +309,8 @@ nnworkbench-run new-iteration -d 42 --json
 ```
 
 Copies images, labels and `dataset.json` into a new dataset (e.g. `Dataset043_CellSegmentation_iter1`); the previous
-round and its model stay unchanged for comparison. Copy `project-notes.md`. The human annotates more there
+round and its model stay unchanged for comparison; it also copies the `nnworkbench/` folder (description and project
+notes). The human annotates more there
 (step 3), focused on the weak cases and classes, and may add new images of underrepresented types (then update
 `numTraining`). Then steps 4–6 for the new dataset, and compare `validation` of both rounds.
 
@@ -307,9 +348,10 @@ nnworkbench-run inspect-predictions OUT --images IN
   (class → Dice), `cases[]` weakest first (`case`, `fold`, `dice`, `weakest_class`, `weakest_dice`, `prediction`).
 - **`suggest --json`:** `dataset`, `step`, `command` (shell-quoted), `arguments` (list), `reasons[]`.
 - **`reduce-checkpoints --dry-run --json`** (and without `--yes`): `model`, `dry_run`, `actions[]` (`action`, `path`).
-- **`create-dataset --json`:** `dataset`, `path`, `dataset_json`. **`new-iteration --json`:** `source`, `dataset`,
+- **`create-dataset --json`:** `dataset`, `path`, `dataset_json` (+ `description` with `--add-description`).
+  **`describe --json`:** `dataset`, `path`, `created` (false if it existed). **`new-iteration --json`:** `source`, `dataset`,
   `dataset_id`, `path`.
-- **`compute-statistics --json`:** `dataset`, `path` (`class_distribution.json`), `files_analyzed`, `classes[]`,
+- **`compute-statistics --json`:** `dataset`, `path` (`nnworkbench/class_distribution.json`), `files_analyzed`, `classes[]`,
   `per_image[]`, `undefined_label_ids`. **`stack-images --json`:** `input`, `output`, `file_type`, `scale_factor`,
   `spacing`. **`reduce-checkpoints --json`:** `model`, `folds[]`, `trainer_name_reset`.
 - **`nnworkbench-get-paths --json`:** `config`, `paths` (`nnUNet_raw`, `nnUNet_preprocessed`, `nnUNet_results`,

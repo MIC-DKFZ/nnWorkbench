@@ -19,6 +19,7 @@ from .services.dataset_creator import (
     next_free_dataset_id,
     next_iteration_name,
 )
+from .services.dataset_description import create_description, description_path
 from .services.dataset_scanner import scan_datasets
 from .services.workflow_status import (
     label_names,
@@ -43,7 +44,7 @@ def _roots_list(roots: dict[str, Path | None]) -> list[Path | None]:
 
 def run_create_dataset(roots: dict[str, Path | None], dataset_id: int, name: str, labels: list[str],
                        channels: list[str], *, ignore: bool = False, file_ending: str = ".nii.gz",
-                       description: str = "", as_json: bool = False) -> int:
+                       description: str = "", add_description: bool = False, as_json: bool = False) -> int:
     """Create ``DatasetXXX_Name`` with imagesTr, labelsTr and a complete dataset.json (as New dataset in the GUI)."""
     names = [label.strip() for label in labels if label.strip()]
     if not names or names[0].casefold() != "background":
@@ -66,6 +67,8 @@ def run_create_dataset(roots: dict[str, Path | None], dataset_id: int, name: str
     }
     (destination / "dataset.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     result = {"dataset": destination.name, "path": str(destination), "dataset_json": manifest}
+    if add_description:
+        result["description"] = str(create_description(destination))
     _print(result, as_json, f"Created {destination}\n  labels: "
            + ", ".join(f"{label} = {value}" for label, value in manifest["labels"].items())
            + f"\n  channels: {', '.join(channel_names)} · file ending {file_ending}\n"
@@ -281,4 +284,21 @@ def run_suggest(roots: dict[str, Path | None], dataset_id: int, step: str, *, ch
     result = suggestion(roots, dataset_id, step, device=device, model=model, input_directory=input_directory,
                         output_directory=output_directory)
     _print(result, as_json, result["command"] + "\n\nWhy:\n" + "\n".join(f"  - {reason}" for reason in result["reasons"]))
+    return 0
+
+
+def run_describe(roots: dict[str, Path | None], dataset_id: int, *, as_json: bool = False) -> int:
+    """Create dataset-description.md for a dataset (never replaces an existing one) and report its path."""
+    records = scan_datasets(roots.get("raw"), roots.get("preprocessed"), roots.get("results"))
+    record = next((item for item in records if item.dataset_id == dataset_id and item.raw_path), None)
+    if record is None:
+        raise ValueError(f"No dataset with ID {dataset_id} in nnUNet_raw.")
+    path = description_path(record.raw_path)
+    created = not path.is_file()
+    if created:
+        create_description(record.raw_path)
+    _print({"dataset": record.directory_name, "path": str(path), "created": created}, as_json,
+           f"{'Created' if created else 'Already there:'} {path}\n"
+           "Fill it in with a text editor or in the GUI (Data page, Description); put images into "
+           "description_images/ next to it.")
     return 0

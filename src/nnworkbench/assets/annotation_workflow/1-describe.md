@@ -19,6 +19,16 @@ Answer and document the following questions:
 - How much do individual objects of a class vary in size, shape, appearance, orientation, position, and context?
 - How often does each class occur, and in how many images or volumes is it represented? Are some classes much more common or rarer than others?
 
+**In nnWorkbench:** Write the answers into `dataset-description.md` in the `nnworkbench` folder of the dataset (next
+to `imagesTr`; nnU-Net ignores it): a template with these questions (sections 1. Describe Images and 2. Describe Target Structures), the class definitions of
+[2. Define](2-define.md) (section 3. Define Classes) and the facts nnWorkbench already knows (number of images,
+file ending). **＋ New dataset** creates it (checkbox **Add dataset-description.md**); for an existing
+dataset, open **Description** on the **Data** page (next to Files and Statistics) and click **Create description**.
+There, **Edit** opens a form with one card per section (click a title to fold it in or out), and **Add image…** for
+example images, e.g. a representative and a difficult one. Section 1 has a channel table (`_0000`, `_0001`, … and their
+names); like the class table, it is compared with `dataset.json` and can be imported from or pushed to it. **Save** writes the file; experienced users can use **Edit as text**. On the
+command line: `nnworkbench-run describe -d 42`. Each new annotation round gets a copy.
+
 ## Example Description
 
 *A fictional example for the `Dataset042_CellSegmentation` dataset used throughout this guide.*

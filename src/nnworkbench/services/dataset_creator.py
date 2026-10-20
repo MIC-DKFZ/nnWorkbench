@@ -5,7 +5,9 @@ import re
 import shutil
 from pathlib import Path
 
+from .dataset_contents import copy_workbench_folder
 from .dataset_scanner import id_in_use
+from .label_analysis import ANALYSIS_FILENAME
 
 
 def normalise_name(name: str) -> str:
@@ -77,6 +79,8 @@ def create_next_iteration(raw_root: Path | None, all_roots: list[Path | None], s
         else:
             (destination / "labelsTr").mkdir()
         shutil.copy2(source / "dataset.json", destination / "dataset.json")
+        # description, its images and the notes stay with every round; the statistics belong to the old labels
+        copy_workbench_folder(source, destination, skip={ANALYSIS_FILENAME})
     except Exception:
         shutil.rmtree(destination, ignore_errors=True)
         raise

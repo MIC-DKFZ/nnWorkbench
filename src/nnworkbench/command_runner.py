@@ -16,11 +16,22 @@ from .services.checkpoint_reduction import reduce_model_for_sharing, reduction_p
 from .services.commands import shell_join
 from .services.dataset_scanner import discover
 from .services.image_stack import stack_image_folder
-from .services.label_analysis import analyse_label_distribution
+from .services.label_analysis import analyse_label_distribution, analysis_path
 
-BUILTIN_COMMANDS = ("status", "suggest", "validation", "create-dataset", "new-iteration", "compute-statistics", "inspect",
-                    "annotate", "inspect-predictions",
-                    "stack-images", "reduce-checkpoints")
+BUILTIN_COMMANDS = (
+    "status",
+    "suggest",
+    "validation",
+    "create-dataset",
+    "describe",
+    "new-iteration",
+    "compute-statistics",
+    "inspect",
+    "annotate",
+    "inspect-predictions",
+    "stack-images",
+    "reduce-checkpoints",
+)
 
 
 def _progress(as_json: bool):
@@ -126,7 +137,7 @@ def run_compute_statistics(dataset_id: int, workers: int | None = None, as_json:
     """Compute statistics (as in the GUI): classes per image and voxels per class, from labelsTr."""
     dataset_directory = raw_dataset_directory(dataset_id)
     analysis = analyse_label_distribution(dataset_directory, workers, progress=_progress(as_json))
-    result_path = dataset_directory / "class_distribution.json"
+    result_path = analysis_path(dataset_directory)
     if as_json:
         print_json({"dataset": dataset_directory.name, "path": str(result_path)} | analysis)
     else:
@@ -398,13 +409,27 @@ def _run_builtin_command(command: Sequence[str]) -> int | None:
                             help="Channel names in order, comma-separated, e.g. fluorescence (default: image)")
         parser.add_argument("--file-ending", default=".nii.gz", help="File ending of all images (default: .nii.gz)")
         parser.add_argument("--description", default="", help="Description for dataset.json")
+        parser.add_argument("--add-description", action="store_true",
+                            help="Also create dataset-description.md, a template to describe the images and classes")
         parser.add_argument("--json", action="store_true", help="Print the result as JSON, e.g. for scripts")
         options = parser.parse_args(arguments)
         from .cli_tools import run_create_dataset
 
         return run_create_dataset(saved_roots(), options.dataset, options.name, options.labels.split(","),
                                   options.channels.split(","), ignore=options.ignore, file_ending=options.file_ending,
-                                  description=options.description, as_json=options.json)
+                                  description=options.description, add_description=options.add_description,
+                                  as_json=options.json)
+    if name == "describe":
+        parser = argparse.ArgumentParser(
+            prog=f"nnworkbench-run {name}",
+            description="Create dataset-description.md in the dataset folder: a template to describe the images and "
+                        "define the classes (guide: 1. Describe, 2. Define). An existing file is never replaced.")
+        parser.add_argument("-d", "--dataset", type=int, required=True, help="Dataset ID")
+        parser.add_argument("--json", action="store_true", help="Print the result as JSON, e.g. for scripts")
+        options = parser.parse_args(arguments)
+        from .cli_tools import run_describe
+
+        return run_describe(saved_roots(), options.dataset, as_json=options.json)
     if name == "new-iteration":
         parser = argparse.ArgumentParser(
             prog=f"nnworkbench-run {name}",

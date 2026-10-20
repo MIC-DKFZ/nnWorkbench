@@ -1,7 +1,23 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
+
+WORKBENCH_FOLDER = "nnworkbench"  # in a raw dataset: what nnWorkbench adds (nnU-Net ignores it)
+
+
+def workbench_folder(dataset_directory: Path) -> Path:
+    """The folder of a raw dataset with nnWorkbench's files: description, its images, notes and statistics."""
+    return dataset_directory / WORKBENCH_FOLDER
+
+
+def copy_workbench_folder(source: Path, destination: Path, skip: set[str]) -> None:
+    """Copy the nnWorkbench folder into a new annotation round, without the files named in ``skip`` (statistics
+    that no longer match the new labels)."""
+    if workbench_folder(source).is_dir():
+        shutil.copytree(workbench_folder(source), workbench_folder(destination), dirs_exist_ok=True,
+                        ignore=lambda _folder, names: [name for name in names if name in skip])
 
 
 def trained_models(dataset_path: Path | None) -> list[Path]:

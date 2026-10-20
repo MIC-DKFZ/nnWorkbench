@@ -14,6 +14,7 @@ from concurrent.futures import ProcessPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .dataset_contents import workbench_folder
 from .dataset_json import read_manifest
 from .image_files import has_image_suffix, strip_image_suffix
 
@@ -22,8 +23,8 @@ _CHANNEL_SUFFIX = re.compile(r"_\d{4}$")
 
 
 def analysis_path(dataset_directory: Path) -> Path:
-    """Return the on-disk cache location for a raw dataset."""
-    return dataset_directory / ANALYSIS_FILENAME
+    """Return the on-disk cache location for a raw dataset (in its nnworkbench folder)."""
+    return workbench_folder(dataset_directory) / ANALYSIS_FILENAME
 
 
 def label_files(dataset_directory: Path) -> list[Path]:
@@ -207,6 +208,7 @@ def load_label_analysis(dataset_directory: Path) -> dict | None:
 
 
 def _write_analysis(target: Path, data: dict) -> None:
+    target.parent.mkdir(exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(prefix=".class-distribution.", suffix=".json", dir=target.parent)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as file:

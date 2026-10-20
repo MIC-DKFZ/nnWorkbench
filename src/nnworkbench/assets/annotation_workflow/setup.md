@@ -87,7 +87,7 @@ nnUNet_raw/
 
 Create the dataset folder with the subfolders `imagesTr` and `labelsTr` in `nnUNet_raw` yourself, copy your images (and, in the nnU-Net Workflow, your labels) into them, and add a `dataset.json` as described [below](#create-datasetjson). Make sure no other dataset uses the same ID.
 
-**In nnWorkbench:** Click **＋ New dataset** on the overview and enter a dataset ID and a name. nnWorkbench creates the correctly named folder with `imagesTr`, `labelsTr` and a `dataset.json` template, and warns you if the ID is already in use. Copy your images (and, in the nnU-Net Workflow, your labels) into the folders (**Open**, then **⟳ Refresh**), and use the magnifier button (**Open in Napari**) next to a case on the **Data** page to open it in Napari.
+**In nnWorkbench:** Click **＋ New dataset** on the overview and enter a dataset ID and a name. nnWorkbench creates the correctly named folder with `imagesTr`, `labelsTr` and a `dataset.json` template (and, with **Add dataset-description.md**, a template to describe the images and classes, see [1. Describe](1-describe.md)), and warns you if the ID is already in use. Copy your images (and, in the nnU-Net Workflow, your labels) into the folders (**Open**, then **⟳ Refresh**), and use the magnifier button (**Open in Napari**) next to a case on the **Data** page to open it in Napari.
 
 ## Create dataset.json
 

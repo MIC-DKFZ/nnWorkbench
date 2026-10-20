@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from qtpy.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit
+from qtpy.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit
 
 from nnworkbench.models.dataset import DatasetRecord
 
@@ -34,6 +34,13 @@ class NewDatasetDialog(QDialog):
             self.source_box.currentIndexChanged.connect(self._source_changed)
             self._source_changed(start)  # suggested ID and name of the preselected source
         layout.addRow("Dataset ID", with_stepper(self.dataset_id)); layout.addRow("Name", self.name)
+        self.description: QCheckBox | None = None
+        if not self._sources:  # a new iteration copies the description of its source instead
+            self.description = QCheckBox("Add dataset-description.md")
+            self.description.setChecked(True)
+            self.description.setToolTip("A template to describe your images and define the classes (guide: 1. Describe "
+                                        "and 2. Define), with images. Open it on the Data page.")
+            layout.addRow("", self.description)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
         layout.addRow(buttons)

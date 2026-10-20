@@ -181,6 +181,9 @@ It also provides the following dataset tools:
 # Create a dataset with imagesTr, labelsTr and dataset.json (add --ignore for sparse labels)
 nnworkbench-run create-dataset -d 42 --name CellSegmentation --labels background,cell,nucleus --ignore --channels fluorescence
 
+# Add dataset-description.md: a template to describe the images and define the classes (also: create-dataset --add-description)
+nnworkbench-run describe -d 42
+
 # Show what is done and what is next for a dataset, and the device (GPU / MPS / CPU) (add --json for scripts)
 nnworkbench-run status -d 42
 

@@ -55,12 +55,15 @@ def test_label_validity_accumulates_empty_missing_image_and_undefined_id_finding
 
 
 def test_load_label_analysis_reads_cached_raw_file(tmp_path: Path) -> None:
+    assert analysis_path(tmp_path) == tmp_path / "nnworkbench" / "class_distribution.json"
+    analysis_path(tmp_path).parent.mkdir()
     analysis_path(tmp_path).write_text(json.dumps({"classes": [], "per_image": []}), encoding="utf-8")
 
     assert load_label_analysis(tmp_path) == {"classes": [], "per_image": []}
 
 
 def test_load_label_analysis_rejects_legacy_cache_without_per_image_data(tmp_path: Path) -> None:
+    analysis_path(tmp_path).parent.mkdir()
     analysis_path(tmp_path).write_text(json.dumps({"classes": []}), encoding="utf-8")
 
     assert load_label_analysis(tmp_path) is None

@@ -46,7 +46,7 @@ from . import style
 
 # ------------------------------------------------------------ icons
 # Small SVG line icons (assets/icons/*.svg) instead of emoji, which look different on every system and font.
-ICONS = ("search", "edit", "chart", "folder", "file", "bulb", "info", "chip")
+ICONS = ("search", "edit", "chart", "folder", "file", "bulb", "info", "chip", "chevron-right", "chevron-down")
 _ICON_DIR = Path(__file__).parent.parent / "assets" / "icons"
 _ICON_COLOR = "#334155"  # the stroke colour in the files; replaced for other colours
 _icon_cache: dict[tuple[str, str, int], QPixmap] = {}
