@@ -333,7 +333,10 @@ def availability(raw: bool, preprocessed: bool, results: bool) -> QWidget:
 def format_time(timestamp: float | None) -> str:
     if timestamp is None:
         return "—"
-    moment = datetime.fromtimestamp(timestamp)
+    try:
+        moment = datetime.fromtimestamp(timestamp)
+    except (ValueError, OverflowError, OSError):  # far in the future or past (year out of range)
+        return "—"
     today = datetime.now().date()
     if moment.date() == today:
         return f"today {moment:%H:%M}"

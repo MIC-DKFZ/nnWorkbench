@@ -71,7 +71,9 @@ class DatasetSwitcher(QFrame):
             row_layout.setSpacing(10)
             is_current = current is not None and record.dataset_id == current.dataset_id
             row_layout.addWidget(dataset_id_label(record.dataset_id, current=is_current))
-            row_layout.addWidget(label(record.name, bold=True), 1)
+            name = label(record.name, bold=True)
+            name.setTextFormat(Qt.TextFormat.PlainText)  # folder names are not HTML
+            row_layout.addWidget(name, 1)
             row_layout.addWidget(availability(record.raw_path is not None, record.preprocessed_path is not None,
                                               record.results_path is not None))
             item.setSizeHint(QSize(430, 46))
@@ -115,8 +117,9 @@ class DatasetSwitcher(QFrame):
         super().keyPressEvent(event)
 
     def _open_current(self) -> None:
-        if self._list.currentItem() is not None:
-            self._choose(self._list.currentItem())
+        item = self._list.currentItem()
+        if item is not None and not item.isHidden():  # hidden: the search matches no dataset
+            self._choose(item)
 
     def _choose(self, item: QListWidgetItem) -> None:
         self.hide()

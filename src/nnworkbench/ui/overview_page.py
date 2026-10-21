@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import html
 import json
+import os
 from pathlib import Path
 
 from qtpy.QtCore import Qt, Signal
@@ -52,6 +54,58 @@ from .widgets import (
 )
 
 _KEYS = ("raw", "preprocessed", "results")
+_DESCRIPTION_LIMIT = 1000  # characters of the dataset.json description shown in the details
+_CHIP_LIMIT = 100  # label chips shown in the details, then "+N more"
+
+
+def _expanded(text: str) -> Path:
+    path = Path(text)
+    try:
+        return path.expanduser()
+    except RuntimeError:  # "~nosuchuser/...": used as typed, so it is simply not found
+        return path
+
+
+def _folder_state(text: str) -> str:
+    """"found", "missing" or "unreadable" (exists, but its content cannot be listed)."""
+    path = _expanded(text)
+    try:
+        if not path.is_dir():
+            return "missing"
+    except (OSError, ValueError):  # name too long, null byte, ...
+        return "missing"
+    try:
+        with os.scandir(path):
+            return "found"
+    except OSError:
+        return "unreadable"
+
+
+def _field_text(text: str) -> str:
+    """Surrounding spaces are typos, unless the folder name really has them (e.g. "raw ")."""
+    stripped = text.strip()
+    if stripped != text and stripped:
+        try:
+            if _expanded(text).exists():
+                return text
+        except (OSError, ValueError):
+            pass
+    return stripped
+
+
+def _short(value: object, limit: int) -> str:
+    """``str(value)`` cut to ``limit`` characters, also for deeply nested values."""
+    try:
+        text = str(value)
+    except (RecursionError, ValueError):
+        return "…"
+    return text if len(text) <= limit else text[:limit].rstrip() + "…"
+
+
+def _plain(widget: QLabel) -> QLabel:
+    """dataset.json values and folder names are shown as written, never as HTML."""
+    widget.setTextFormat(Qt.TextFormat.PlainText)
+    return widget
 
 
 class PathsCard(Card):
@@ -133,10 +187,10 @@ class PathsCard(Card):
         self._render_profiles()
 
     def local_paths(self) -> tuple[Path | None, Path | None, Path | None]:
-        return tuple(Path(value).expanduser() if value.strip() else None for value in self._local)  # type: ignore
+        return tuple(_expanded(value) if value.strip() else None for value in self._local)  # type: ignore
 
     def _texts(self) -> tuple[str, ...]:
-        return tuple(self._fields[key].text().strip() for key in _KEYS)
+        return tuple(_field_text(self._fields[key].text()) for key in _KEYS)
 
     def _load_fields(self) -> None:
         values = self._local if self._active == "Local" else tuple(self._profiles[self._active][key] for key in _KEYS)
@@ -148,10 +202,10 @@ class PathsCard(Card):
         self._render_profiles()
 
     def _update_marks(self) -> None:
-        """✓ found, orange ! not set yet (normal on the first start), red ✗ set but not found."""
-        missing = unset = 0
+        """✓ found, orange ! not set yet (normal on the first start), red ✗ set but not found or not readable."""
+        missing = unset = unreadable = 0
         for key in _KEYS:
-            text = self._fields[key].text().strip()
+            text = _field_text(self._fields[key].text())
             mark = self._marks[key]
             if self._active != "Local":
                 mark.setText("")
@@ -159,23 +213,27 @@ class PathsCard(Card):
                 continue
             if not text:
                 state, tooltip = "unset", "Not set yet: choose the folder with Browse… (an empty folder is fine)"
-            elif Path(text).expanduser().is_dir():
-                state, tooltip = "found", "Folder found"
             else:
-                state, tooltip = "missing", f"Folder not found: {text}"
-            mark.setText({"found": "✓", "unset": "!", "missing": "✗"}[state])
-            mark.setObjectName({"found": "statusYes", "unset": "statusUnset", "missing": "statusNo"}[state])
+                state = _folder_state(text)
+                tooltip = {"found": "Folder found", "missing": f"Folder not found: {text}",
+                           "unreadable": f"Folder not readable (no permission): {text}"}[state]
+            mark.setText({"found": "✓", "unset": "!", "missing": "✗", "unreadable": "✗"}[state])
+            mark.setObjectName({"found": "statusYes", "unset": "statusUnset"}.get(state, "statusNo"))
             mark.setToolTip(tooltip)
             mark.style().unpolish(mark)
             mark.style().polish(mark)
             missing += state == "missing"
             unset += state == "unset"
+            unreadable += state == "unreadable"
         if self._active != "Local":
             set_badge(self._status, f"profile: {self._active}", "purple")
             self._note.setText("paths for another machine · used only for Export command")
-        elif missing:
-            set_badge(self._status, f"{missing} not found" + (f" · {unset} not set" if unset else ""), "red")
-            self._note.setText("Check the path or choose another folder with Browse…")
+        elif missing or unreadable:
+            parts = [f"{missing} not found" if missing else "", f"{unreadable} not readable" if unreadable else "",
+                     f"{unset} not set" if unset else ""]
+            set_badge(self._status, " · ".join(part for part in parts if part), "red")
+            self._note.setText("Check the path or choose another folder with Browse…" if missing else
+                               "Check the folder's permissions or choose another folder with Browse…")
         elif unset:
             set_badge(self._status, f"{unset} not set", "orange")
             self._note.setText("Please set the paths: choose each folder with Browse… (empty folders are fine)")
@@ -326,8 +384,8 @@ class DetailsPanel(Card):
         head.addWidget(self._id)
         names = QVBoxLayout()
         names.setSpacing(0)
-        self._name = label("", name="h2")
-        self._folder = label("", muted=True, size=12)
+        self._name = _plain(label("", name="h2"))
+        self._folder = _plain(label("", muted=True, size=12))
         names.addWidget(self._name)
         names.addWidget(self._folder)
         head.addLayout(names, 1)
@@ -389,41 +447,54 @@ class DetailsPanel(Card):
         if details is None:
             self._info.addWidget(label("Loading dataset.json…", muted=True))
             return
+        if "error" in details:  # unreadable folder or dataset.json
+            self._info.addWidget(_plain(label(f"Could not read the dataset: {details['error']}", muted=True, wrap=True)))
+            self._json.setPlainText(str(details["error"]))
+            return
         manifest = details.get("manifest")
-        self._json.setPlainText(json.dumps(manifest, indent=2, ensure_ascii=False) if manifest else
-                                "No dataset.json found.")
+        try:
+            text = json.dumps(manifest, indent=2, ensure_ascii=False) if manifest else "No dataset.json found."
+        except (RecursionError, ValueError, TypeError) as error:  # nested too deeply
+            text = f"dataset.json cannot be shown: {type(error).__name__}"
+        self._json.setPlainText(text)
         if not isinstance(manifest, dict):
             self._info.addWidget(label("No dataset.json found in nnUNet_raw, nnUNet_preprocessed or nnUNet_results.",
                                        muted=True, wrap=True))
             return
         description = manifest.get("description")
         if isinstance(description, str) and description.strip():
-            self._info.addWidget(label(description, muted=True, wrap=True))
+            self._info.addWidget(_plain(label(_short(description.strip(), _DESCRIPTION_LIMIT), muted=True, wrap=True)))
         channels = manifest.get("channel_names") if isinstance(manifest.get("channel_names"), dict) else {}
         labels = manifest.get("labels") if isinstance(manifest.get("labels"), dict) else {}
         classes = [name for name in labels if str(name).casefold() != "ignore"]
         grid = QGridLayout()
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(6)
-        rows = (("Modality", " · ".join(str(value) for value in channels.values()) or "—",
+        rows = (("Modality", _short(" · ".join(_short(value, 40) for value in list(channels.values())[:20]), 200) or "—",
                  f"{len(channels)} channel{'s' if len(channels) != 1 else ''}"),
-                ("Cases", str(manifest.get("numTraining", "—")), "numTraining"),
+                ("Cases", _short(manifest.get("numTraining", "—"), 40), "numTraining"),
                 ("Labels", f"{len(classes)} classes", "+ ignore" if len(classes) != len(labels) else "dense"),
-                ("File ending", str(manifest.get("file_ending", "—")), ""))
+                ("File ending", _short(manifest.get("file_ending", "—"), 40), ""))
         for row, (key, value, note) in enumerate(rows):
             grid.addWidget(label(key, muted=True), row, 0)
-            text = label(f"{value} <span style='color:#64748b'>{'· ' + note if note else ''}</span>", rich=True)
+            text = label(f"{html.escape(value)} <span style='color:#64748b'>{'· ' + note if note else ''}</span>",
+                         rich=True)
             grid.addWidget(text, row, 1)
         grid.setColumnStretch(1, 1)
         self._info.addLayout(grid)
         chips_holder = QWidget()
         chips = FlowLayout(chips_holder)
-        for name, value in labels.items():
-            chip = QLabel(f"{name} · {value}")
+        for name, value in list(labels.items())[:_CHIP_LIMIT]:  # one widget per chip: thousands would freeze
+            chip = _plain(QLabel(f"{_short(name, 60)} · {_short(value, 40)}"))
             chip.setObjectName("chip")
             if str(name).casefold() == "ignore":
                 chip.setProperty("ignore", True)
             chips.addWidget(chip)
+        if len(labels) > _CHIP_LIMIT:
+            more = QLabel(f"+{len(labels) - _CHIP_LIMIT} more")
+            more.setObjectName("chip")
+            more.setToolTip("All labels: { } Show JSON")
+            chips.addWidget(more)
         self._info.addWidget(chips_holder)
         self._info.addWidget(separator())
         folders = QGridLayout()
@@ -436,7 +507,7 @@ class DetailsPanel(Card):
                            f"{details['folds']} fold{'s' if details['folds'] != 1 else ''}" if details["models"] else "—"))
         for row, (key, value) in enumerate(entries):
             folders.addWidget(label(key, muted=True), row, 0)
-            folders.addWidget(label(value, wrap=True), row, 1)
+            folders.addWidget(_plain(label(value, wrap=True)), row, 1)
         folders.setColumnStretch(1, 1)
         self._info.addLayout(folders)
 
@@ -609,7 +680,8 @@ class OverviewPage(QWidget):
         self._update_iteration()
         self.details.set_record(record, None)
         self._context.tasks.run("overview-details", lambda: dataset_details(record),
-                                lambda details: self.details.set_record(record, details))
+                                lambda details: self.details.set_record(record, details),
+                                lambda error: self.details.set_record(record, {"error": error}))
 
     def _open_row(self, row: int) -> None:
         item = self._table.item(row, 0)

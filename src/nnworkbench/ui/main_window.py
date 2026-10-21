@@ -7,7 +7,7 @@ import json
 from qtpy.QtWidgets import QDialog, QMainWindow, QMessageBox, QStackedWidget, QVBoxLayout, QWidget
 
 from nnworkbench.models.dataset import DatasetRecord
-from nnworkbench.path_setup import configured_paths, save_paths
+from nnworkbench.path_setup import configuration_path, configured_paths, save_paths
 from nnworkbench.services.dataset_creator import (
     create_dataset,
     create_next_iteration,
@@ -54,6 +54,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.console)
         self.switcher = DatasetSwitcher(self)
         self._guide: QDialog | None = None
+        self._save_warned = False  # a failed save of paths.json is reported once per session
         # Wiring
         self.app_bar.back_requested.connect(self.show_overview)
         self.app_bar.switcher_requested.connect(self._open_switcher)
@@ -86,7 +87,7 @@ class MainWindow(QMainWindow):
     def _saved_paths() -> tuple[str, str, str]:
         try:
             paths = configured_paths()
-        except (RuntimeError, TypeError):
+        except (RuntimeError, TypeError, OSError, ValueError):
             return "", "", ""
         return tuple(paths.get(f"nnUNet_{key}", "") for key in ("raw", "preprocessed", "results"))  # type: ignore
 
@@ -100,7 +101,14 @@ class MainWindow(QMainWindow):
         self.context.store.setValue("remote_profiles", json.dumps(profiles, sort_keys=True))
 
     def _paths_changed(self) -> None:
-        save_paths(*(str(path) if path else "" for path in self.overview.paths.local_paths()))
+        try:
+            save_paths(*(str(path) if path else "" for path in self.overview.paths.local_paths()))
+        except OSError as error:  # read-only configuration folder: the paths still apply until nnWorkbench closes
+            if not self._save_warned:
+                self._save_warned = True
+                QMessageBox.warning(self, "Paths not saved",
+                                    f"The nnU-Net folders could not be saved to {configuration_path()}:\n"
+                                    f"{error.strerror or error}\n\nThey are used until nnWorkbench is closed.")
         self.refresh()
 
     def refresh(self) -> None:
@@ -162,7 +170,7 @@ class MainWindow(QMainWindow):
 
     def _create_dataset(self) -> None:
         raw, preprocessed, results = self.overview.paths.local_paths()
-        if raw is None or not raw.is_dir():
+        if not _is_dir(raw):
             QMessageBox.warning(self, "nnUNet_raw required", "Choose an existing nnUNet_raw folder on the overview first.")
             return
         dialog = NewDatasetDialog(self, dataset_id=next_free_dataset_id(1, [raw, preprocessed, results]))
@@ -170,11 +178,14 @@ class MainWindow(QMainWindow):
             return
         try:
             created = create_dataset(raw, [raw, preprocessed, results], dialog.dataset_id.value(), dialog.name.text())
-            if dialog.description is not None and dialog.description.isChecked():
-                create_description(created)
-        except ValueError as error:
+        except (ValueError, OSError) as error:  # OSError: read-only nnUNet_raw, unreadable roots, ...
             QMessageBox.warning(self, "Dataset not created", str(error))
             return
+        if dialog.description is not None and dialog.description.isChecked():
+            try:
+                create_description(created)
+            except (ValueError, OSError) as error:
+                QMessageBox.warning(self, "dataset-description.md not created", str(error))
         self.refresh()
         record = next((item for item in self.records if item.raw_path == created), None)
         if record is not None:
@@ -183,7 +194,7 @@ class MainWindow(QMainWindow):
     def _create_next_iteration(self, selected: DatasetRecord | None) -> None:
         raw, preprocessed, results = self.overview.paths.local_paths()
         sources = [record for record in self.records if record.raw_path is not None]
-        if not sources or raw is None or not raw.is_dir():
+        if not sources or not _is_dir(raw):
             QMessageBox.warning(self, "nnUNet_raw required", "The source dataset must be available in nnUNet_raw.")
             return
         roots = [raw, preprocessed, results]
@@ -253,3 +264,10 @@ class MainWindow(QMainWindow):
         clicked = box.clickedButton()
         box.deleteLater()
         return "keep" if clicked is keep else "stop" if clicked is stop else "cancel"
+
+
+def _is_dir(path) -> bool:
+    try:
+        return path is not None and path.is_dir()
+    except OSError:
+        return False

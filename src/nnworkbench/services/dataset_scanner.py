@@ -10,14 +10,27 @@ DATASET_DIRECTORY = re.compile(r"^Dataset(?P<id>\d+)_(?P<name>.+)$")
 
 
 def discover(root: Path | None) -> dict[int, tuple[str, Path]]:
-    if root is None or not root.is_dir():
+    """Dataset folders by ID; an unreadable root has none. With two folders of one ID (Dataset0420_A and
+    Dataset420_B) the first in name order is used."""
+    try:
+        if root is None or not root.is_dir():
+            return {}
+        entries = sorted(root.iterdir(), key=lambda entry: entry.name)
+    except OSError:  # no permission, name too long, ...
         return {}
     found: dict[int, tuple[str, Path]] = {}
-    for entry in root.iterdir():
-        match = DATASET_DIRECTORY.match(entry.name) if entry.is_dir() else None
-        if match:
+    for entry in entries:
+        match = DATASET_DIRECTORY.match(entry.name)
+        if match and int(match["id"]) not in found and _is_dir(entry):
             found[int(match["id"])] = (match["name"], entry)
     return found
+
+
+def _is_dir(path: Path) -> bool:
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
 
 
 def scan_datasets(raw_root: Path | None, preprocessed_root: Path | None,

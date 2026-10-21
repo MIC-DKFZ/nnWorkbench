@@ -9,12 +9,21 @@ from .dataset_contents import copy_workbench_folder
 from .dataset_scanner import id_in_use
 from .label_analysis import ANALYSIS_FILENAME
 
+MAX_NAME_LENGTH = 200  # folder names may have at most 255 bytes, "Dataset123456_" included
+
 
 def normalise_name(name: str) -> str:
+    """Letters and digits only (A-Z, 0-9), everything else becomes "_": "Leber CT" -> "Leber_CT"."""
     cleaned = re.sub(r"[^A-Za-z0-9]+", "_", name.strip()).strip("_")
     if not cleaned:
         raise ValueError("Dataset name must contain letters or numbers")
+    if len(cleaned) > MAX_NAME_LENGTH:
+        raise ValueError(f"Dataset name is too long (at most {MAX_NAME_LENGTH} characters)")
     return cleaned
+
+
+def directory_name(dataset_id: int, name: str) -> str:
+    return f"Dataset{dataset_id:03d}_{normalise_name(name)}"
 
 
 def create_dataset(raw_root: Path | None, all_roots: list[Path | None], dataset_id: int,
@@ -25,18 +34,22 @@ def create_dataset(raw_root: Path | None, all_roots: list[Path | None], dataset_
         raise ValueError("Dataset ID must be a positive integer")
     if id_in_use(dataset_id, all_roots):
         raise ValueError(f"Dataset ID {dataset_id} already exists in a configured directory")
-    directory_name = f"Dataset{dataset_id:03d}_{normalise_name(name)}"
-    destination = raw_root / directory_name
+    folder = directory_name(dataset_id, name)
+    destination = raw_root / folder
     try:
         destination.mkdir()
     except FileExistsError as error:
-        raise ValueError(f"{directory_name} already exists") from error
-    for child in ("imagesTr", "labelsTr"):
-        (destination / child).mkdir()
-    labels = {"background": 0, "": 1}
-    manifest = {"channel_names": {"0": ""}, "labels": labels, "numTraining": 0,
-                "file_ending": "", "name": directory_name, "description": "", "licence": ""}
-    (destination / "dataset.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        raise ValueError(f"{folder} already exists") from error
+    try:
+        for child in ("imagesTr", "labelsTr"):
+            (destination / child).mkdir()
+        labels = {"background": 0, "": 1}
+        manifest = {"channel_names": {"0": ""}, "labels": labels, "numTraining": 0,
+                    "file_ending": "", "name": folder, "description": "", "licence": ""}
+        (destination / "dataset.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    except Exception:
+        shutil.rmtree(destination, ignore_errors=True)  # no half-created dataset
+        raise
     return destination
 
 
@@ -67,7 +80,7 @@ def create_next_iteration(raw_root: Path | None, all_roots: list[Path | None], s
         raise ValueError("Dataset ID must be a positive integer")
     if id_in_use(dataset_id, all_roots):
         raise ValueError(f"Dataset ID {dataset_id} already exists in a configured directory")
-    destination = raw_root / f"Dataset{dataset_id:03d}_{normalise_name(name)}"
+    destination = raw_root / directory_name(dataset_id, name)
     if destination.exists():
         raise ValueError(f"{destination.name} already exists")
     try:

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit
 
 from nnworkbench.models.dataset import DatasetRecord
+from nnworkbench.services.dataset_creator import MAX_NAME_LENGTH, directory_name
 
-from .widgets import NumberField, with_stepper
+from .widgets import NumberField, label, with_stepper
 
 
 class NewDatasetDialog(QDialog):
@@ -20,6 +22,9 @@ class NewDatasetDialog(QDialog):
         layout = QFormLayout(self)
         self.dataset_id = NumberField(1, 999999, dataset_id)
         self.name = QLineEdit(name); self.name.setPlaceholderText("e.g. LiverCT")
+        self.name.setMaxLength(MAX_NAME_LENGTH)
+        self.folder = label(muted=True, size=12)  # the folder name: only A-Z and 0-9 are kept
+        self.folder.setTextFormat(Qt.TextFormat.PlainText)
         self._sources = sources or []
         self._suggest = suggest
         self.source_box: QComboBox | None = None
@@ -34,6 +39,10 @@ class NewDatasetDialog(QDialog):
             self.source_box.currentIndexChanged.connect(self._source_changed)
             self._source_changed(start)  # suggested ID and name of the preselected source
         layout.addRow("Dataset ID", with_stepper(self.dataset_id)); layout.addRow("Name", self.name)
+        layout.addRow("Folder", self.folder)
+        self.dataset_id.valueChanged.connect(self._update_folder)
+        self.name.textChanged.connect(self._update_folder)
+        self._update_folder()
         self.description: QCheckBox | None = None
         if not self._sources:  # a new iteration copies the description of its source instead
             self.description = QCheckBox("Add dataset-description.md")
@@ -53,3 +62,9 @@ class NewDatasetDialog(QDialog):
             dataset_id, name = self._suggest(self._sources[index])
             self.dataset_id.setValue(dataset_id)
             self.name.setText(name)
+
+    def _update_folder(self, *_args) -> None:
+        try:
+            self.folder.setText(directory_name(self.dataset_id.value(), self.name.text()))
+        except ValueError as error:
+            self.folder.setText(str(error))

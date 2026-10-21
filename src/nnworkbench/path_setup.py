@@ -42,14 +42,22 @@ def configured_paths() -> dict[str, str]:
         values = json.loads(configuration_path().read_text(encoding="utf-8"))
     except FileNotFoundError as error:
         raise RuntimeError("No nnWorkbench paths are configured. Run nnworkbench-set-paths first.") from error
-    except json.JSONDecodeError as error:
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise RuntimeError(f"Invalid nnWorkbench path configuration: {configuration_path()}") from error
+    except OSError as error:  # a folder, no permission, ...
+        raise RuntimeError(f"Cannot read the nnWorkbench path configuration {configuration_path()}: "
+                           f"{error.strerror or error}") from error
     if not isinstance(values, dict):
         raise TypeError(f"Invalid nnWorkbench path configuration: {configuration_path()}")
+
+    def text(key: str) -> str:
+        value = values.get(key)
+        return value if isinstance(value, str) else ""
+
     return {
-        "nnUNet_raw": str(values.get("raw", "")),
-        "nnUNet_preprocessed": str(values.get("preprocessed", "")),
-        "nnUNet_results": str(values.get("results", "")),
+        "nnUNet_raw": text("raw"),
+        "nnUNet_preprocessed": text("preprocessed"),
+        "nnUNet_results": text("results"),
         "nnUNet_extTrainer": str(trainer_directory()),
     }
 
