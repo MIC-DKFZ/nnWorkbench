@@ -109,7 +109,9 @@ Ask one or two questions at a time. Each answer below says what it decides.
 
 1. **"What do you want to find or measure in your images?"** (cells and nuclei, a liver and tumours, fibres, pores)
    → the **classes**, in a fixed order. Background is always class 0 and is added automatically. Help them keep
-   classes visually distinguishable; merge what cannot be told apart.
+   classes visually distinguishable; merge what cannot be told apart. Then ask **why**: what they want to measure,
+   count or compare, and which question that answers → which classes are really needed and how exact the boundaries
+   must be. Write it into the description (**Why these structures**).
 2. **"What kind of images are they?"** Device (microscope, CT, MRI, …); **2D** (single images) or **3D** (volumes or
    stacks of slices); file format; how many; **channels** (one grey value, or several stains/modalities per image).
    - 3D → configuration `3d_fullres`; 2D → `2d`.

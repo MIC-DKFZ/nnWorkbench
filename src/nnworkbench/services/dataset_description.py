@@ -51,7 +51,10 @@ SECTIONS: tuple[tuple[str, tuple[Field, ...]], ...] = (
               "Which is the hardest image the model should still handle, and what makes it difficult?", images=True),
     )),
     (STRUCTURES_SECTION, (
-        Field("structures", "Structures of interest", "What do you want to find or measure, and why?"),
+        Field("structures", "Structures of interest", "Which structures do you want to find in the images?"),
+        Field("purpose", "Why these structures",
+              "Why are you interested in them: what do you want to measure, count or compare, and which question "
+              "should that answer? This decides which classes you need and how exact their boundaries must be."),
         Field("classes", "Classes",
               "Which semantic classes do you need? Each class must be distinguishable from the others in the image; "
               "merge what cannot be told apart."),
@@ -77,6 +80,7 @@ FORMER_QUESTIONS = (
     "How much do objects of a class differ in size, shape, appearance, orientation, position and context?",
     "How often does each class occur, and in how many images? Are some classes rare?",
     "Open questions, decisions made while annotating, and what changed between annotation rounds.",
+    "What do you want to find or measure, and why?",
 )
 # a whole answer that is one italic question is a placeholder, also of a template version not listed above
 _ITALIC_QUESTION = re.compile(r"^\*[^*\n]+\?\*$")

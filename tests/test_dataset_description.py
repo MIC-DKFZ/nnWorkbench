@@ -243,6 +243,21 @@ def test_a_question_added_to_the_template_later_is_inserted_on_saving(tmp_path: 
         "<!-- field: class_variation -->")
 
 
+def test_why_these_structures_follows_the_structures_of_interest(tmp_path: Path) -> None:
+    from nnworkbench.services.dataset_description import Answer, read_answers
+
+    folder = _dataset(tmp_path, {"background": 0, "cell": 1})
+    text = create_description(folder).read_text(encoding="utf-8")
+    assert text.index("<!-- field: structures -->") < text.index("<!-- field: purpose -->") < text.index(
+        "<!-- field: classes -->")
+    # the combined question of the earlier template still reads as unanswered
+    start = text.index("<!-- field: structures -->")
+    end = text.index("<!-- end -->", start)
+    older = (text[:start] + "<!-- field: structures -->\n**Structures of interest:** "
+             "*What do you want to find or measure, and why?*\n" + text[end:])
+    assert read_answers(older, folder)["structures"] == Answer()
+
+
 def test_tables_end_with_a_blank_line_so_markdown_adds_no_empty_row(tmp_path: Path) -> None:
     from nnworkbench.services.dataset_description import channel_table_block, class_table_block
 

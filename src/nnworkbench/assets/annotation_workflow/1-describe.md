@@ -15,6 +15,9 @@ Answer and document the following questions:
 ## Target Structures
 
 - Which structures am I interested in?
+- Why am I interested in them? What do I want to measure, count or compare, and which question should this answer?
+  The answer decides which classes are needed (a structure that is never measured may not need a class of its own)
+  and how exact the annotations must be (counting needs separated objects, measuring volumes needs precise boundaries).
 - How can I separate these structures into distinguishable classes?
 - How much do individual objects of a class vary in size, shape, appearance, orientation, position, and context?
 - How often does each class occur, and in how many images or volumes is it represented? Are some classes much more common or rarer than others?
@@ -43,7 +46,9 @@ command line: `nnworkbench-run describe -d 42`. Each new annotation round gets a
 
 **Target Structures**
 
-- **Structures of interest:** Cells and their nuclei, to measure cell and nucleus volume.
+- **Structures of interest:** Cells and their nuclei.
+- **Why these structures:** To measure cell and nucleus volume per cell. Cell and nucleus are therefore separate
+  classes, and their boundaries must be annotated precisely.
 - **Classes:** *background* (medium outside the cells), *cell* (cell body without nucleus), *nucleus*.
 - **Variation:** Cells range from small and round to large and flat, spread-out shapes. Dividing cells look very different: they are rounded, and their nuclei appear condensed or split in two.
 - **Frequency:** Background dominates in sparse cultures, cells in confluent ones. Nuclei occur in every volume but cover only a small fraction of the voxels. Dividing cells are rare, only a few per volume.
