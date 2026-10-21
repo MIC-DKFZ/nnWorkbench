@@ -16,7 +16,11 @@ from qtpy.QtWidgets import (
     QVBoxLayout,
 )
 
-from nnworkbench.services.dataset_description import IMAGES_FOLDER, add_image
+from nnworkbench.services.dataset_description import (
+    IMAGES_FOLDER,
+    add_image_next_to,
+    read_description,
+)
 
 from . import style
 from .widgets import button, label
@@ -77,8 +81,13 @@ class DescriptionDialog(QDialog):
         self._state.setText("")
 
     def _start_edit(self) -> None:
+        try:
+            text = read_description(self._path)
+        except OSError as error:
+            QMessageBox.warning(self, "Description not read", f"{self._path.name} could not be read: {error}")
+            return
         self._editor.blockSignals(True)
-        self._editor.setPlainText(self._path.read_text(encoding="utf-8"))
+        self._editor.setPlainText(text)
         self._editor.blockSignals(False)
         self._views.setCurrentWidget(self._editor)
         for widget, visible in ((self._edit, False), (self._cancel, True), (self._save, True),
@@ -99,12 +108,20 @@ class DescriptionDialog(QDialog):
         self._show_view()
 
     def _save_edit(self) -> None:
-        self._path.write_text(self._editor.toPlainText(), encoding="utf-8")
+        try:
+            self._path.write_text(self._editor.toPlainText(), encoding="utf-8")
+        except OSError as error:  # the text stays in the editor
+            QMessageBox.warning(self, "Not saved", f"{self._path.name} could not be written: {error}")
+            return
         self._show_view()
 
     def _has_changes(self) -> bool:
-        return (self._views.currentWidget() is self._editor
-                and self._editor.toPlainText() != self._path.read_text(encoding="utf-8"))
+        if self._views.currentWidget() is not self._editor:
+            return False
+        try:
+            return self._editor.toPlainText() != read_description(self._path)
+        except OSError:
+            return True  # the file is gone or unreadable: the text exists only in the editor
 
     # ------------------------------------------------------------ images and folder
 
@@ -112,7 +129,11 @@ class DescriptionDialog(QDialog):
         selected, _filter = QFileDialog.getOpenFileName(self, "Add image", str(Path.home()), IMAGE_FILTER)
         if not selected:
             return
-        target = add_image(self._path.parent, Path(selected))
+        try:
+            target = add_image_next_to(self._path, Path(selected))
+        except OSError as error:
+            QMessageBox.warning(self, "Image not added", f"The image could not be copied: {error}")
+            return
         caption = Path(selected).stem.replace("_", " ")
         self._editor.insertPlainText(f"\n![{caption}]({target})\n")
 

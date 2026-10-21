@@ -48,7 +48,9 @@ def definition_errors(manifest: dict) -> tuple[str, ...]:
         errors.append("Channels are not defined. Add continuous channel IDs and names, starting at 0.")
     else:
         channel_ids = list(channels)
-        if (not all(isinstance(identifier, str) and identifier.isdigit() for identifier in channel_ids)
+        # ASCII digits only: "²" passes isdigit() but not int(), "٠" passes int() but nnU-Net expects "0"
+        if (not all(isinstance(identifier, str) and identifier.isascii() and identifier.isdigit()
+                    for identifier in channel_ids)
                 or not all(isinstance(name, str) and name.strip() for name in channels.values())
                 or sorted(int(identifier) for identifier in channel_ids) != list(range(len(channel_ids)))):
             errors.append("Channels must have continuous numeric IDs and a name for every channel.")

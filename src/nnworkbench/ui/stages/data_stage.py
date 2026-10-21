@@ -46,6 +46,8 @@ from ..widgets import (
 )
 from .common import StagePage, label_mode_badge
 
+MAX_CASE_CLASSES = 30  # rows in the case panel's class list
+
 
 def _howto() -> HowToCard:
     return HowToCard("The raw dataset", [
@@ -180,7 +182,9 @@ class CaseStatisticsPanel(QFrame):
         classes = [class_id for class_id in names if names[class_id].casefold() != "ignore"]
         head.addWidget(label(f"{len(present)} of {len(classes)}", muted=True, size=11))
         top = max(present.values(), default=1)
-        for class_id in sorted(present):
+        # one row per class; a label with hundreds of values (e.g. an image saved as label) shows the largest only
+        shown = sorted(sorted(present, key=lambda class_id: -present[class_id])[:MAX_CASE_CLASSES])
+        for class_id in shown:
             line = QHBoxLayout()
             name = label(names.get(class_id, str(class_id)), size=12)
             name.setFixedWidth(128)
@@ -189,9 +193,14 @@ class CaseStatisticsPanel(QFrame):
             value = present[class_id]
             line.addWidget(label(f"{value / 1e6:.2f} M" if value >= 1e5 else f"{value:,}", muted=True, size=12))
             self._content.addLayout(line)
+        if len(present) > len(shown):
+            self._content.addWidget(label(f"and {len(present) - len(shown):,} more with fewer voxels (all in "
+                                          "Statistics, Per-image details)", muted=True, wrap=True, size=11))
         missing = [names[class_id] for class_id in classes if class_id not in present]
         if missing:
-            self._content.addWidget(label("Missing: " + ", ".join(missing), muted=True, wrap=True, size=11))
+            more = f" and {len(missing) - MAX_CASE_CLASSES:,} more" if len(missing) > MAX_CASE_CLASSES else ""
+            self._content.addWidget(label("Missing: " + ", ".join(missing[:MAX_CASE_CLASSES]) + more, muted=True,
+                                          wrap=True, size=11))
 
 
 class DataStage(StagePage):

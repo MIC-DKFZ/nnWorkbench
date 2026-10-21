@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import multiprocessing
 import os
 import re
@@ -65,22 +66,35 @@ def label_validity(counts: dict[int, int], filename: Path, image_cases: set[str]
     return findings
 
 
+UNREADABLE = "Unreadable label file"
+NOT_WHOLE_NUMBERS = "Values that are not whole numbers (counted without their fraction)"
+
+
 def _analyse_file(filename: str) -> dict:
-    """Return label counts and spatial metadata for one map in a child process."""
+    """Return label counts and spatial metadata for one map in a child process; a file that cannot be read gives
+    ``{"error": message}`` instead, so one broken file does not stop the others."""
     import mitk
     import numpy as np
 
-    image = mitk.Image(filename)
-    array = np.asarray(image)
-    values, counts = np.unique(array, return_counts=True)
-    dimensions = min(len(image.shape), 3)
-    spacing = image.spacing
-    return {
-        "voxels": {int(value): int(count) for value, count in zip(values, counts, strict=True)},
-        # MITK spacing is X/Y/Z, while Image.shape follows NumPy's Z/Y/X order.
-        "shape": [int(value) for value in reversed(image.shape[-dimensions:])],
-        "spacing": [float(spacing[index]) for index in range(dimensions)],
-    }
+    try:
+        image = mitk.Image(filename)
+        array = np.asarray(image)
+        values, counts = np.unique(array, return_counts=True)
+        voxels: Counter = Counter()
+        for value, count in zip(values, counts, strict=True):
+            voxels[int(value)] += int(count)  # float labels: 0.3 and 0.7 both count as 0
+        dimensions = min(len(image.shape), 3)
+        spacing = image.spacing
+        return {
+            "voxels": dict(voxels),
+            # MITK spacing is X/Y/Z, while Image.shape follows NumPy's Z/Y/X order.
+            "shape": [int(value) for value in reversed(image.shape[-dimensions:])],
+            "spacing": [float(spacing[index]) for index in range(dimensions)],
+            "whole_numbers": bool(np.all(np.mod(values, 1) == 0)) if values.dtype.kind == "f" else True,
+        }
+    except Exception as error:  # noqa: BLE001  (any reader error: report the file, keep the others)
+        message = str(error).strip().splitlines()
+        return {"error": message[-1] if message else type(error).__name__}
 
 
 def _label_names(dataset_directory: Path) -> dict[int, str]:
@@ -105,6 +119,14 @@ def _ignored_label_ids(dataset_directory: Path) -> set[int]:
         return set()
     ignore = labels.get("ignore") if isinstance(labels, dict) else None
     return {ignore} if isinstance(ignore, int) else set()
+
+
+def _file_validity(file_analysis: dict, path: Path, image_cases: set[str], background_ids: set[int],
+                   ignored_ids: set[int], undefined_ids: set[int]) -> list[str]:
+    if "error" in file_analysis:
+        return [f"{UNREADABLE}: {file_analysis['error']}"]
+    findings = label_validity(file_analysis["voxels"], path, image_cases, background_ids, ignored_ids, undefined_ids)
+    return findings if file_analysis.get("whole_numbers", True) else [*findings, NOT_WHOLE_NUMBERS]
 
 
 def aggregate_class_counts(per_file: Iterable[dict[int, int]], label_names: dict[int, str],
@@ -153,8 +175,12 @@ def analyse_label_distribution(dataset_directory: Path, workers: int | None = No
                 zip(files, executor.map(_analyse_file, (str(path) for path in files)), strict=True), start=1):
             file_analyses.append(file_analysis)
             if progress is not None:
-                progress(f"Analyzed label {index}/{len(files)}: {path.name}")
-    counts = [file_analysis["voxels"] for file_analysis in file_analyses]
+                progress(f"Analyzed label {index}/{len(files)}: {path.name}" if "error" not in file_analysis else
+                         f"Could not read label {index}/{len(files)}: {path.name}: {file_analysis['error']}")
+    unreadable = [path.name for path, file_analysis in zip(files, file_analyses, strict=True) if "error" in file_analysis]
+    if len(unreadable) == len(files):
+        raise ValueError(f"No label file could be read ({file_analyses[0]['error']}).")
+    counts = [file_analysis.get("voxels", {}) for file_analysis in file_analyses]
     label_names = _label_names(dataset_directory)
     unexpected = undefined_label_ids(files, counts, set(label_names))
     ignored = _ignored_label_ids(dataset_directory)
@@ -164,15 +190,13 @@ def analyse_label_distribution(dataset_directory: Path, workers: int | None = No
         {
             "image": path.name,
             "voxels": {
-                str(class_id): count for class_id, count in file_analysis["voxels"].items()
+                str(class_id): count for class_id, count in file_analysis.get("voxels", {}).items()
                 if class_id not in ignored
             },
-            "shape": file_analysis["shape"],
-            "spacing": file_analysis["spacing"],
-            "validity": label_validity(
-                file_analysis["voxels"], path, image_cases, background, ignored,
-                set(unexpected.get(path.name, [])),
-            ),
+            "shape": file_analysis.get("shape", []),
+            "spacing": file_analysis.get("spacing", []),
+            "validity": _file_validity(file_analysis, path, image_cases, background, ignored,
+                                       set(unexpected.get(path.name, []))),
         }
         for path, file_analysis in zip(files, file_analyses, strict=True)
     ]
@@ -186,6 +210,7 @@ def analyse_label_distribution(dataset_directory: Path, workers: int | None = No
         ),
         "per_image": per_image,
         "undefined_label_ids": unexpected,
+        "unreadable_files": unreadable,
     }
     _write_analysis(analysis_path(dataset_directory), analysis)
     return analysis
@@ -198,13 +223,38 @@ def load_label_analysis(dataset_directory: Path) -> dict | None:
             data = json.load(file)
     except (OSError, json.JSONDecodeError):
         return None
-    if not isinstance(data, dict) or not isinstance(data.get("classes"), list):
-        return None
-    per_image = data.get("per_image")
-    if not isinstance(per_image, list):
-        return None
-    required_fields = {"image", "voxels", "shape", "spacing", "validity"}
-    return data if all(isinstance(item, dict) and required_fields <= item.keys() for item in per_image) else None
+    return data if _valid_analysis(data) else None
+
+
+def _is_count(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _is_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _valid_analysis(data: object) -> bool:
+    """Whether a cached analysis has the fields and types the GUI reads (an edited or broken cache is ignored and
+    computed again instead of failing the Data page)."""
+    if not isinstance(data, dict) or not isinstance(data.get("classes"), list) or not isinstance(
+            data.get("per_image"), list):
+        return False
+    for item in data["classes"]:
+        if not (isinstance(item, dict) and isinstance(item.get("id"), int) and not isinstance(item.get("id"), bool)
+                and _is_count(item.get("images", 0)) and _is_count(item.get("voxels", 0))):
+            return False
+    for item in data["per_image"]:
+        if not (isinstance(item, dict) and isinstance(item.get("image"), str)
+                and isinstance(item.get("voxels"), dict) and isinstance(item.get("shape"), list)
+                and isinstance(item.get("spacing"), list) and isinstance(item.get("validity"), list)):
+            return False
+        if not (all(isinstance(key, str) and re.fullmatch(r"-?[0-9]+", key) and _is_count(value)
+                    for key, value in item["voxels"].items())
+                and all(_is_count(value) for value in item["shape"])
+                and all(_is_number(value) for value in item["spacing"])):
+            return False
+    return True
 
 
 def _write_analysis(target: Path, data: dict) -> None:
@@ -235,8 +285,10 @@ def main() -> None:
         )
     except (OSError, ValueError, RuntimeError) as error:
         raise SystemExit(f"Computing statistics failed: {error}") from error
+    unreadable = analysis["unreadable_files"]
     print(f"Statistics computed: {analysis_path(arguments.dataset_directory)} "
-          f"({analysis['files_analyzed']} file(s))", flush=True)
+          f"({analysis['files_analyzed']} file(s)"
+          + (f", {len(unreadable)} unreadable: {', '.join(unreadable)}" if unreadable else "") + ")", flush=True)
 
 
 if __name__ == "__main__":

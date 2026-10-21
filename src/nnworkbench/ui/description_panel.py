@@ -51,8 +51,10 @@ from nnworkbench.services.dataset_description import (
     push_channels,
     push_classes,
     read_answers,
+    read_description,
     renames_by_id,
     save_answers,
+    table_problems,
     update_description,
 )
 
@@ -97,7 +99,7 @@ class _FieldEditor(QWidget):
             column.setContentsMargins(4, 4, 4, 4)
             column.setSpacing(2)
             picture = QLabel()
-            pixmap = QPixmap(str(self._directory / path))
+            pixmap = QPixmap(str(description_path(self._directory).parent / path))
             if not pixmap.isNull():
                 picture.setPixmap(pixmap.scaledToHeight(THUMBNAIL_HEIGHT, Qt.TransformationMode.SmoothTransformation))
             else:
@@ -116,9 +118,15 @@ class _FieldEditor(QWidget):
 
     def _add_image(self) -> None:
         selected, _filter = QFileDialog.getOpenFileName(self, "Add image", str(Path.home()), IMAGE_FILTER)
-        if selected:
-            self._images.append((Path(selected).stem.replace("_", " "), add_image(self._directory, Path(selected))))
-            self._render_images()
+        if not selected:
+            return
+        try:
+            target = add_image(self._directory, Path(selected))
+        except OSError as error:
+            QMessageBox.warning(self, "Image not added", f"The image could not be copied: {error}")
+            return
+        self._images.append((Path(selected).stem.replace("_", " "), target))
+        self._render_images()
 
     def _remove_image(self, index: int) -> None:
         del self._images[index]
@@ -217,8 +225,9 @@ class _TableEditor(QWidget):
         result = []
         for token, _row, identifier, title in self._rows:
             text = identifier.text().strip()
-            if text.lstrip("-").isdigit() or title.text().strip():
-                result.append((token, int(text) if text.lstrip("-").isdigit() else -1, title.text().strip()))
+            valid = text.isascii() and text.isdigit()  # not "²", "-1" or "--1"
+            if valid or title.text().strip():
+                result.append((token, int(text) if valid else -1, title.text().strip()))  # -1: not a valid ID
         return result
 
     def classes(self) -> list[tuple[int, str]]:
@@ -267,6 +276,13 @@ class _CollapsibleCard(QFrame):
         self._body.setVisible(not collapsed)
         self._toggle.setIcon(svg_icon("chevron-right" if collapsed else "chevron-down"))
         self._summary_label.setText(self._summary() if collapsed and self._summary is not None else "")
+
+
+def _has_files(folder: Path) -> bool:
+    try:
+        return folder.is_dir() and any(path.is_file() for path in folder.iterdir())
+    except OSError:
+        return False
 
 
 def _answered(editors) -> str:
@@ -398,17 +414,44 @@ class DescriptionPanel(QWidget):
 
     # ------------------------------------------------------------ class table vs dataset.json
 
+    def _saved_text(self) -> str | None:
+        """The description file's text; None without a file or when it cannot be read."""
+        path = self._path()
+        try:
+            return read_description(path) if path is not None and path.is_file() else None
+        except OSError:
+            return None
+
+    def _read(self) -> str | None:
+        """The description file's text, or None with a message when it cannot be read."""
+        path = self._path()
+        if path is None:
+            return None
+        try:
+            return read_description(path)
+        except OSError as error:
+            QMessageBox.warning(self, "Description not read", f"{DESCRIPTION_FILE} could not be read: {error}")
+            return None
+
+    def _write(self, text: str) -> bool:
+        try:
+            self._path().write_text(text, encoding="utf-8")
+        except OSError as error:
+            QMessageBox.warning(self, "Not saved", f"{DESCRIPTION_FILE} could not be written: {error}")
+            return False
+        return True
+
     def _described_classes(self) -> list[tuple[int, str]] | None:
         if self._class_table is not None and self.editing:
             return self._class_table.classes()
-        path = self._path()
-        return description_classes(path.read_text(encoding="utf-8")) if path and path.is_file() else None
+        text = self._saved_text()
+        return description_classes(text) if text is not None else None
 
     def _described_channels(self) -> list[tuple[int, str]] | None:
         if self._channel_table is not None and self.editing:
             return self._channel_table.classes()
-        path = self._path()
-        return description_channels(path.read_text(encoding="utf-8")) if path and path.is_file() else None
+        text = self._saved_text()
+        return description_channels(text) if text is not None else None
 
     def _update_sync(self) -> None:
         for kind, described, compare, defined in (
@@ -429,9 +472,9 @@ class DescriptionPanel(QWidget):
         if self.editing and self._channel_table is not None:
             self._channel_table.set_classes(dataset_channels(self._directory))
             return
-        path = self._path()
-        path.write_text(import_channels(path.read_text(encoding="utf-8"), self._directory), encoding="utf-8")
-        self._show(None)
+        text = self._read()
+        if text is not None and self._write(import_channels(text, self._directory)):
+            self._show(None)
 
     def _push_channels(self) -> None:
         channels = self._described_channels()
@@ -443,8 +486,7 @@ class DescriptionPanel(QWidget):
             return
         message = "Write the description's channel table into dataset.json?\n\n" + "\n".join(
             f"- {item}" for item in channel_differences(channels, dataset_channels(self._directory)))
-        images = self._directory / "imagesTr"
-        if images.is_dir() and any(path.is_file() for path in images.iterdir()):
+        if _has_files(self._directory / "imagesTr"):
             message += ("\n\nThe image files in imagesTr are not changed: their endings _0000, _0001, … must match "
                         "the channels.")
         self._push(lambda: push_channels(self._directory, channels), message)
@@ -484,13 +526,14 @@ class DescriptionPanel(QWidget):
             self._class_answers.update({key: answers for key, answers in texts.items() if key not in renames.values()})
             self._class_table.set_classes(defined)
             return
-        path = self._path()
-        text = path.read_text(encoding="utf-8")
+        text = self._read()
+        if text is None:
+            return
         lost = classes_losing_text(text, defined, renames_by_id(description_classes(text) or [], defined))
         if lost and not self._confirm_losing(lost):
             return
-        path.write_text(import_classes(text, self._directory), encoding="utf-8")
-        self._show(None)
+        if self._write(import_classes(text, self._directory)):
+            self._show(None)
 
     def _confirm_losing(self, names: list[str]) -> bool:
         return QMessageBox.question(
@@ -509,8 +552,7 @@ class DescriptionPanel(QWidget):
             QMessageBox.warning(self, "Not written to dataset.json", " ".join(problems))
             return
         differences = class_differences(classes, dataset_classes(self._directory))
-        labels = self._directory / "labelsTr"
-        existing = labels.is_dir() and any(path.is_file() for path in labels.iterdir())
+        existing = _has_files(self._directory / "labelsTr")
         message = "Write the description's class table into dataset.json?\n\n" + "\n".join(
             f"- {item}" for item in differences)
         if existing:
@@ -531,10 +573,9 @@ class DescriptionPanel(QWidget):
     # ------------------------------------------------------------ form
 
     def _start_form(self) -> None:
-        path = self._path()
-        if path is None:
+        text = self._read()
+        if text is None:
             return
-        text = path.read_text(encoding="utf-8")
         if not has_form_fields(text):
             QMessageBox.information(self, "Edit as text", "This description was written without the form fields; "
                                     "it opens as text instead.")
@@ -548,8 +589,8 @@ class DescriptionPanel(QWidget):
         intro = QHBoxLayout()
         intro.addWidget(label("Answer in your own words; empty fields keep their question. Click a section title to "
                               "fold it in or out.", muted=True, wrap=True, size=12), 1)
-        for text, collapsed in (("Collapse all", True), ("Expand all", False)):
-            link = QPushButton(text)
+        for caption, collapsed in (("Collapse all", True), ("Expand all", False)):  # not `text`: the file's text
+            link = QPushButton(caption)
             link.setObjectName("link")
             link.clicked.connect(lambda _checked=False, state=collapsed: self._set_all_collapsed(state))
             intro.addWidget(link)
@@ -668,37 +709,50 @@ class DescriptionPanel(QWidget):
         return {class_key(name): self._class_table.origins[token] for token, _value, name in self._class_table.rows()
                 if token in self._class_table.origins and class_key(name) != self._class_table.origins[token]}
 
-    def _form_text(self) -> str | None:
-        """The file as Save would write it (None without a file)."""
-        path = self._path()
-        if path is None or not path.is_file():
-            return None
+    def _form_text(self, current: str) -> str:
+        """The file ``current`` as Save would write it."""
         classes = self._class_table.classes() if self._class_table is not None else None
         channels = self._channel_table.classes() if self._channel_table is not None else None
-        return update_description(path.read_text(encoding="utf-8"), self._directory, self._form_answers(), classes,
-                                  self._form_renames(), channels)
+        return update_description(current, self._directory, self._form_answers(), classes, self._form_renames(),
+                                  channels)
+
+    def _form_problems(self) -> list[str]:
+        """Why the form cannot be saved without losing table rows or class texts."""
+        problems = []
+        if self._class_table is not None:
+            classes = self._class_table.classes()
+            names = [name.strip().casefold() for _value, name in classes]
+            if any(not name for name in names) or len(set(names)) != len(names):
+                problems.append("Every class in the table needs a name, and the names must be unique.")
+            problems += table_problems(classes, "class")
+        if self._channel_table is not None:
+            problems += table_problems(self._channel_table.classes(), "channel")
+        return problems
 
     def _save_form(self) -> bool:
         if self._directory is not None:
-            names = [name.strip().casefold() for _value, name in self._class_table.classes()] if (
-                self._class_table is not None) else []
-            if any(not name for name in names) or len(set(names)) != len(names):
-                QMessageBox.warning(self, "Not saved", "Every class in the table needs a name, and the names must "
-                                    "be unique.")
+            problems = self._form_problems()
+            if problems:
+                QMessageBox.warning(self, "Not saved", "\n\n".join(problems))
                 return False
-            save_answers(self._directory, self._form_answers(),
-                         self._class_table.classes() if self._class_table is not None else None, self._form_renames(),
-                         self._channel_table.classes() if self._channel_table is not None else None)
+            try:
+                save_answers(self._directory, self._form_answers(),
+                             self._class_table.classes() if self._class_table is not None else None,
+                             self._form_renames(),
+                             self._channel_table.classes() if self._channel_table is not None else None)
+            except OSError as error:
+                QMessageBox.warning(self, "Not saved", f"{DESCRIPTION_FILE} could not be written: {error}")
+                return False
         self._close_form()
         return True
 
     def _cancel_form(self) -> None:
         path = self._path()
-        if path is not None and path.is_file():
-            current = path.read_text(encoding="utf-8")
-            changed = self._form_text() != update_description(current, self._directory, {})
+        current = self._saved_text()
+        if current is not None:
+            changed = self._form_text(current) != update_description(current, self._directory, {})
         else:
-            changed = False
+            changed = path is not None and path.exists()  # unreadable: ask before discarding
         if changed and QMessageBox.question(
                 self, "Discard changes?", "Discard the unsaved changes?",
                 QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,

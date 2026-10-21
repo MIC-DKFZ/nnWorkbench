@@ -113,6 +113,7 @@ class GuideBrowser(QTextBrowser):
     def _format_blocks(self) -> None:
         """Add paragraph spacing and shade code blocks, which Qt's Markdown import leaves plain."""
         cursor = QTextCursor(self.document())
+        cursor.beginEditBlock()  # one re-layout at the end instead of one per block (large tables took minutes)
         block = self.document().begin()
         while block.isValid():
             block_format = block.blockFormat()
@@ -138,6 +139,7 @@ class GuideBrowser(QTextBrowser):
                 block_format.setBottomMargin(10)
             cursor.setPosition(block.position()); cursor.setBlockFormat(block_format)
             block = block.next()
+        cursor.endEditBlock()
         self.document().setModified(False)
 
     def _apply_code_font(self) -> None:
@@ -151,6 +153,8 @@ class GuideBrowser(QTextBrowser):
             code.setFontFamily(family)
         code.setFontFixedPitch(True)
         code.setFontStyleHint(QFont.StyleHint.TypeWriter)
+        edit = QTextCursor(self.document())
+        edit.beginEditBlock()  # one re-layout at the end
         block = self.document().begin()
         while block.isValid():
             if block.blockFormat().hasProperty(QTextFormat.Property.BlockCodeFence):
@@ -168,6 +172,7 @@ class GuideBrowser(QTextBrowser):
                         cursor.mergeCharFormat(code)
                     fragments += 1
             block = block.next()
+        edit.endEditBlock()
         self.document().setModified(False)
 
     def _collapse_table_borders(self) -> None:

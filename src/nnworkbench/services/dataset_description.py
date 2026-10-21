@@ -136,7 +136,7 @@ def dataset_channels(dataset_directory: Path) -> list[tuple[int, str]]:
     channels = _manifest(dataset_directory).get("channel_names")
     if not isinstance(channels, dict):
         return []
-    return sorted((int(key), str(name)) for key, name in channels.items() if str(key).isdigit())
+    return sorted((int(key), str(name)) for key, name in channels.items() if str(key).isascii() and str(key).isdigit())
 
 
 def _is_ignore(name: str) -> bool:
@@ -220,6 +220,25 @@ def _table_rows(block: re.Match | None) -> list[tuple[int, str]] | None:
 def description_channels(text: str) -> list[tuple[int, str]] | None:
     """The channels of the description's table, or None if the file has no channel table."""
     return _table_rows(_CHANNEL_TABLE.search(text))
+
+
+def table_problems(rows: list[tuple[int, str]], kind: str = "class") -> list[str]:
+    """Why the form cannot save a table into the description without losing rows or class texts (IDs below 0 stand
+    for IDs that are not whole numbers)."""
+    problems = []
+    if any(value < 0 for value, _name in rows):
+        problems.append(f"Every {kind} needs an ID that is a whole number: 0, 1, 2, …")
+    if any("|" in name for _value, name in rows):
+        problems.append(f'{kind.capitalize()} names cannot contain "|" (it separates the columns of the table).')
+    if kind == "class":
+        # the class texts are stored under class_key(name): names with the same key would share or lose them
+        names = [name.strip() for _value, name in rows if name.strip() and not _is_ignore(name)]
+        keys = [class_key(name) for name in names]
+        clashes = [name for name, key in zip(names, keys, strict=True) if keys.count(key) > 1]
+        if len({name.casefold() for name in clashes}) > 1:
+            problems.append("These class names differ only in characters other than a-z and 0-9, so their "
+                            "descriptions cannot be kept apart: " + ", ".join(clashes) + ". Rename one of them.")
+    return problems
 
 
 def channel_differences(described: list[tuple[int, str]], defined: list[tuple[int, str]]) -> list[str]:
@@ -557,12 +576,24 @@ def create_description(dataset_directory: Path) -> Path:
     return path
 
 
+def read_description(path: Path) -> str:
+    """The description's text; a file saved in another encoding (e.g. ANSI by Windows Notepad) is read as Windows-1252
+    instead of failing, and saving writes it as UTF-8. Raises OSError."""
+    data = path.read_bytes()
+    for encoding in ("utf-8", "cp1252"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            pass
+    return data.decode("latin-1")  # never fails
+
+
 def save_answers(dataset_directory: Path, answers: dict[str, Answer],
                  classes: list[tuple[int, str]] | None = None, renames: dict[str, str] | None = None,
                  channels: list[tuple[int, str]] | None = None) -> Path:
     """Update the description file with the form's answers and tables (created from the template if missing)."""
     path = description_path(dataset_directory)
-    text = path.read_text(encoding="utf-8") if path.is_file() else description_template(dataset_directory)
+    text = read_description(path) if path.is_file() else description_template(dataset_directory)
     path.parent.mkdir(exist_ok=True)
     path.write_text(update_description(text, dataset_directory, answers, classes, renames, channels),
                     encoding="utf-8")
@@ -571,8 +602,13 @@ def save_answers(dataset_directory: Path, answers: dict[str, Answer],
 
 def add_image(dataset_directory: Path, image: Path) -> str:
     """Copy an image into description_images/ next to the description (without overwriting) and return its relative
-    link target."""
-    folder = description_path(dataset_directory).parent / IMAGES_FOLDER
+    link target. Raises OSError."""
+    return add_image_next_to(description_path(dataset_directory), image)
+
+
+def add_image_next_to(description: Path, image: Path) -> str:
+    """Copy an image into description_images/ next to the Markdown file ``description`` (see add_image)."""
+    folder = description.parent / IMAGES_FOLDER
     folder.mkdir(parents=True, exist_ok=True)
     name = re.sub(r"[^\w.-]+", "_", image.name)  # no spaces: they would break the Markdown link
     target = folder / name

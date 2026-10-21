@@ -76,7 +76,8 @@ class _PairEditor(QWidget):
         """Add "ignore" with the next free ID above all other labels (it must be the highest ID)."""
         if self._has_ignore():
             return
-        ids = [int(value.text()) for _row, _key, value in self._rows if value.text().strip().lstrip("-").isdigit()]
+        ids = [int(text) for text in (value.text().strip() for _row, _key, value in self._rows)
+               if text.isascii() and text.isdigit()]
         self._add_row("ignore", str(max(ids) + 1 if ids else 1))
 
     def _update_ignore_button(self) -> None:
@@ -135,11 +136,16 @@ class _PairEditor(QWidget):
             if self._value_is_id:
                 try:
                     result[key] = json.loads(value) if value.startswith("[") else int(value)  # list: a region
-                except ValueError:
+                except (ValueError, RecursionError):
                     result[key] = value
             else:
                 result[key] = value
         return result
+
+    def duplicate_keys(self) -> list[str]:
+        """Keys that appear in more than one row (value() keeps only the last)."""
+        keys = [key_field.text().strip() for _row, key_field, _value in self._rows if key_field.text().strip()]
+        return sorted({key for key in keys if keys.count(key) > 1})
 
 
 def _custom_value(text: str, was_number: bool = False) -> object:
@@ -148,7 +154,7 @@ def _custom_value(text: str, was_number: bool = False) -> object:
     if text.startswith(("{", "[")) or text in ("true", "false", "null") or was_number:
         try:
             return json.loads(text)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, RecursionError):
             pass
     return text
 
@@ -197,8 +203,12 @@ class DatasetJsonPanel(QFrame):
                      cases: int | None = None) -> None:
         """``cases`` is the number of training cases in imagesTr; numTraining is checked against it."""
         self._directory, self._manifest, self._editable, self._cases = directory, manifest, editable, cases
-        self._view.setPlainText(json.dumps(manifest, indent=2, ensure_ascii=False) if manifest is not None
-                                else "No dataset.json found.")
+        try:
+            text = json.dumps(manifest, indent=2, ensure_ascii=False) if manifest is not None else "No dataset.json found."
+        except (RecursionError, ValueError, TypeError):  # e.g. nested thousands of levels deep
+            text = "dataset.json cannot be displayed here (nested too deeply or not plain JSON values)."
+            self._editable = False  # the editor could not show it either
+        self._view.setPlainText(text)
         errors = ((*definition_errors(manifest), *filter(None, [file_ending_error(manifest)]))
                   if isinstance(manifest, dict) else ("missing",))
         count_error = num_training_error(manifest, cases) if isinstance(manifest, dict) and cases else None
@@ -338,7 +348,7 @@ class DatasetJsonPanel(QFrame):
                 text = editor.text().strip()
                 try:
                     result[key] = json.loads(text) if text else ""
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, RecursionError):
                     result[key] = text
             else:
                 result[key] = editor.text()
@@ -353,15 +363,28 @@ class DatasetJsonPanel(QFrame):
             return
         manifest = self._collect()
         problems = list(definition_errors(manifest))
+        problems += filter(None, [file_ending_error(manifest)])
+        for key in _STRUCTURED:
+            editor = self._editors.get(key)
+            if isinstance(editor, _PairEditor) and editor.duplicate_keys():
+                problems.append(f"{key} has duplicate entries: {', '.join(editor.duplicate_keys())}.")
         custom_keys = [key_field.text().strip() for _row, key_field, _value in self._custom if key_field.text().strip()]
         duplicates = sorted({key for key in custom_keys if custom_keys.count(key) > 1 or key in _STANDARD})
         if duplicates:
             problems.append(f"Custom keys must be unique and differ from the standard keys: {', '.join(duplicates)}.")
         labels = manifest.get("labels", {})
+        if not isinstance(labels, dict):  # e.g. a list typed into the field; definition_errors reports it
+            labels = {}
         ignore = next((value for name, value in labels.items() if name.strip().casefold() == "ignore"), None)
         numeric = [value for value in labels.values() if isinstance(value, int)]
         if ignore is not None and numeric and ignore != max(numeric):
             problems.append("ignore must be the highest label ID.")
+        try:
+            json.dumps(manifest, allow_nan=False)
+        except ValueError:  # NaN or Infinity are not valid JSON (nnU-Net could not read the file)
+            problems.append("Numbers must be finite (no NaN or Infinity).")
+        except RecursionError:
+            problems.append("A value is nested too deeply.")
         if problems:
             self._note.setText("<span style='color:#c2413b'>Not saved: " + " ".join(problems) + "</span>")
             return

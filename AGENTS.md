@@ -357,7 +357,7 @@ nnworkbench-run inspect-predictions OUT --images IN
   **`describe --json`:** `dataset`, `path`, `created` (false if it existed). **`new-iteration --json`:** `source`, `dataset`,
   `dataset_id`, `path`.
 - **`compute-statistics --json`:** `dataset`, `path` (`nnworkbench/class_distribution.json`), `files_analyzed`, `classes[]`,
-  `per_image[]`, `undefined_label_ids`. **`stack-images --json`:** `input`, `output`, `file_type`, `scale_factor`,
+  `per_image[]`, `undefined_label_ids`, `unreadable_files[]`. **`stack-images --json`:** `input`, `output`, `file_type`, `scale_factor`,
   `spacing`. **`reduce-checkpoints --json`:** `model`, `folds[]`, `trainer_name_reset`.
 - **`nnworkbench-get-paths --json`:** `config`, `paths` (`nnUNet_raw`, `nnUNet_preprocessed`, `nnUNet_results`,
   `nnUNet_extTrainer`); `nnworkbench-set-paths … --json`: `saved`, `paths`.

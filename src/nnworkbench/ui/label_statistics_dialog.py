@@ -276,7 +276,7 @@ class LabelStatisticsView(QWidget):
 
 def _labeled_data_percentage(shape: object, counts: object) -> float | None:
     """Derive non-ignore voxel coverage from the saved image shape and class counts."""
-    if not isinstance(shape, list) or not all(isinstance(value, int) and value > 0 for value in shape):
+    if not isinstance(shape, list) or not shape or not all(isinstance(value, int) and value > 0 for value in shape):
         return None
     if not isinstance(counts, dict) or not all(isinstance(value, int) and value >= 0 for value in counts.values()):
         return None
