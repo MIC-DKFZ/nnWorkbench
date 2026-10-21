@@ -63,16 +63,31 @@ class GuideBrowser(QTextBrowser):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._rendered_width = 0
+        self._source = QUrl()
         self._resize_timer = QTimer(self); self._resize_timer.setSingleShot(True); self._resize_timer.setInterval(150)
         self._resize_timer.timeout.connect(self._reflow_images)
 
     def load(self, path: Path) -> None:
-        self.setSource(QUrl.fromLocalFile(str(path)), QTextDocument.ResourceType.MarkdownResource)
+        # The document is built first and then shown: Qt 5 lays out a document that a view already shows again for
+        # every inserted block, so a 400-row table took 12 s with setSource (Qt 6: 0.1 s).
+        self._source = QUrl.fromLocalFile(str(path))
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        document = QTextDocument(self)  # parent: images go through loadResource below
+        document.setBaseUrl(self._source)
+        document.setMarkdown(text)
+        self.setDocument(document)  # deletes the previous document, which the view owned
         self._rendered_width = self._image_width()
         self.document().setDocumentMargin(DOCUMENT_MARGIN)
         self._format_blocks()
         self._apply_code_font()
         self._collapse_table_borders()
+
+    def source(self) -> QUrl:
+        """The loaded file (load() does not use setSource, so QTextBrowser's own source stays empty)."""
+        return self._source
 
     def loadResource(self, resource_type: int, url: QUrl):
         if _enum_value(resource_type) == _enum_value(QTextDocument.ResourceType.ImageResource):
