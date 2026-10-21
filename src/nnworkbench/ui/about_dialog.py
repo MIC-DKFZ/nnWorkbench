@@ -12,7 +12,7 @@ from qtpy.QtWidgets import QDialog, QGridLayout, QHBoxLayout, QLabel, QVBoxLayou
 
 from nnworkbench.services.device_probe import PYTORCH_URL, DeviceInfo
 
-from .widgets import Card, badge, button, icon_label, label, logo_label, separator, tip
+from .widgets import AppMark, Card, badge, button, icon_label, label, logo_label, separator, tip
 
 _WIDTH = 560
 
@@ -38,12 +38,7 @@ class AboutDialog(QDialog):
         layout.setSpacing(12)
         head = QHBoxLayout()
         head.setSpacing(12)
-        mark = QLabel("nW")
-        mark.setFixedSize(40, 40)
-        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        mark.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #1f5fbf, stop:1 #5b8fe0);"
-                           "color: white; font-weight: 800; font-size: 16px; border-radius: 10px;")
-        head.addWidget(mark)
+        head.addWidget(AppMark(40))
         titles = QVBoxLayout()
         titles.setSpacing(0)
         titles.addWidget(label("nnWorkbench", name="h2"))

@@ -7,15 +7,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import ClassVar
 
-from qtpy.QtCore import QByteArray, QPoint, QRect, QSize, Qt, QUrl, Signal
+from qtpy.QtCore import QByteArray, QPoint, QPointF, QRect, QRectF, QSize, Qt, QUrl, Signal
 from qtpy.QtGui import (
     QAction,
     QColor,
     QFont,
+    QFontMetricsF,
     QGuiApplication,
     QIcon,
     QIntValidator,
     QKeySequence,
+    QLinearGradient,
     QPainter,
     QPen,
     QPixmap,
@@ -94,6 +96,60 @@ def logo_label(name: str, height: int) -> QLabel:
     widget.setPixmap(pixmap)
     widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
     return widget
+
+
+def paint_app_mark(painter: QPainter, rect: QRectF, family: str = "") -> None:
+    """The app mark: a big white W with a smaller pale-blue nn on its baseline, on the blue gradient.
+    ``family`` empty: the application font (the README header passes its own)."""
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+    gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
+    gradient.setColorAt(0, QColor("#1f5fbf"))
+    gradient.setColorAt(1, QColor("#5b8fe0"))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(gradient)
+    radius = min(rect.width(), rect.height()) * 0.24
+    painter.drawRoundedRect(rect, radius, radius)
+
+    def font(pixels: float) -> QFont:
+        result = QFont(family) if family else QFont(QGuiApplication.font())
+        result.setPixelSize(max(1, round(pixels)))
+        result.setWeight(QFont.Weight.ExtraBold)
+        return result
+
+    # nn at 0.6 of the W; the pair fills at most 84 % of the width
+    size = rect.height() * 0.62
+    while True:
+        big, small = font(size), font(size * 0.6)
+        w_width = QFontMetricsF(big).horizontalAdvance("W")
+        nn_width = QFontMetricsF(small).horizontalAdvance("nn")
+        gap = rect.width() * 0.02
+        if nn_width + gap + w_width <= rect.width() * 0.84 or size <= 6:
+            break
+        size -= 0.5
+    x = rect.center().x() - (nn_width + gap + w_width) / 2
+    baseline = rect.center().y() + QFontMetricsF(big).tightBoundingRect("W").height() / 2
+    painter.setFont(small)
+    painter.setPen(QColor("#cfe0fa"))
+    painter.drawText(QPointF(x, baseline), "nn")
+    painter.setFont(big)
+    painter.setPen(QColor("#ffffff"))
+    painter.drawText(QPointF(x + nn_width + gap, baseline), "W")
+    painter.restore()
+
+
+class AppMark(QWidget):
+    """The app mark at a fixed size, drawn as vectors so it is sharp at every screen scaling."""
+
+    def __init__(self, size: int, parent=None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(size, size)
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        paint_app_mark(painter, QRectF(self.rect()))
+        painter.end()
 
 
 def icon_label(name: str, size: int = 16) -> QLabel:

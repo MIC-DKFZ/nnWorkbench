@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from qtpy.QtCore import Qt, Signal
-from qtpy.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
+from qtpy.QtWidgets import QFrame, QHBoxLayout, QPushButton, QWidget
 
 from nnworkbench.models.dataset import DatasetRecord
 
-from .widgets import ElidedLabel, ToggleSwitch, button, dataset_id_label, label
+from .widgets import AppMark, ElidedLabel, ToggleSwitch, button, dataset_id_label, label
 
 
 class AppBar(QFrame):
@@ -25,12 +25,7 @@ class AppBar(QFrame):
         row = QHBoxLayout(self)
         row.setContentsMargins(24, 0, 24, 0)
         row.setSpacing(12)
-        logo = QLabel("nW")
-        logo.setFixedSize(30, 30)
-        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        logo.setStyleSheet("background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #1f5fbf, stop:1 #5b8fe0);"
-                           "color: white; font-weight: 800; border-radius: 8px;")
-        row.addWidget(logo)
+        row.addWidget(AppMark(30))
         row.addWidget(label("nnWorkbench", name="h2"))
         divider = QFrame()
         divider.setFixedSize(1, 26)

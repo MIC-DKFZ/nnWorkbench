@@ -493,3 +493,24 @@ def test_empty_dataset_list_says_what_to_do() -> None:
     finally:
         window.close()
         application.processEvents()
+
+
+def test_app_mark_is_drawn_in_the_app_bar_and_about() -> None:
+    from qtpy.QtGui import QColor
+
+    from nnworkbench.ui.about_dialog import AboutDialog
+    from nnworkbench.ui.widgets import AppMark
+
+    application = _application()
+    window = MainWindow()
+    about = AboutDialog(window)
+    try:
+        assert window.findChildren(AppMark) and about.findChildren(AppMark)
+        image = AppMark(40, window).grab().toImage()
+        colours = [QColor(image.pixel(x, y)) for x in range(40) for y in range(40)]
+        assert any(c.red() > 240 and c.green() > 240 and c.blue() > 240 for c in colours)  # the white W
+        assert any(c.blue() > 150 and c.red() < 120 for c in colours)  # the blue badge
+    finally:
+        about.close()
+        window.close()
+        application.processEvents()
