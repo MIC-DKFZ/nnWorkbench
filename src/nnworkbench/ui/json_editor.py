@@ -25,6 +25,7 @@ from qtpy.QtWidgets import (
 from nnworkbench.services.dataset_json import (
     definition_errors,
     file_ending_error,
+    has_regions,
     num_training_error,
     write_manifest,
 )
@@ -96,8 +97,8 @@ class _PairEditor(QWidget):
         key_field, value_field = QLineEdit(key), QLineEdit(value)
         for field in (key_field, value_field):
             field.setProperty("mono", True)
-        if self._value_is_id:  # labels: "name": id
-            value_field.setFixedWidth(56)
+        if self._value_is_id:  # labels: "name": id, or a list of IDs for a region
+            value_field.setFixedWidth(120 if value.startswith("[") else 56)
             value_field.setAlignment(Qt.AlignmentFlag.AlignRight)
             layout.addWidget(key_field, 1)
             layout.addWidget(label(":", muted=True))
@@ -133,7 +134,7 @@ class _PairEditor(QWidget):
                 continue
             if self._value_is_id:
                 try:
-                    result[key] = int(value)
+                    result[key] = json.loads(value) if value.startswith("[") else int(value)  # list: a region
                 except ValueError:
                     result[key] = value
             else:
@@ -292,7 +293,9 @@ class DatasetJsonPanel(QFrame):
         self._note.setText("The standard keys are fixed; only their values can be changed. Custom entries can be "
                            "added and removed. Labels and channels can be renamed, "
                            "renumbered, added and removed. Labels must stay consecutive, and <span style='font-family:"
-                           f"monospace'>ignore</span> must be the highest ID. numTraining must match the training cases in imagesTr{count}.")
+                           f"monospace'>ignore</span> must be the highest ID. numTraining must match the training cases in imagesTr{count}."
+                           + (" Region-based labels: a label can be a list of IDs, e.g. [1, 2, 3]."
+                              if has_regions(manifest) else ""))
         self._set_mode(True)
 
     def _add_custom(self, key: str, value: object) -> None:

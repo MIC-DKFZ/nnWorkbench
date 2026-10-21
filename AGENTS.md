@@ -122,6 +122,9 @@ Ask one or two questions at a time. Each answer below says what it decides.
 3. **"Do you already have outlines (labels) for your images?"** e.g. from another tool or a colleague.
    - **Yes, complete for every image** → *nnU-Net Workflow*: no annotation. Dense labels. Check names and class
      numbers (step 2).
+     *Region-based labels* (nnU-Net regions, e.g. BraTS: a label is a list of IDs plus `regions_class_order`):
+     nnU-Net Workflow only; preprocess, train, validate and predict as usual. `annotate` and **Push to
+     dataset.json** in the description refuse them; do not rewrite such a `dataset.json` by hand.
    - **Yes, but only for parts of the images** → sparse labels; the unlabelled parts must be marked with the
      ignore class number (step 2).
    - **No** → *Annotation Workflow*: the human annotates in nnWorkbench. Ask question 4.

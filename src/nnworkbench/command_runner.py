@@ -234,7 +234,15 @@ def run_annotation(dataset_id: int, index: int = 1, case: str = "") -> int:
         from .services.napari_inspector import open_annotation
     except ImportError as error:
         raise RuntimeError("Napari is not installed. Use the full installation to annotate.") from error
+    from .services.dataset_json import REGIONS_NOTE, has_regions, read_manifest
+
     dataset_directory, image, index, total = _case_image(dataset_id, index, case)
+    try:
+        manifest = read_manifest(dataset_directory)
+    except (OSError, ValueError):
+        manifest = None
+    if has_regions(manifest):
+        raise ValueError(f"{dataset_directory.name} has region-based labels. {REGIONS_NOTE}")
     print(f"Annotating {image.name} ({index} of {total}) in {dataset_directory.name}. "
           "Click Save annotation in Napari, then close it.")
     open_annotation(image)

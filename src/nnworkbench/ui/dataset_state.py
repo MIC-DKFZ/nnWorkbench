@@ -10,6 +10,7 @@ from nnworkbench.services.dataset_contents import json_object
 from nnworkbench.services.dataset_json import (
     definition_errors,
     file_ending_error,
+    has_regions,
     manifest_source,
     num_training_error,
 )
@@ -48,6 +49,10 @@ class DatasetState:
     @property
     def sparse(self) -> bool:
         return self.ignore_id is not None
+
+    @property
+    def regions(self) -> bool:
+        return has_regions(self.manifest)
 
     @property
     def names(self) -> dict[int, str]:

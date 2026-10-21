@@ -123,7 +123,7 @@ class CaseStatisticsPanel(QFrame):
         self._content.addLayout(self._geometry)
         self._content.addWidget(separator())
         self._add_classes(row, state)
-        self._annotate.setVisible(self._stage.context.settings.annotation_workflow)
+        self._annotate.setVisible(self._stage.context.settings.annotation_workflow and not state.regions)
         image = row.image_files[0] if row.image_files else None
         label_file = row.label_file
         self._stage.context.tasks.run(
@@ -307,7 +307,7 @@ class DataStage(StagePage):
 
     def _row_buttons(self, index: int) -> list:
         buttons = [("search", "Open in Napari · image and label", False)]
-        if self.context.settings.annotation_workflow:
+        if self.context.settings.annotation_workflow and not (self.state and self.state.regions):
             buttons.append(("edit", "Annotate in Napari · saves to labelsTr", False))
         open_case = self._case_index if self.right.currentWidget() is self._case_panel else -1
         buttons.append(("chart", "Case statistics · classes, geometry, files", index == open_case))

@@ -27,6 +27,19 @@ def num_training_error(manifest: dict, cases: int) -> str | None:
     return None
 
 
+REGIONS_NOTE = ("Region-based labels (a label is a list of IDs, with regions_class_order): the nnU-Net Workflow "
+                "works; annotating and editing the classes in nnWorkbench is not available.")
+
+
+def has_regions(manifest: object) -> bool:
+    """nnU-Net's region-based training: regions_class_order, or a label that is a list of IDs."""
+    if not isinstance(manifest, dict):
+        return False
+    labels = manifest.get("labels")
+    return "regions_class_order" in manifest or (
+        isinstance(labels, dict) and any(isinstance(value, list) for value in labels.values()))
+
+
 def definition_errors(manifest: dict) -> tuple[str, ...]:
     """Return user-facing errors for incomplete nnU-Net channel or label definitions."""
     errors: list[str] = []

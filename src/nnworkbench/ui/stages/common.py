@@ -17,6 +17,8 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from nnworkbench.services.dataset_json import REGIONS_NOTE
+
 from ..context import AppContext
 from ..dataset_state import DatasetState
 from ..widgets import Card, ElidedLabel, HowToCard, badge, button, clear_layout, label
@@ -267,7 +269,9 @@ FOLD_ALL_NOTE = ("Fold all was trained on all cases, so its Dice is measured on 
 
 
 def label_mode_badge(state: DatasetState):
-    """Sparse or dense labels; only relevant while working on the raw data."""
+    """Sparse or dense labels (or nnU-Net regions); only relevant while working on the raw data."""
+    if state.regions:
+        return badge("Region-based labels", "blue", REGIONS_NOTE)
     ignore = state.ignore_id
     if ignore is not None:
         return badge(f"Sparse labels · ignore = {ignore}", "purple", "dataset.json has an ignore label")

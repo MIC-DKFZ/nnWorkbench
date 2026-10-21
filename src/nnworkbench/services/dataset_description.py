@@ -302,12 +302,14 @@ def class_table_problems(classes: list[tuple[int, str]]) -> list[str]:
 
 def push_classes(dataset_directory: Path, classes: list[tuple[int, str]]) -> None:
     """Write the classes into dataset.json's labels (all other keys stay); raises ValueError on invalid tables."""
-    from .dataset_json import read_manifest, write_manifest
+    from .dataset_json import REGIONS_NOTE, has_regions, read_manifest, write_manifest
 
     problems = class_table_problems(classes)
     if problems:
         raise ValueError(" ".join(problems))
     manifest = read_manifest(dataset_directory)
+    if has_regions(manifest):  # the class table has single IDs only: pushing would delete the regions
+        raise ValueError(f"Not written: dataset.json has region-based labels. {REGIONS_NOTE}")
     manifest["labels"] = {name.strip(): value for value, name in sorted(classes)}
     write_manifest(dataset_directory, manifest)
 
