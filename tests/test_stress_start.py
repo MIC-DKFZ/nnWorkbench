@@ -13,7 +13,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from qtpy.QtCore import QStandardPaths, Qt
-from qtpy.QtWidgets import QApplication, QMessageBox
+from qtpy.QtWidgets import QApplication, QLabel, QMessageBox
 
 from nnworkbench import path_setup
 from nnworkbench.models.dataset import DatasetRecord
@@ -291,3 +291,63 @@ def test_s13_dataset_json_text_is_not_rendered_as_html(tmp_path: Path, config: P
         assert chip.textFormat() == Qt.TextFormat.PlainText
     finally:
         _close(window, application)
+
+
+def test_dataset_ids_nnunet_refuses_are_reported(tmp_path: Path) -> None:
+    from nnworkbench.services.dataset_scanner import id_badge, scan_datasets
+
+    raw, preprocessed, results = (tmp_path / name for name in ("raw", "preprocessed", "results"))
+    for folder in (raw / "Dataset042_Cells", preprocessed / "Dataset042_Cells", results / "Dataset042_Cells",
+                   raw / "Dataset420_A", results / "Dataset420_B",  # one ID, two names across roots
+                   raw / "Dataset0007_Old", raw / "Dataset007_New",  # nnU-Net uses Dataset007_New, ignores 0007
+                   raw / "Dataset500_X", raw / "Dataset5000_Y",  # nnU-Net's prefix Dataset500 matches both
+                   raw / "Dataset0099_Lonely"):  # nnU-Net looks for Dataset099
+        folder.mkdir(parents=True)
+    problems = {record.dataset_id: record.id_problem for record in scan_datasets(raw, preprocessed, results)}
+    assert problems[42] == ("", "")
+    assert problems[420][0] == "duplicate ID" and "Dataset420_A, Dataset420_B" in problems[420][1]
+    records = {record.dataset_id: record for record in scan_datasets(raw, preprocessed, results)}
+    assert problems[7] == ("", "") and records[7].raw_path.name == "Dataset007_New"  # as nnU-Net
+    assert records[7].ignored_folders == ("Dataset0007_Old",)
+    assert id_badge(records[7])[:2] == ("folder ignored by nnU-Net", "orange")
+    assert id_badge(records[420])[1] == "red" and id_badge(records[42]) is None
+    assert problems[500][0] == "duplicate ID" and "Dataset5000_Y" in problems[500][1]
+    assert problems[5000] == ("", "")
+    assert problems[99][0] == "name not found by nnU-Net" and "Dataset099_Lonely" in problems[99][1]
+
+
+def test_duplicate_id_badge_on_the_overview_and_the_data_page(tmp_path: Path, monkeypatch, capsys) -> None:
+    import json
+
+    from nnworkbench import command_runner
+    from nnworkbench.services.dataset_scanner import scan_datasets
+    from nnworkbench.ui.dataset_state import load_state
+    from nnworkbench.ui.main_window import MainWindow
+
+    raw, results = tmp_path / "raw", tmp_path / "results"
+    (raw / "Dataset420_A" / "imagesTr").mkdir(parents=True)
+    (results / "Dataset420_B").mkdir(parents=True)
+    records = scan_datasets(raw, None, results)
+    application = _application()
+    window = MainWindow()
+    try:
+        window.overview.set_records(records)
+        cell = window.overview._table.cellWidget(0, 1)
+        assert cell is not None and any(child.text() == "duplicate ID" for child in cell.findChildren(QLabel))
+        window.overview.details.set_record(records[0], None)
+        assert any(child.text() == "duplicate ID" for child in window.overview.details.findChildren(QLabel))
+        state = load_state(records[0])
+        assert any("used by 2 folders" in problem for problem in state.data_problems())
+        assert state.data_state()[0] == "error"
+        badges = window.dataset_page.pages["data"].header_badges(state)
+        assert any(item.text() == "duplicate ID" for item in badges)
+        for item in badges:
+            item.deleteLater()
+    finally:
+        window.close()
+        application.processEvents()
+
+    monkeypatch.setattr(command_runner, "configured_paths", lambda: {
+        "nnUNet_raw": str(raw), "nnUNet_preprocessed": "", "nnUNet_results": str(results)})
+    assert command_runner._run_builtin_command(["status", "-d", "420", "--json", "--no-device"]) == 0
+    assert any("used by 2 folders" in problem for problem in json.loads(capsys.readouterr().out)["problems"])

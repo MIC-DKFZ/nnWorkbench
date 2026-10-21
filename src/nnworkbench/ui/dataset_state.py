@@ -70,6 +70,8 @@ class DatasetState:
     def data_problems(self) -> list[str]:
         raw = self.raw
         problems = list(self.manifest_errors)
+        if self.record.id_problem[1]:
+            problems.append(self.record.id_problem[1])
         if raw.missing_labels:
             problems.append(f"{raw.missing_labels} image{'s' if raw.missing_labels != 1 else ''} without label")
         if not raw.names_valid:

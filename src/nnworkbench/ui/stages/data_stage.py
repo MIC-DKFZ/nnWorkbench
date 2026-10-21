@@ -15,6 +15,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from nnworkbench.services.dataset_scanner import id_badge
 from nnworkbench.services.workflow_status import CaseRow, geometries_match, read_geometry
 
 from ..context import AppContext
@@ -395,6 +396,8 @@ class DataStage(StagePage):
         if raw.missing_labels:
             items.append(badge(f"labels incomplete · {raw.missing_labels} image{'s' if raw.missing_labels != 1 else ''} "
                                "without label", "red"))
+        if (id_warning := id_badge(state.record)) is not None:
+            items.append(badge(*id_warning))
         if not raw.names_valid:
             items.append(badge("names invalid · images need a _0000 channel suffix", "red"))
         if not raw.channels_complete:

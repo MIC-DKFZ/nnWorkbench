@@ -31,6 +31,7 @@ from nnworkbench.models.dataset import DatasetRecord
 from nnworkbench.path_setup import set_paths_command
 from nnworkbench.services.dataset_contents import json_object, model_folds, trained_models
 from nnworkbench.services.dataset_json import manifest_source
+from nnworkbench.services.dataset_scanner import id_badge
 
 from .context import AppContext
 from .widgets import (
@@ -444,6 +445,9 @@ class DetailsPanel(Card):
         self._id.setText(f"{record.dataset_id:03d}")
         self._name.setText(record.name)
         self._folder.setText(record.directory_name)
+        if (id_warning := id_badge(record)) is not None:
+            self._info.addWidget(badge(*id_warning))
+            self._info.addWidget(_plain(label(id_warning[2], muted=True, wrap=True)))
         if details is None:
             self._info.addWidget(label("Loading dataset.json…", muted=True))
             return
@@ -621,7 +625,13 @@ class OverviewPage(QWidget):
         select_row = 0 if visible else -1
         for row, record in enumerate(visible):
             self._table.setItem(row, 0, table_item(f"{record.dataset_id:03d}", mono=True, data=record))
-            self._table.setItem(row, 1, table_item(record.name, bold=True))
+            # with an ID problem the name is drawn by the cell widget (name and red badge) instead of the item
+            id_warning = id_badge(record)
+            self._table.setItem(row, 1, table_item("" if id_warning else record.name, bold=True))
+            if id_warning:
+                name = _plain(label(record.name, bold=True))
+                self._table.setCellWidget(row, 1, cell_widget(
+                    name, badge(*id_warning)))
             self._table.setCellWidget(row, 2, cell_widget(availability(
                 record.raw_path is not None, record.preprocessed_path is not None, record.results_path is not None)))
             self._table.setItem(row, 3, table_item(format_time(self._modified.get(record.dataset_id)), muted=True))
