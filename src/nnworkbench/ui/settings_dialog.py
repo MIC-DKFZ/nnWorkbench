@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
     QCheckBox,
@@ -15,7 +13,7 @@ from qtpy.QtWidgets import (
     QVBoxLayout,
 )
 
-from .context import Settings
+from .context import PREFETCH_RADIUS_RANGE, Settings, worker_range
 from .widgets import NumberField, button, label, section_label, separator, with_stepper
 
 
@@ -65,8 +63,8 @@ class SettingsDialog(QDialog):
 
         self._annotation = settings.annotation_workflow  # switched in the top bar, kept unchanged here
         self.workers = _number_field()
-        self.workers.setRange(1, os.cpu_count() or 1)
-        self.workers.setValue(min(settings.workers, os.cpu_count() or 1))
+        self.workers.setRange(*worker_range())
+        self.workers.setValue(settings.workers)  # clamped to the range
         section("Statistics", [("Worker processes", with_stepper(self.workers))], "Used by Compute statistics.")
         self.previous = QCheckBox("Previous cases")
         self.previous.setChecked(settings.prefetch_previous)
@@ -78,7 +76,7 @@ class SettingsDialog(QDialog):
         prefetch_row.addWidget(self.previous)
         prefetch_row.addWidget(self.following)
         self.radius = _number_field()
-        self.radius.setRange(1, 20)
+        self.radius.setRange(*PREFETCH_RADIUS_RANGE)
         self.radius.setValue(settings.prefetch_radius)
         section("Napari", [("Prefetch", prefetch), ("Prefetch radius", with_stepper(self.radius))],
                 "Loads neighbouring cases in the background so stepping through cases in Napari is faster. Uses more "

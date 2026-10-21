@@ -14,8 +14,14 @@ from qtpy.QtWidgets import QMessageBox
 
 from nnworkbench.services.device_probe import DeviceInfo, probe_device
 
-from .jobs import JobRunner, start_process_group, stop_process_group
+from .jobs import JobRunner, echo, start_process_group, stop_process_group
 from .tasks import TaskRunner
+
+PREFETCH_RADIUS_RANGE = (1, 20)  # the limits of the settings dialog, also applied to saved values
+
+
+def worker_range() -> tuple[int, int]:
+    return 1, os.cpu_count() or 1
 
 
 @dataclass
@@ -40,10 +46,10 @@ class AppContext(QObject):
         self.store = QSettings("nnWorkbench", "nnWorkbench")
         self.settings = Settings(
             annotation_workflow=self.store.value("annotation_workflow/enabled", False, type=bool),
-            workers=self.store.value("analysis/workers", min(8, os.cpu_count() or 1), type=int),
+            workers=self._stored_number("analysis/workers", min(8, os.cpu_count() or 1), worker_range()),
             prefetch_previous=self.store.value("napari/prefetch_previous", True, type=bool),
             prefetch_next=self.store.value("napari/prefetch_next", True, type=bool),
-            prefetch_radius=self.store.value("napari/prefetch_radius", 1, type=int),
+            prefetch_radius=self._stored_number("napari/prefetch_radius", 1, PREFETCH_RADIUS_RANGE),
         )
         self.roots: dict[str, Path | None] = {"raw": None, "preprocessed": None, "results": None}
         # The model last chosen on Train, Validate or Predict (trainer__plans__configuration); the other stages
@@ -53,6 +59,14 @@ class AppContext(QObject):
         self.tasks = TaskRunner(self)
         self._napari: list[QProcess] = []
         self.device: DeviceInfo | None = None  # None while the check runs (see detect_device)
+
+    def _stored_number(self, key: str, default: int, limits: tuple[int, int]) -> int:
+        """A saved whole number within *limits* (the settings file may have been edited, or the CPU changed)."""
+        try:
+            value = int(self.store.value(key, default))
+        except (TypeError, ValueError):
+            value = default
+        return max(limits[0], min(limits[1], value))
 
     # ------------------------------------------------------------ device
 
@@ -132,13 +146,13 @@ class AppContext(QObject):
 
     def _napari_module(self, arguments: list[str]) -> None:
         command = ["-m", "nnworkbench.services.napari_inspector", *arguments]
-        print(f"Napari: {shlex.join([sys.executable, *command])}")
         process = QProcess(self)
         process.setProcessChannelMode(QProcess.ProcessChannelMode.ForwardedChannels)
         self._napari.append(process)
         process.finished.connect(lambda *_: self._forget(process))
         process.errorOccurred.connect(lambda error: self._napari_failed(process, error))
         start_process_group(process, sys.executable, command)
+        echo(f"Napari: {shlex.join([sys.executable, *command])}")
 
     @property
     def napari_windows(self) -> int:

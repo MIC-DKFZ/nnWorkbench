@@ -9,6 +9,25 @@ from qtpy.QtWidgets import QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QVBoxLay
 from .jobs import Job, JobRunner
 from .widgets import button, clear_layout, label, polish
 
+# Output without line breaks (dots, a progress bar without "\r") would grow one text block without end, and every
+# insertion lays out the whole block again: the console breaks such lines after this many characters.
+LINE_LIMIT = 1_000
+MAX_BLOCKS = 20_000  # lines kept in the console
+_SYMBOLS = {"running": "●", "finished": "✓", "failed": "✗", "terminated": "■"}
+
+
+def break_long_lines(text: str, column: int = 0, limit: int = LINE_LIMIT) -> str:
+    """Insert line breaks so no line is longer than *limit*; *column* characters are already on the first line."""
+    if column + len(text) <= limit:
+        return text
+    lines = text.split("\n")
+    for index, line in enumerate(lines):
+        room = max(0, limit - (column if index == 0 else 0))
+        if len(line) > room:
+            lines[index] = "\n".join([line[:room], *(line[start:start + limit]
+                                                    for start in range(room, len(line), limit))])
+    return "\n".join(lines)
+
 
 class ConsolePanel(QFrame):
     """One line when collapsed; the full log of the selected job when expanded."""
@@ -50,7 +69,7 @@ class ConsolePanel(QFrame):
         self._log = QPlainTextEdit()
         self._log.setObjectName("consoleLog")
         self._log.setReadOnly(True)
-        self._log.setMaximumBlockCount(20_000)
+        self._log.setMaximumBlockCount(MAX_BLOCKS)
         self._log.setPlaceholderText("No commands have been run in this session.")
         log_holder = QWidget()
         holder_layout = QVBoxLayout(log_holder)
@@ -87,7 +106,7 @@ class ConsolePanel(QFrame):
         if job is self._selected:
             cursor = self._log.textCursor()
             cursor.movePosition(QTextCursor.MoveOperation.End)
-            cursor.insertText(text)
+            cursor.insertText(break_long_lines(text, cursor.positionInBlock()))
             self._log.setTextCursor(cursor)
             self._log.verticalScrollBar().setValue(self._log.verticalScrollBar().maximum())
         if job is self._runner.current:
@@ -96,7 +115,12 @@ class ConsolePanel(QFrame):
             self._progress.setVisible(bool(job.progress))
 
     def _show_job(self, job: Job) -> None:
-        self._log.setPlainText("".join(job.output))
+        # job.output holds at most OUTPUT_LIMIT characters (jobs.py); show only the lines the console keeps
+        lines = break_long_lines("".join(job.output)).split("\n")
+        if len(lines) > MAX_BLOCKS:
+            notice = f"[Earlier output is not shown here; the full output is in the log file: {job.log}]"
+            lines = [notice, *lines[-(MAX_BLOCKS - 1):]]
+        self._log.setPlainText("\n".join(lines))
         self._log.verticalScrollBar().setValue(self._log.verticalScrollBar().maximum())
 
     def _select(self, job: Job) -> None:
@@ -110,7 +134,7 @@ class ConsolePanel(QFrame):
         current = self._runner.current
         shown = jobs[-4:] if self._expanded else ([current] if current else jobs[-1:])
         for job in shown:
-            symbol = {"running": "●", "finished": "✓", "failed": "✗", "terminated": "■"}[job.status]
+            symbol = _SYMBOLS.get(job.status, "●")  # e.g. "running in the background"
             suffix = f" · {job.started:%H:%M}" if job.status != "running" else " · running"
             chip = QLabel(f"{symbol} {job.label}{suffix if self._expanded else ''}")
             chip.setObjectName("jobChip")

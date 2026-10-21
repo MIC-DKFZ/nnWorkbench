@@ -6,6 +6,7 @@ job running (``JobRunner.detach``): the command goes on and keeps writing to its
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shlex
@@ -36,10 +37,42 @@ class Job:
     cases_total: int | None = None
     cases_done: int = 0
     log: Path | None = None  # the job's output, also after the GUI quit
+    output_size: int = 0  # characters in ``output``
+    truncated: bool = False  # earlier output was dropped from ``output`` (it stays in the log file)
 
     @property
     def label(self) -> str:
         return f"{self.dataset} · {self.title}" if self.dataset else self.title
+
+
+# The GUI keeps the last 2 million characters of a job's output (a training prints far less); everything is in the
+# job's log file. Trimmed once the output is a quarter larger, so appending stays cheap.
+OUTPUT_LIMIT = 2_000_000
+LAST_LINE_LIMIT = 500  # characters of the last output line kept for the console bar
+
+
+def add_output(job: Job, text: str) -> None:
+    """Append *text* to the job's output; keep only its last ``OUTPUT_LIMIT`` characters."""
+    job.output.append(text)
+    job.output_size += len(text)
+    if job.output_size <= OUTPUT_LIMIT + OUTPUT_LIMIT // 4:
+        return
+    kept = "".join(job.output)[-OUTPUT_LIMIT:]
+    line_start = kept.find("\n", 0, 10_000)  # start at a full line when one starts nearby
+    kept = kept[line_start + 1:] if line_start >= 0 else kept
+    notice = f"[Earlier output is not shown here; the full output is in the log file: {job.log}]\n"
+    job.output[:] = [notice, kept]
+    job.output_size = len(notice) + len(kept)
+    job.truncated = True
+
+
+def echo(text: str, end: str = "\n") -> None:
+    """Copy *text* to the GUI's own stdout. Never fails: that output may be a closed pipe, a file in a legacy
+    encoding (Windows: ``nnworkbench-gui > log.txt``) or missing (``pythonw``)."""
+    try:
+        print(text, end=end, flush=True)
+    except (OSError, UnicodeError, ValueError):  # ValueError: stdout was closed
+        pass
 
 
 _EPOCH = re.compile(r"\bEpoch (\d+)\b")
@@ -71,8 +104,16 @@ def job_log_folder() -> Path:
     return configuration_path().parent / "jobs"
 
 
+_LOG_TITLE_BYTES = 100  # file names may have 255 bytes; CJK characters take 3 bytes each in UTF-8
+
+
 def _log_name(job: Job) -> str:
     title = re.sub(r"[^\w.-]+", "_", f"{job.dataset} {job.title}".strip()).strip("_") or "job"
+    encoded = title.encode("utf-8")
+    if len(encoded) > _LOG_TITLE_BYTES:
+        # shortened; the hash of the full title keeps the names of different jobs apart
+        digest = hashlib.sha1(encoded).hexdigest()[:8]
+        title = f"{encoded[:_LOG_TITLE_BYTES - 9].decode('utf-8', errors='ignore')}_{digest}"
     return f"{job.started:%Y-%m-%d_%H-%M-%S}_{title}.log"
 
 
@@ -207,7 +248,7 @@ class JobRunner(QObject):
                  else shlex.join([program, *arguments]))
         header = f"$ {shown}\n" if number == 1 else f"\n$ {shown}\n"
         if number == 1:
-            job.output.append(f"Log file: {job.log}\n{header}")
+            add_output(job, f"Log file: {job.log}\n{header}")
         else:
             self._append(job, header)
         try:
@@ -227,8 +268,8 @@ class JobRunner(QObject):
         process.finished.connect(lambda code, status: self._finished(process, job, code, status, total))
         process.errorOccurred.connect(lambda error: self._failed(process, job, error))
         self._process, self._job = process, job
-        print(f"Run: {shown}")
         start_logged_process(process, program, arguments, job.log)
+        echo(f"Run: {shown}")
 
     def terminate(self) -> None:
         if self._process is None or self._job is None:
@@ -237,7 +278,16 @@ class JobRunner(QObject):
         self._append(self._job, "\nTermination requested.\n")
         process = self._process
         stop_process_group(process)
-        QTimer.singleShot(5_000, lambda: stop_process_group(process, wait_ms=1))
+        QTimer.singleShot(5_000, lambda: self._stop_again(process))
+
+    def _stop_again(self, process: QProcess) -> None:
+        """Stop a job that ignored the first request for good. Once the job has ended, its QProcess is deleted."""
+        if process is not self._process:
+            return
+        try:
+            stop_process_group(process, wait_ms=1)
+        except RuntimeError:  # deleted by Qt in the meantime
+            pass
 
     def detach(self) -> Job | None:
         """Leave the running job running when the GUI quits: stop only the runner that copies its output; the command
@@ -261,16 +311,16 @@ class JobRunner(QObject):
     def _read(self, process: QProcess, job: Job) -> None:
         text = bytes(process.readAllStandardOutput()).decode(errors="replace")
         if text:
-            print(text, end="")
             self._append(job, text)
+            echo(text, end="")
 
     def _append(self, job: Job, text: str) -> None:
-        job.output.append(text)
+        add_output(job, text)
         lines = [line.strip() for line in text.replace("\r", "\n").splitlines() if line.strip()]
         for line in lines:
             update_progress(job, line)
         if lines:
-            job.last_line = lines[-1]
+            job.last_line = lines[-1][-LAST_LINE_LIMIT:]
         self.job_output.emit(job, text)
 
     def _finished(self, process: QProcess, job: Job, code: int, status, total: int = 1) -> None:

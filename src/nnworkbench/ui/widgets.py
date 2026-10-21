@@ -745,8 +745,12 @@ class NumberField(QLineEdit):
         self.setValue(self._value - 1)
 
     def _typed(self, text: str) -> None:
-        if text.isdigit() and self._minimum <= int(text) <= self._maximum and int(text) != self._value:
-            self._value = int(text)
+        try:
+            number = int(text)  # also "+5" and "-3", which the validator accepts
+        except ValueError:  # e.g. empty or only a sign while typing
+            return
+        if self._minimum <= number <= self._maximum and number != self._value:
+            self._value = number
             self.valueChanged.emit(self._value)
 
     def keyPressEvent(self, event) -> None:

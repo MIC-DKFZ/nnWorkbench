@@ -22,7 +22,8 @@ class _Worker(QRunnable):
     def run(self) -> None:
         try:
             result = self.task()
-        except Exception as error:  # noqa: BLE001 - reported to the caller instead of crashing the thread
+        # also SystemExit and KeyboardInterrupt: the caller must hear back, or its page waits forever
+        except BaseException as error:  # noqa: BLE001 - reported to the caller instead of crashing the thread
             self._emit("failed", f"{type(error).__name__}: {error}")
         else:
             self._emit("completed", result)
