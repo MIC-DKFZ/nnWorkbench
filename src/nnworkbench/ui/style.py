@@ -171,6 +171,7 @@ QLabel#jobChip[failed="true"] {{ border-color: {RED}; background: {RED_SOFT}; co
 QLabel[failed="true"] {{ color: {RED}; }}
 QLabel#statusYes {{ color: {GREEN}; font-weight: 700; }}
 QLabel#statusNo {{ color: {RED}; font-weight: 700; }}
+QLabel#statusUnset {{ color: {ORANGE}; font-weight: 700; }}
 
 QFrame#howto {{ background: {PANEL}; border: 1px solid {LINE}; border-radius: 10px; }}
 QFrame#popup {{ background: {PANEL}; border: 1px solid {LINE}; border-radius: 12px; }}

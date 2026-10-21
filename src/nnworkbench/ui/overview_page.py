@@ -39,6 +39,7 @@ from .widgets import (
     button,
     cell_widget,
     dataset_id_label,
+    empty_state,
     fit_columns,
     format_time,
     label,
@@ -90,7 +91,7 @@ class PathsCard(Card):
             grid.addWidget(label(name, muted=True), row, 0)
             field = QLineEdit()
             field.setProperty("mono", True)
-            field.setPlaceholderText(f"{name} directory")
+            field.setPlaceholderText(f"not set: choose the {name} folder with Browse…")
             field.editingFinished.connect(self._edited)
             grid.addWidget(field, row, 1)
             browse = button("Browse…", small=True, clicked=lambda item=key: self._choose(item))
@@ -147,25 +148,37 @@ class PathsCard(Card):
         self._render_profiles()
 
     def _update_marks(self) -> None:
-        missing = 0
+        """✓ found, orange ! not set yet (normal on the first start), red ✗ set but not found."""
+        missing = unset = 0
         for key in _KEYS:
             text = self._fields[key].text().strip()
-            exists = bool(text) and Path(text).expanduser().is_dir()
             mark = self._marks[key]
             if self._active != "Local":
                 mark.setText("")
+                mark.setToolTip("")
                 continue
-            mark.setText("✓" if exists else "✗")
-            mark.setObjectName("statusYes" if exists else "statusNo")
+            if not text:
+                state, tooltip = "unset", "Not set yet: choose the folder with Browse… (an empty folder is fine)"
+            elif Path(text).expanduser().is_dir():
+                state, tooltip = "found", "Folder found"
+            else:
+                state, tooltip = "missing", f"Folder not found: {text}"
+            mark.setText({"found": "✓", "unset": "!", "missing": "✗"}[state])
+            mark.setObjectName({"found": "statusYes", "unset": "statusUnset", "missing": "statusNo"}[state])
+            mark.setToolTip(tooltip)
             mark.style().unpolish(mark)
             mark.style().polish(mark)
-            missing += not exists
+            missing += state == "missing"
+            unset += state == "unset"
         if self._active != "Local":
             set_badge(self._status, f"profile: {self._active}", "purple")
             self._note.setText("paths for another machine · used only for Export command")
         elif missing:
-            set_badge(self._status, f"{missing} not found", "orange")
+            set_badge(self._status, f"{missing} not found" + (f" · {unset} not set" if unset else ""), "red")
             self._note.setText("Check the path or choose another folder with Browse…")
+        elif unset:
+            set_badge(self._status, f"{unset} not set", "orange")
+            self._note.setText("Please set the paths: choose each folder with Browse… (empty folders are fine)")
         else:
             set_badge(self._status, "✓ all found", "green")
             self._note.setText("shared with the command line (nnworkbench-set-paths)")
@@ -499,7 +512,11 @@ class OverviewPage(QWidget):
         self._table = make_table(["ID", "Dataset", "Available", "Modified", ""], stretch=1, row_height=40)
         self._table.itemSelectionChanged.connect(self._selection_changed)
         self._table.cellDoubleClicked.connect(lambda row, _column: self._open_row(row))
-        table_card.body.addWidget(self._table)
+        self._table_stack = QStackedWidget()
+        self._table_stack.addWidget(self._table)
+        self._empty = empty_state("")
+        self._table_stack.addWidget(self._empty)
+        table_card.body.addWidget(self._table_stack)
         left.addWidget(table_card, 1)
         split.addLayout(left, 1)
         self.details = DetailsPanel()
@@ -544,10 +561,24 @@ class OverviewPage(QWidget):
                 select_row = row
         self._table.blockSignals(False)
         fit_columns(self._table)
+        self._show_empty(visible)
         if select_row >= 0:
             self._table.selectRow(select_row)
         else:
             self.details.set_record(None, None)
+
+    def _show_empty(self, visible: list[DatasetRecord]) -> None:
+        """Instead of an empty table: what to do when there is no dataset (yet), or none matches the search."""
+        if visible:
+            self._table_stack.setCurrentWidget(self._table)
+            return
+        message = self._empty.findChild(QLabel)
+        if self._records:
+            message.setText("<b style='color:#1e293b; font-size:15px'>No dataset matches the search</b>")
+        else:
+            message.setText("<b style='color:#1e293b; font-size:15px'>No datasets found</b><br><br>Set your "
+                            "nnU-Net folders above and/or create a new dataset with <b>＋ New dataset</b>.")
+        self._table_stack.setCurrentWidget(self._empty)
 
     def _update_iteration(self) -> None:
         """Only with the Annotation Workflow; the source dataset is chosen in the dialog (default: the selected one)."""

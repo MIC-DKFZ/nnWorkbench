@@ -454,3 +454,42 @@ def test_description_tab_warns_about_class_differences_and_pushes(tmp_path: Path
     parent.close()
     parent.deleteLater()
     assert application is not None
+
+
+def test_start_screen_marks_unset_paths_orange_and_missing_paths_red(tmp_path: Path) -> None:
+    from nnworkbench.ui.overview_page import PathsCard
+
+    application = _application()
+    card = PathsCard()
+    try:
+        card.set_paths("", "", "")
+        assert [card._marks[key].objectName() for key in ("raw", "preprocessed", "results")] == ["statusUnset"] * 3
+        assert card._status.text() == "3 not set" and card._status.property("tone") == "orange"
+        card.set_paths(str(tmp_path), "", str(tmp_path / "missing"))
+        assert [card._marks[key].objectName() for key in ("raw", "preprocessed", "results")] == [
+            "statusYes", "statusUnset", "statusNo"]
+        assert card._status.text() == "1 not found · 1 not set" and card._status.property("tone") == "red"
+        card.set_paths(str(tmp_path), str(tmp_path), str(tmp_path))
+        assert card._status.property("tone") == "green"
+    finally:
+        card.close()
+        application.processEvents()
+
+
+def test_empty_dataset_list_says_what_to_do() -> None:
+    from qtpy.QtWidgets import QLabel
+
+    application = _application()
+    window = MainWindow()
+    overview = window.overview
+    try:
+        overview.set_records([])
+        assert overview._table_stack.currentWidget() is overview._empty
+        assert "No datasets found" in overview._empty.findChild(QLabel).text()
+        overview.set_records([DatasetRecord(42, "Cells")])
+        assert overview._table_stack.currentWidget() is overview._table
+        overview._search.setText("liver")
+        assert "No dataset matches" in overview._empty.findChild(QLabel).text()
+    finally:
+        window.close()
+        application.processEvents()
