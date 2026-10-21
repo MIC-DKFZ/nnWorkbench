@@ -6,6 +6,7 @@ Qt-free, so they also work in the core installation (e.g. on a cluster).
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -255,6 +256,9 @@ def suggestion(roots: dict[str, Path | None], dataset_id: int, step: str, *, dev
             raise ValueError("No model with a finished fold" + (f" matching '{model}'" if model else "") + ".")
         chosen = models[0]
         folds = prediction_folds(fold.name for fold in chosen.finished_folds)
+        # ~ expanded as in the GUI (an unknown ~user stays as typed)
+        input_directory, output_directory = (os.path.expanduser(folder) if folder else ""
+                                             for folder in (input_directory, output_directory))
         command = prediction_command(dataset, input_directory or "INPUT_FOLDER", output_directory or "OUTPUT_FOLDER",
                                      chosen.plans, chosen.configuration, trainer=chosen.trainer,
                                      folds=" ".join(folds), continue_prediction=True,

@@ -348,7 +348,8 @@ nnworkbench-run inspect-predictions OUT --images IN
   `null` with `--no-device`), `stages.<data|preprocess|train|validate|predict>` with `state`
   (`ok`, `todo` = ready to run, `warn` = outdated, `error` = must be fixed, `none`) and `detail`, `plans[]`,
   `models[]` with `trainer`, `plans`, `configuration`, `mean_dice`, `folds[]` (`fold`, `status` =
-  `done`/`training`/`stopped`/`reduced`, `epoch`, `total_epochs`, `pseudo_dice`, `dice`).
+  `done`/`training`/`stopped`/`reduced`, `epoch`, `total_epochs`, `pseudo_dice`, `dice`); a value that is missing
+  or not a finite number (NaN, Infinity) is `null`.
 - **`validation --json`:** `dataset`, `models[]` with `model`, `mean_dice`, `folds` (fold → Dice), `classes`
   (class → Dice), `cases[]` weakest first (`case`, `fold`, `dice`, `weakest_class`, `weakest_dice`, `prediction`).
 - **`suggest --json`:** `dataset`, `step`, `command` (shell-quoted), `arguments` (list), `reasons[]`.

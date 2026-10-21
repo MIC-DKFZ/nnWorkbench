@@ -23,7 +23,10 @@ from nnworkbench.services.workflow_status import (
     FoldInfo,
     ModelInfo,
     ValidationCase,
+    class_name,
+    finite_number,
     mean_class_dice,
+    summary_foreground_dice,
     validation_cases,
 )
 
@@ -414,12 +417,9 @@ class ValidateStage(StagePage):
             self._foreground_note.setText(f"Dice · case {self._case.case_id}")
             rows = []
             for key, values in self._case.metrics.items():
-                dice = values.get("Dice") if isinstance(values, dict) else None
-                if isinstance(dice, (int, float)):
-                    try:
-                        rows.append((names.get(int(key), key), float(dice)))
-                    except ValueError:
-                        rows.append((key, float(dice)))
+                dice = finite_number(values.get("Dice") if isinstance(values, dict) else None)
+                if dice is not None:
+                    rows.append((class_name(key, names), dice))
             entry = {"prediction_file": self._case.prediction_file, "reference_file": self._case.reference_file,
                      "metrics": self._case.metrics}
             self._details.setPlainText(json.dumps(entry, indent=2))
@@ -427,8 +427,8 @@ class ValidateStage(StagePage):
             fold = self._fold.name if self._fold else ""
             self._panel_subject.setText(f"fold {fold} · foreground_mean and mean")
             self._dice_note.setText(f"fold {fold} · mean")
-            foreground = (self._summary or {}).get("foreground_mean", {}).get("Dice")
-            self._foreground.setText(f"{foreground:.2f}" if isinstance(foreground, (int, float)) else "—")
+            foreground = summary_foreground_dice(self._summary)  # also when foreground_mean is null or a list
+            self._foreground.setText(f"{foreground:.2f}" if foreground is not None else "—")
             self._foreground_note.setText(f"Dice · fold {fold}")
             rows = mean_class_dice(self._summary, names)
             summary = self._summary or {}

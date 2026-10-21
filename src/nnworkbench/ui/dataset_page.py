@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import traceback
+
 from qtpy.QtCore import Signal
 from qtpy.QtWidgets import QButtonGroup, QFrame, QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
 
@@ -85,7 +87,15 @@ class DatasetPage(QWidget):
             return
         record = self.record
         self._context.tasks.run("dataset-state", lambda: load_state(record), self._apply_state,
-                                lambda error: print(f"Could not load {record.directory_name}: {error}"))
+                                lambda error: self._load_failed(record, error))
+
+    def _load_failed(self, record: DatasetRecord, error: str) -> None:
+        """Reading the dataset failed: every page says so (with the error) instead of "Loading files…"."""
+        _log(f"Could not load {record.directory_name}: {error}")
+        if self.record is None or record != self.record:
+            return
+        for page in self.pages.values():
+            page.show_load_error(f"Could not read the dataset files ({error}).")
 
     def _apply_state(self, state: object) -> None:
         if not isinstance(state, DatasetState) or self.record is None or state.record != self.record:
@@ -94,11 +104,19 @@ class DatasetPage(QWidget):
         for key, method in (("data", state.data_state), ("preprocess", state.preprocess_state),
                             ("train", state.train_state), ("validate", state.validate_state),
                             ("predict", state.predict_state)):
-            tab_state, hint = method()
+            try:
+                tab_state, hint = method()
+            except Exception as error:  # noqa: BLE001  (one stage must not keep the others from updating)
+                _log_exception(f"Stage state {key}")
+                tab_state, hint = "error", f"Could not check this stage: {type(error).__name__}: {error}"
             self._tabs[key].set_state(tab_state)
             self._tabs[key].setToolTip(hint)
-        for page in self.pages.values():
-            page.set_state(state)
+        for key, page in self.pages.items():
+            try:
+                page.set_state(state)
+            except Exception as error:  # noqa: BLE001  (one stage must not keep the others from updating)
+                _log_exception(f"Stage {key}")
+                page.show_load_error(f"Could not show this stage ({type(error).__name__}: {error}).")
 
     def show_stage(self, key: str) -> None:
         self._current = key
@@ -106,3 +124,18 @@ class DatasetPage(QWidget):
         self._stack.setCurrentWidget(self.pages[key])
         if self._context.model_label:
             self.pages[key].follow_model(self._context.model_label)
+
+
+def _log(text: str) -> None:
+    try:
+        print(text)
+    except Exception:  # noqa: BLE001, S110  (no usable console, e.g. pythonw on Windows)
+        pass
+
+
+def _log_exception(context: str) -> None:
+    try:
+        traceback.print_exc()
+    except Exception:  # noqa: BLE001  (no usable console, e.g. pythonw on Windows)
+        return
+    _log(f"{context} failed (traceback above).")

@@ -56,6 +56,7 @@ from .common import (
     DEVICE_INFO,
     CommandBox,
     StagePage,
+    arguments_error,
     arguments_field,
     fold_chip,
     mean_dice_item,
@@ -82,6 +83,8 @@ class PredictStage(StagePage):
         super().__init__(context, _howto(), parent)
         self._models: list[ModelInfo] = []
         self._selected: ModelInfo | None = None
+        self._input_cases: int | None = None  # cases in the input folder; None while it is listed
+        self._input_error = ""  # why the input folder cannot be listed
         models_card = Card()
         head = models_card.add_header("Models")
         head.addWidget(label("models with at least one finished fold · click one to predict with it", muted=True,
@@ -199,7 +202,7 @@ class PredictStage(StagePage):
         self._command.setFixedHeight(130)
         layout.addWidget(self._command)
         actions = QHBoxLayout()
-        actions.addWidget(button("Copy command", small=True, clicked=lambda: self._command.copy()))
+        actions.addWidget(self._command.copy_button())
         self._predict = button("▶ Predict", small=True, primary=True, clicked=self._run_prediction)
         actions.addWidget(self._predict)
         actions.addStretch()
@@ -285,14 +288,27 @@ class PredictStage(StagePage):
     def _folders_changed(self) -> None:
         self.context.store.setValue("predict/input", self._input.text().strip())
         self.context.store.setValue("predict/output", self._output.text().strip())
-        source = Path(self._input.text()) if self._input.text().strip() else None
-        target = Path(self._output.text()) if self._output.text().strip() else None
-        self.context.tasks.run("predict-status", lambda: prediction_status(source, target),
-                               self._fill_images)
+        source, target = _folder(self._input), _folder(self._output)
+        self._input_cases, self._input_error = None, ""
+
+        def listing() -> list:
+            if source is not None and not source.is_dir():
+                raise NotADirectoryError(f"{source} does not exist or is not a folder")
+            return prediction_status(source, target)
+
+        self.context.tasks.run("predict-status", listing, self._fill_images, self._listing_failed)
         self._update_command()
+
+    def _listing_failed(self, error: str) -> None:
+        """The input folder is missing or cannot be read: no cases from an earlier folder stay, Predict is off."""
+        self._fill_images([])
+        self._input_error = error.split(": ", 1)[-1]  # without the exception type
+        self._images_note.setText(f"Cannot list the input folder · {self._input_error}")
+        self.update_actions()
 
     def _fill_images(self, rows: object) -> None:
         rows = rows if isinstance(rows, list) else []
+        self._input_cases, self._input_error = len(rows), ""
         self._table.setVisible(bool(rows))
         self._images_empty.setVisible(not rows)
         predicted = sum(1 for _case, _channels, done in rows if done)
@@ -309,10 +325,10 @@ class PredictStage(StagePage):
             self._table.setItem(index, 1, mark_item(channels))
             self._table.setItem(index, 2, mark_item(done))
         self._table.setUpdatesEnabled(True)
+        self.update_actions()
 
     def _open_predictions(self) -> None:
-        source = Path(self._input.text()) if self._input.text().strip() else None
-        target = Path(self._output.text()) if self._output.text().strip() else None
+        source, target = _folder(self._input), _folder(self._output)
         if target is not None:
             self.context.inspect_predictions(target, source)
 
@@ -321,11 +337,11 @@ class PredictStage(StagePage):
         if self.state is None or model is None:
             return ""
         # placeholders instead of '' until the folders are chosen (the run stays disabled until then)
-        source = self._input.text().strip() or "INPUT_FOLDER"
-        target = self._output.text().strip() or "OUTPUT_FOLDER"
-        return prediction_command(self.state.record.dataset_id, source, target, model.plans,
+        source, target = _folder(self._input), _folder(self._output)
+        return prediction_command(self.state.record.dataset_id, str(source or "INPUT_FOLDER"),
+                                  str(target or "OUTPUT_FOLDER"), model.plans,
                                   model.configuration, self._arguments.text(), trainer=model.trainer,
-                                  folds=" ".join(self._folds.selected()), disable_tta=self._tta.index() == 1,
+                                  folds=self._folds.selected(), disable_tta=self._tta.index() == 1,
                                   continue_prediction=self._continue.isChecked(),
                                   preprocessing_processes=self._npp.value(), export_processes=self._nps.value(),
                                   device=device_argument(DEVICE_CHOICES[self._device.index()]))
@@ -336,23 +352,33 @@ class PredictStage(StagePage):
         self._update_command()
 
     def _update_command(self, *_args) -> None:
-        try:
+        error = arguments_error(self._arguments.text())  # e.g. an unclosed quote while typing
+        if error:
+            self._command.set_error(error)
+        else:
             self._command.set_command(self._command_text())
-        except ValueError:
-            pass
         self._device_hint.setText(device_hint(DEVICE_CHOICES[self._device.index()], self.context.device))
         self.update_actions()
 
     def update_actions(self) -> None:
         if self.state is None:
             return
-        reason = self.busy_or_missing("results")
+        reason = arguments_error(self._arguments.text()) or self.busy_or_missing("results")
+        source, target = _folder(self._input), _folder(self._output)
         if not reason and self._current_model() is None:
             reason = "No model with a finished fold yet. Train at least one fold first."
-        if not reason and not self._input.text().strip():
+        if not reason and source is None:
             reason = "Choose an input folder."
-        if not reason and not self._output.text().strip():
+        if not reason and target is None:
             reason = "Choose an output folder."
+        if not reason and self._input_error:
+            reason = f"Cannot list the input folder · {self._input_error}"
+        if not reason and self._input_cases is None:
+            reason = "Listing the input folder…"
+        if not reason and not self._input_cases:
+            reason = "The input folder has no images (named like in imagesTr, e.g. case_0000.nii.gz)."
+        if not reason and _same_folder(source, target):
+            reason = "Choose an output folder different from the input folder."
         if not reason and not self._folds.selected():
             reason = "Select at least one fold."
         self._predict.setEnabled(not reason)
@@ -361,5 +387,26 @@ class PredictStage(StagePage):
         self._busy_hint.setVisible(bool(reason))
 
     def _run_prediction(self) -> None:
-        if self.state is not None:
+        self.update_actions()
+        if self.state is not None and self._predict.isEnabled():
             self.context.jobs.start_nnunet("Predict", self.state.record.name, self._command_text())
+
+
+def _folder(field: QLineEdit) -> Path | None:
+    """The folder typed in a field, with ``~`` expanded (nnU-Net gets the path quoted, so no shell expands it)."""
+    text = field.text().strip()
+    if not text:
+        return None
+    try:
+        return Path(text).expanduser()
+    except RuntimeError:  # ~user that does not exist: used as typed
+        return Path(text)
+
+
+def _same_folder(first: Path | None, second: Path | None) -> bool:
+    if first is None or second is None:
+        return False
+    try:
+        return first.resolve() == second.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return first == second

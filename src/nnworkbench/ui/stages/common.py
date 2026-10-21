@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import shlex
 
 from qtpy.QtCore import Qt, QTimer, Signal
@@ -60,6 +61,7 @@ class CommandBox(QPlainTextEdit):
         self.setFixedHeight(120)
         self._command = ""
         self._commands: list[str] = []
+        self._copy_buttons: list = []
 
     def set_command(self, command: str | list[str]) -> None:
         """One command, or several that run one after another (shown and copied joined with &&)."""
@@ -67,15 +69,45 @@ class CommandBox(QPlainTextEdit):
         self._commands = [text for text in self._commands if text]
         self._command = " && ".join(self._commands)
         self.setPlainText(" &&\n".join(format_command(text) for text in self._commands))
+        self._update_copy()
+
+    def set_error(self, message: str) -> None:
+        """No command (e.g. the additional arguments cannot be split): show why; Copy has nothing to copy."""
+        self._commands, self._command = [], ""
+        self.setPlainText(message)
+        self._update_copy()
 
     def command(self) -> str:
         return self._command
+
+    def copy_button(self):
+        """The "Copy command" button; it is disabled while there is no command."""
+        widget = button("Copy command", small=True, clicked=self.copy)
+        self._copy_buttons.append(widget)
+        self._update_copy()
+        return widget
+
+    def _update_copy(self) -> None:
+        for widget in self._copy_buttons:
+            widget.setEnabled(bool(self._command))
 
     def copy(self) -> None:
         from nnworkbench.services.commands import wrapped_command
 
         if self._command:
             QGuiApplication.clipboard().setText(" && ".join(wrapped_command(text) for text in self._commands))
+
+
+def arguments_error(text: str) -> str:
+    """Why the additional arguments cannot be used (an unclosed quote, a trailing backslash), or ""."""
+    from nnworkbench.services.commands import split_arguments
+
+    try:
+        split_arguments(text)
+    except ValueError as error:
+        return (f"Additional arguments cannot be read ({error}): close the quote or remove the trailing "
+                "backslash.")
+    return ""
 
 
 def arguments_field() -> QLineEdit:
@@ -187,6 +219,14 @@ class StagePage(QWidget):
         self._name.setText(name)
         self._sub.setText("Loading files…")
         clear_layout(self._badges)
+
+    def show_load_error(self, message: str) -> None:
+        """The dataset files could not be read (or this stage failed to show them): say so in the header, with
+        the way to try again, instead of "Loading files…"."""
+        from ..style import RED
+
+        self._sub.setText(f"<span style='color:{RED}'>{html.escape(message)}</span> Fix the file or folder, "
+                          "then click ⟳ Refresh to try again.")
 
     def show_loading(self) -> None:
         """Called while the dataset is read in the background; stages may override it."""

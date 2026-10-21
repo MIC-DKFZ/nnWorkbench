@@ -64,6 +64,7 @@ from .common import (
     CommandBox,
     RunDialog,
     StagePage,
+    arguments_error,
     arguments_field,
     detail_row,
     fold_chip,
@@ -321,7 +322,7 @@ class TrainStage(StagePage):
         self._command.setFixedHeight(80)
         layout.addWidget(self._command)
         actions = QHBoxLayout()
-        actions.addWidget(button("Copy command", small=True, clicked=lambda: self._command.copy()))
+        actions.addWidget(self._command.copy_button())
         self._start = button("▶ Train", small=True, primary=True, clicked=self._start_training)
         actions.addWidget(self._start)
         actions.addStretch()
@@ -516,10 +517,11 @@ class TrainStage(StagePage):
         self._update_command()
 
     def _update_command(self, *_args) -> None:
-        try:
+        error = arguments_error(self._arguments.text())  # e.g. an unclosed quote while typing
+        if error:
+            self._command.set_error(error)
+        else:
             self._command.set_command(self._command_text())
-        except ValueError:
-            pass
         self._update_trainer_hint()
         self._device_hint.setText(device_hint(DEVICE_CHOICES[self._device.index()], self.context.device))
         self.update_actions()
@@ -534,7 +536,7 @@ class TrainStage(StagePage):
     def update_actions(self) -> None:
         if self.state is None or not getattr(self, "_run_dialog", None) or not self._run_dialog.visible:
             return  # nothing to show while the run dialog is closed
-        reason = self.busy_or_missing("preprocessed", "results")
+        reason = arguments_error(self._arguments.text()) or self.busy_or_missing("preprocessed", "results")
         if not reason and not any(plans.preprocessed_time for plans in self.state.plans):
             reason = "no preprocessed data · cannot train"
         folds = len(self._fold_choice.selected())
@@ -548,6 +550,9 @@ class TrainStage(StagePage):
         self._run_dialog.refit()
 
     def _start_training(self) -> None:
+        if arguments_error(self._arguments.text()):
+            self.update_actions()
+            return
         if self.state is not None:
             folds = self._fold_choice.selected()
             warning = self._overwrite_warning()

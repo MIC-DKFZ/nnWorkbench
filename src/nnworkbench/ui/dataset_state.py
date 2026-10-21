@@ -138,7 +138,19 @@ def _analysis_outdated(raw_path: Path | None, analysis: dict | None) -> int:
     labels = raw_path / "labelsTr"
     if not labels.is_dir():
         return 0
-    return sum(1 for path in labels.iterdir() if path.is_file() and path.stat().st_mtime > analysed)
+    try:
+        return sum(1 for path in labels.iterdir() if path.is_file() and path.stat().st_mtime > analysed)
+    except OSError:  # unreadable labelsTr, or a label removed while counting
+        return 0
+
+
+def _label_analysis(raw_path: Path | None) -> dict | None:
+    if raw_path is None:
+        return None
+    try:
+        return load_label_analysis(raw_path)
+    except (ValueError, RecursionError):  # a statistics cache that is not UTF-8 or nested too deeply: none
+        return None
 
 
 def load_state(record: DatasetRecord) -> DatasetState:
@@ -156,7 +168,7 @@ def load_state(record: DatasetRecord) -> DatasetState:
         problem = num_training_error(manifest, len(raw.cases))
         if problem:
             errors.append(problem)
-    analysis = load_label_analysis(record.raw_path) if record.raw_path else None
+    analysis = _label_analysis(record.raw_path)
     return DatasetState(
         record=record,
         manifest=manifest,

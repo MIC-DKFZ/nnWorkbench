@@ -6,8 +6,8 @@ import json
 import os
 from pathlib import Path
 
-from qtpy.QtCore import QSize, Qt, QTimer
-from qtpy.QtGui import QColor, QFontMetrics
+from qtpy.QtCore import QSize, Qt
+from qtpy.QtGui import QColor, QFont, QFontMetrics
 from qtpy.QtWidgets import (
     QCheckBox,
     QGridLayout,
@@ -32,6 +32,7 @@ from nnworkbench.services.defaults import (
 from nnworkbench.services.nnunet_discovery import available_planners
 from nnworkbench.services.workflow_status import PlansInfo
 
+from .. import style
 from ..context import AppContext
 from ..dataset_state import DatasetState
 from ..editable_dropdown import EditableDropdownComboBox
@@ -52,11 +53,20 @@ from ..widgets import (
     label,
     make_table,
     section_label,
+    svg_icon,
     table_item,
     tip,
     with_stepper,
 )
-from .common import CommandBox, RunDialog, StagePage, arguments_field, detail_row
+from .common import CommandBox, RunDialog, StagePage, arguments_error, arguments_field, detail_row
+
+_FILE_ROLE = Qt.ItemDataRole.UserRole + 1  # file rows of an expanded folder: the file to open in Napari
+
+
+def _numbers(values: tuple, number_format: str = "") -> str:
+    """Patch size or spacing from a plans file as "64 × 64 × 64"; entries that are not numbers are shown as they are."""
+    return " × ".join(format(value, number_format) if isinstance(value, (int, float)) and not isinstance(value, bool)
+                      else str(value) for value in values) or "—"
 
 
 def _howto() -> HowToCard:
@@ -111,11 +121,21 @@ class PreprocessStage(StagePage):
         self._tree = QTreeWidget()
         self._tree.setHeaderHidden(True)
         self._tree.setIndentation(18)
+        # Files of an expanded folder are plain items (name, and a magnifier in the second column for cases):
+        # one widget per row made a folder with thousands of cases take minutes to expand.
+        self._tree.setColumnCount(2)
+        self._tree.header().setStretchLastSection(False)
+        self._tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        self._tree.setColumnWidth(1, 40)
         self._tree.itemExpanded.connect(self._expand_folder)
+        self._tree.itemClicked.connect(lambda item, column: column == 1 and self._file_activated(item))
+        self._tree.itemActivated.connect(lambda item, _column: self._file_activated(item))
+        self._file_font = QFont(style.MONO)
+        self._file_font.setPixelSize(12)
         # Rows are widgets with their own spacing; the default item padding would cut off their buttons.
         self._tree.setStyleSheet("QTreeWidget::item { padding: 0px; border-bottom: 1px solid #f0f3f7; }")
         self._case_folder = None
-        self._tree_version = 0
         folder_card.body.addWidget(self._tree, 1)
         self.center.addWidget(folder_card, 1)
         # Right: run panel or JSON viewer
@@ -167,8 +187,8 @@ class PreprocessStage(StagePage):
                 ("Preprocessed", f"{config.preprocessed_cases} / {total or config.preprocessed_cases} cases"),
                 ("Date", when),
                 ("Status", status),
-                ("Patch size", label(" × ".join(str(value) for value in config.patch_size) or "—", mono=True)),
-                ("Spacing", label(" × ".join(f"{value:.3g}" for value in config.spacing) or "—", mono=True)),
+                ("Patch size", label(_numbers(config.patch_size), mono=True)),
+                ("Spacing", label(_numbers(config.spacing, ".3g"), mono=True)),
                 ("Batch size", str(config.batch_size or "—")),
                 ("Folder", label(f"{config.data_identifier}/", mono=True, wrap=True, selectable=True)))
         for name, value in rows:
@@ -232,7 +252,7 @@ class PreprocessStage(StagePage):
         self._command = CommandBox()
         layout.addWidget(self._command)
         actions = QHBoxLayout()
-        actions.addWidget(button("Copy command", small=True, clicked=lambda: self._command.copy()))
+        actions.addWidget(self._command.copy_button())
         self._run = button("▶ Preprocess", small=True, primary=True, clicked=self._run_preprocessing)
         actions.addWidget(self._run)
         actions.addStretch()
@@ -271,8 +291,7 @@ class PreprocessStage(StagePage):
             done = table_item(f"✓ {config.preprocessed_cases} / {total or config.preprocessed_cases}", bold=True)
             done.setForeground(QColor("#2f8f4e"))
             self._plans_table.setItem(row, 3, done)
-            size = " × ".join(str(value) for value in config.patch_size) or "—"
-            spacing = " × ".join(f"{value:.3g}" for value in config.spacing) or "—"
+            size, spacing = _numbers(config.patch_size), _numbers(config.spacing, ".3g")
             details = table_item(f"      patch size {size}  ·  spacing {spacing}  ·  batch size {config.batch_size or '—'}",
                                  muted=True, data=number)
             details.setFlags(Qt.ItemFlag.ItemIsEnabled)
@@ -327,15 +346,15 @@ class PreprocessStage(StagePage):
         self._fill_tree(plans)
 
     ROW_HEIGHT = 34
-    BATCH = 200
 
     def _fill_tree(self, plans: PlansInfo | None) -> None:
         self._tree.clear()
-        self._tree_version = getattr(self, "_tree_version", 0) + 1
         state = self.state
         root = state.record.preprocessed_path if state else None
         if root is None or not root.is_dir():
-            self._tree.addTopLevelItem(QTreeWidgetItem(["This dataset has not been preprocessed yet."]))
+            item = QTreeWidgetItem(["This dataset has not been preprocessed yet."])
+            self._tree.addTopLevelItem(item)
+            item.setFirstColumnSpanned(True)
             return
         notes = {"dataset.json": "copy of raw", "dataset_fingerprint.json": "intensity & spacing statistics",
                  "splits_final.json": "folds for training"}
@@ -375,6 +394,7 @@ class PreprocessStage(StagePage):
             spacer = QWidget()
             spacer.setFixedWidth(30)
             layout.addWidget(spacer)
+        item.setFirstColumnSpanned(True)
         self._tree.setItemWidget(item, 0, row)
         return item
 
@@ -404,19 +424,43 @@ class PreprocessStage(StagePage):
         folder = item.data(0, Qt.ItemDataRole.UserRole)
         if not folder or item.childCount():
             return
-        files = sorted((path for path in Path(folder).iterdir() if path.is_file()), key=lambda path: path.name)
-        self._append_files(item, files, 0, self._tree_version)
-
-    def _append_files(self, item: QTreeWidgetItem, files: list, start: int, version: int) -> None:
-        if version != self._tree_version:
+        try:
+            with os.scandir(folder) as entries:
+                names = sorted(entry.name for entry in entries if entry.is_file())
+        except OSError as error:  # removed or unreadable since the tree was filled
+            item.addChild(self._note_item(f"Cannot list this folder: {error.strerror or error}"))
             return
-        for path in files[start:start + self.BATCH]:
-            is_case = path.name.endswith(".b2nd") or path.parent.name == "gt_segmentations"
-            self._add_row(item, "", path.name, "", "search" if is_case else "",
-                          "Open in Napari · preprocessed image and segmentation",
-                          lambda selected=path: self._inspect_pair(selected))
-        if start + self.BATCH < len(files):
-            QTimer.singleShot(0, lambda: self._append_files(item, files, start + self.BATCH, version))
+        if not names:
+            item.addChild(self._note_item("empty folder"))
+            return
+        item.addChildren([self._file_item(Path(folder) / name) for name in names])
+
+    def _note_item(self, text: str) -> QTreeWidgetItem:
+        child = QTreeWidgetItem([text, ""])
+        child.setForeground(0, QColor(style.MUTED))
+        child.setSizeHint(0, QSize(0, self.ROW_HEIGHT))
+        return child
+
+    def _file_item(self, path: Path) -> QTreeWidgetItem:
+        child = QTreeWidgetItem([path.name, ""])
+        child.setFont(0, self._file_font)
+        child.setToolTip(0, path.name)
+        child.setSizeHint(0, QSize(0, self.ROW_HEIGHT))
+        if path.name.endswith(".b2nd") or path.parent.name == "gt_segmentations":
+            child.setData(0, _FILE_ROLE, str(path))
+            child.setIcon(1, self._search_icon())
+            child.setToolTip(1, "Open in Napari · preprocessed image and segmentation")
+        return child
+
+    def _search_icon(self):
+        if getattr(self, "_search", None) is None:
+            self._search = svg_icon("search")
+        return self._search
+
+    def _file_activated(self, item: QTreeWidgetItem) -> None:
+        path = item.data(0, _FILE_ROLE)
+        if path:
+            self._inspect_pair(Path(path))
 
     # ------------------------------------------------------------ JSON panel
 
@@ -427,10 +471,14 @@ class PreprocessStage(StagePage):
         self._plans_json.show()
         self._plans_json.setToolTip(str(path))
         self._plans_json.setPlainText("Loading…")
-        self.context.tasks.run("preprocess-plans", lambda: json_value(path),
-                               lambda data: self._plans_json.setPlainText(
-                                   json.dumps(data, indent=2, ensure_ascii=False) if data is not None
-                                   else f"{path.name} is missing or not valid JSON."))
+
+        def text() -> str:
+            data = json_value(path)
+            return (json.dumps(data, indent=2, ensure_ascii=False) if data is not None
+                    else f"{path.name} is missing, not valid JSON or not UTF-8.")
+
+        self.context.tasks.run("preprocess-plans", text, lambda shown: self._plans_json.setPlainText(str(shown)),
+                               lambda error: self._plans_json.setPlainText(f"Cannot show {path.name}: {error}"))
 
     # ------------------------------------------------------------ run
 
@@ -444,16 +492,17 @@ class PreprocessStage(StagePage):
                                      verify=self._verify.isChecked())
 
     def _update_command(self, *_args) -> None:
-        try:
+        error = arguments_error(self._arguments.text())  # e.g. an unclosed quote while typing
+        if error:
+            self._command.set_error(error)
+        else:
             self._command.set_command(self._command_text())
-        except ValueError:  # unbalanced quotes while typing additional arguments
-            pass
         self.update_actions()
 
     def update_actions(self) -> None:
         if self.state is None or not getattr(self, "_run_dialog", None) or not self._run_dialog.visible:
             return  # nothing to show while the run dialog is closed
-        reason = self.busy_or_missing("raw", "preprocessed")
+        reason = arguments_error(self._arguments.text()) or self.busy_or_missing("raw", "preprocessed")
         missing = self.state.raw.missing_labels
         if not reason and missing:
             reason = f"{missing} image{'s' if missing != 1 else ''} without label · cannot preprocess (see Data)"
@@ -465,6 +514,9 @@ class PreprocessStage(StagePage):
         self._run_hint.setVisible(bool(reason))
 
     def _run_preprocessing(self) -> None:
+        if arguments_error(self._arguments.text()):
+            self.update_actions()
+            return
         if self.state is not None and self.context.jobs.start_nnunet("Preprocess", self.state.record.name,
                                                                       self._command_text()):
             self._run_dialog.close()

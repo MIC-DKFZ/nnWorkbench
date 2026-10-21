@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 
 WORKBENCH_FOLDER = "nnworkbench"  # in a raw dataset: what nnWorkbench adds (nnU-Net ignores it)
+# nnU-Net names its fold folders fold_0, fold_1, … and fold_all; other folders are not folds (-f would reject them)
+_FOLD_FOLDER = re.compile(r"fold_(\d+|all)")
+
+
+def is_fold_folder(path: Path) -> bool:
+    return _FOLD_FOLDER.fullmatch(path.name) is not None and path.is_dir()
 
 
 def workbench_folder(dataset_directory: Path) -> Path:
@@ -26,8 +33,11 @@ def trained_models(dataset_path: Path | None) -> list[Path]:
         return []
     models = []
     for path in dataset_path.rglob("*"):
-        if path.is_dir() and any(child.is_dir() and child.name.startswith("fold_") for child in path.iterdir()):
-            models.append(path.relative_to(dataset_path))
+        try:
+            if path.is_dir() and any(is_fold_folder(child) for child in path.iterdir()):
+                models.append(path.relative_to(dataset_path))
+        except OSError:  # unreadable folder (permissions, removed meanwhile): not a model
+            continue
     return sorted(models, key=lambda path: str(path).casefold())
 
 
@@ -41,8 +51,10 @@ def model_folds(model_path: Path) -> list[Path]:
     """Return the fold directories for an nnU-Net trained model."""
     if not model_path.is_dir():
         return []
-    return sorted((path for path in model_path.iterdir()
-                   if path.is_dir() and path.name.startswith("fold_")), key=lambda path: path.name)
+    try:
+        return sorted((path for path in model_path.iterdir() if is_fold_folder(path)), key=lambda path: path.name)
+    except OSError:
+        return []
 
 
 def json_object(path: Path) -> dict | None:
@@ -53,11 +65,13 @@ def json_object(path: Path) -> dict | None:
 
 def json_value(path: Path) -> object | None:
     """Read any valid JSON value from a file, returning ``None`` when unavailable."""
-    if not path.is_file():
-        return None
     try:
+        if not path.is_file():
+            return None
         with path.open(encoding="utf-8") as file:
             data = json.load(file)
-    except (OSError, json.JSONDecodeError):
+    # ValueError includes JSONDecodeError and UnicodeDecodeError (e.g. UTF-16 from Notepad or PowerShell);
+    # RecursionError: deeply nested arrays
+    except (OSError, ValueError, RecursionError):
         return None
     return data

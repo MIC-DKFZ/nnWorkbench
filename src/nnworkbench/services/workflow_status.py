@@ -28,6 +28,47 @@ _NUMBER = re.compile(r"\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
 RUNNING_LOG_AGE_SECONDS = 15 * 60
 
 
+def finite_number(value: object) -> float | None:
+    """A JSON or log number as a float; ``None`` for anything else, NaN, infinity and integers too large for a
+    float (e.g. ``1e999`` or a 400-digit Dice in a hand-edited summary.json)."""
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except OverflowError:
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _entries(folder: Path | None) -> list[Path]:
+    """The entries of a folder; empty when it is missing or cannot be read (permissions, removed meanwhile)."""
+    if folder is None:
+        return []
+    try:
+        return list(folder.iterdir())
+    except (OSError, ValueError):
+        return []
+
+
+def _is_file(path: Path) -> bool:
+    try:
+        return path.is_file()
+    except OSError:  # e.g. a fold folder without read permission (is_file raises PermissionError)
+        return False
+
+
+def _modified(path: Path) -> float | None:
+    try:
+        return path.stat().st_mtime
+    except (OSError, ValueError):  # broken symlink, removed meanwhile
+        return None
+
+
+def _numbers(value: object) -> tuple:
+    """A list from a plans file (patch size, spacing) as a tuple; anything else is not shown."""
+    return tuple(value) if isinstance(value, list) else ()
+
+
 # ---------------------------------------------------------------- dataset.json helpers
 
 def ignore_label_id(manifest: dict | None) -> int | None:
@@ -106,8 +147,8 @@ def raw_overview(raw_path: Path | None, manifest: dict | None) -> RawOverview:
     names_valid = True
     image_count = 0
     if images_dir is not None and images_dir.is_dir():
-        for path in images_dir.iterdir():
-            if not path.is_file() or not has_image_suffix(path):
+        for path in _entries(images_dir):
+            if not _is_file(path) or not has_image_suffix(path):
                 continue
             image_count += 1
             case, channel = _image_case(path)
@@ -116,8 +157,8 @@ def raw_overview(raw_path: Path | None, manifest: dict | None) -> RawOverview:
             images.setdefault(case, []).append(path)
     labels: dict[str, Path] = {}
     if labels_dir is not None and labels_dir.is_dir():
-        for path in labels_dir.iterdir():
-            if path.is_file() and has_image_suffix(path):
+        for path in _entries(labels_dir):
+            if _is_file(path) and has_image_suffix(path):
                 labels[strip_image_suffix(path)] = path
     rows = []
     for case in sorted(images, key=str.casefold):
@@ -125,10 +166,7 @@ def raw_overview(raw_path: Path | None, manifest: dict | None) -> RawOverview:
         found_channels = {_image_case(item)[1] for item in files}
         expected = {f"{index:04d}" for index in range(channels)}
         label = labels.get(case)
-        try:
-            last_edit = label.stat().st_mtime if label else None
-        except OSError:
-            last_edit = None
+        last_edit = _modified(label) if label else None
         rows.append(CaseRow(case, files, expected <= found_channels, label, last_edit))
     return RawOverview(tuple(rows), image_count, len(labels), channels, names_valid)
 
@@ -138,7 +176,8 @@ def newest_label_time(raw_path: Path | None) -> float | None:
     labels_dir = raw_path / "labelsTr" if raw_path else None
     if labels_dir is None or not labels_dir.is_dir():
         return None
-    times = [path.stat().st_mtime for path in labels_dir.iterdir() if path.is_file() and has_image_suffix(path)]
+    times = [_modified(path) for path in _entries(labels_dir) if _is_file(path) and has_image_suffix(path)]
+    times = [value for value in times if value is not None]
     return max(times) if times else None
 
 
@@ -171,8 +210,8 @@ class PlansInfo:
 def _count_preprocessed_cases(folder: Path) -> int:
     if not folder.is_dir():
         return 0
-    return sum(1 for path in folder.iterdir()
-               if path.is_file() and path.name.endswith(".b2nd") and not path.name.endswith("_seg.b2nd"))
+    return sum(1 for path in _entries(folder)
+               if _is_file(path) and path.name.endswith(".b2nd") and not path.name.endswith("_seg.b2nd"))
 
 
 def plans_overview(preprocessed_path: Path | None, raw_path: Path | None = None) -> tuple[PlansInfo, ...]:
@@ -193,11 +232,12 @@ def plans_overview(preprocessed_path: Path | None, raw_path: Path | None = None)
             identifier = values.get("data_identifier") or f"{file.stem}_{name}"
             folder = preprocessed_path / str(identifier)
             count = _count_preprocessed_cases(folder)
-            if count:
-                times.append(folder.stat().st_mtime)
+            if count and (modified := _modified(folder)) is not None:
+                times.append(modified)
+            batch_size = values.get("batch_size")
             configurations.append(ConfigurationInfo(
-                name, tuple(values.get("patch_size") or ()), tuple(values.get("spacing") or ()),
-                values.get("batch_size") if isinstance(values.get("batch_size"), int) else None,
+                str(name), _numbers(values.get("patch_size")), _numbers(values.get("spacing")),
+                batch_size if isinstance(batch_size, int) and not isinstance(batch_size, bool) else None,
                 str(identifier), count))
         preprocessed_time = max(times) if times else None
         outdated = bool(preprocessed_time and newest_label and newest_label > preprocessed_time)
@@ -235,7 +275,7 @@ class FoldInfo:
 
     @property
     def has_validation(self) -> bool:
-        return (self.path / "validation" / "summary.json").is_file()
+        return _is_file(self.path / "validation" / "summary.json")
 
 
 @dataclass(frozen=True)
@@ -259,12 +299,20 @@ class ModelInfo:
         """Mean validation Dice over the finished cross-validation folds; fold "all" is excluded because it is
         validated on its own training cases."""
         values = [fold.dice for fold in self.folds if fold.name != "all" and fold.finished and fold.dice is not None]
-        return sum(values) / len(values) if values else None
+        return finite_number(sum(values) / len(values)) if values else None
 
 
-def _latest_log(fold_path: Path) -> Path | None:
-    logs = list(fold_path.glob("training_log_*.txt"))
-    return max(logs, key=lambda path: path.stat().st_mtime_ns) if logs else None
+def _latest_log(fold_path: Path) -> tuple[Path, float] | None:
+    """The newest training log with its modification time (broken symlinks and unreadable logs are skipped)."""
+    try:
+        logs = list(fold_path.glob("training_log_*.txt"))
+    except OSError:
+        return None
+    dated = [(modified, path) for path in logs if (modified := _modified(path)) is not None]
+    if not dated:
+        return None
+    modified, path = max(dated, key=lambda item: item[0])
+    return path, modified
 
 
 def _log_tail(path: Path, size: int = 64 * 1024) -> str:
@@ -279,32 +327,38 @@ def _log_tail(path: Path, size: int = 64 * 1024) -> str:
 
 def summary_foreground_dice(summary: dict | None) -> float | None:
     mean = summary.get("foreground_mean") if isinstance(summary, dict) else None
-    value = mean.get("Dice") if isinstance(mean, dict) else None
-    return float(value) if isinstance(value, (int, float)) and not math.isnan(value) else None
+    return finite_number(mean.get("Dice") if isinstance(mean, dict) else None)
+
+
+def _integer(text: object) -> int | None:
+    """An epoch count from a log or debug.json; ``None`` when it is not a number of a sensible size."""
+    if not isinstance(text, str) or not text.strip().isdecimal() or len(text.strip()) > 18:
+        return None
+    return int(text)
 
 
 def fold_info(fold_path: Path, now: float | None = None) -> FoldInfo:
     """Read status, epoch and Dice of one fold from its files."""
     now = time.time() if now is None else now
     name = fold_path.name.removeprefix("fold_")
-    final = (fold_path / "checkpoint_final.pth").is_file()
-    log = _latest_log(fold_path)
+    final = _is_file(fold_path / "checkpoint_final.pth")
+    latest = _latest_log(fold_path)
+    log, log_time = latest if latest else (None, None)
     content = _log_tail(log) if log else ""
     epochs = _EPOCH_LINE.findall(content)
-    epoch = int(epochs[-1]) if epochs else None
+    epoch = _integer(epochs[-1]) if epochs else None
     dice_lines = _PSEUDO_DICE_LINE.findall(content)
     pseudo = None
     if dice_lines:
-        values = [float(value) for value in _NUMBER.findall(dice_lines[-1].replace("np.float32", ""))]
-        pseudo = sum(values) / len(values) if values else None
+        values = [finite_number(float(value)) for value in _NUMBER.findall(dice_lines[-1].replace("np.float32", ""))]
+        values = [value for value in values if value is not None]
+        pseudo = finite_number(sum(values) / len(values)) if values else None
     debug = json_object(fold_path / "debug.json") or {}
-    try:
-        total = int(debug.get("num_epochs")) if debug.get("num_epochs") is not None else None
-    except (TypeError, ValueError):
-        total = None
+    epochs_value = debug.get("num_epochs")
+    total = int(epochs_value) if finite_number(epochs_value) is not None else _integer(epochs_value)
     if final:
-        status = "done" if log is not None or (fold_path / "checkpoint_best.pth").is_file() else "reduced"
-    elif log is not None and now - log.stat().st_mtime < RUNNING_LOG_AGE_SECONDS:
+        status = "done" if log is not None or _is_file(fold_path / "checkpoint_best.pth") else "reduced"
+    elif log_time is not None and now - log_time < RUNNING_LOG_AGE_SECONDS:
         status = "training"
     else:
         status = "stopped"
@@ -344,9 +398,9 @@ class ValidationCase:
 
 
 def _mean_dice(metrics: dict) -> float | None:
-    values = [entry.get("Dice") for entry in metrics.values() if isinstance(entry, dict)]
-    values = [value for value in values if isinstance(value, (int, float)) and not math.isnan(value)]
-    return sum(values) / len(values) if values else None
+    values = [finite_number(entry.get("Dice")) for entry in metrics.values() if isinstance(entry, dict)]
+    values = [value for value in values if value is not None]
+    return finite_number(sum(values) / len(values)) if values else None
 
 
 def validation_cases(summary: dict | None, names: dict[int, str] | None = None) -> tuple[ValidationCase, ...]:
@@ -364,16 +418,18 @@ def validation_cases(summary: dict | None, names: dict[int, str] | None = None) 
         case = strip_image_suffix(Path(reference).name) if reference else ""
         weakest = None
         for label, values in metrics.items():
-            dice = values.get("Dice") if isinstance(values, dict) else None
-            if isinstance(dice, (int, float)) and not math.isnan(dice) and (weakest is None or dice < weakest[1]):
-                try:
-                    label_name = names.get(int(label), str(label))
-                except ValueError:
-                    label_name = str(label)
-                weakest = (label_name, float(dice))
+            dice = finite_number(values.get("Dice") if isinstance(values, dict) else None)
+            if dice is not None and (weakest is None or dice < weakest[1]):
+                weakest = (class_name(label, names), dice)
         rows.append(ValidationCase(case, str(entry.get("prediction_file", "")), reference,
                                    _mean_dice(metrics), weakest, metrics))
     return tuple(rows)
+
+
+def class_name(label: object, names: dict[int, str]) -> str:
+    """The class name for a label key of summary.json ("1"); regions ("(1, 2)") and unknown keys stay as they are."""
+    text = str(label)
+    return names.get(int(text), text) if text.isascii() and text.isdigit() else text
 
 
 def mean_class_dice(summary: dict | None, names: dict[int, str] | None = None) -> list[tuple[str, float]]:
@@ -384,12 +440,9 @@ def mean_class_dice(summary: dict | None, names: dict[int, str] | None = None) -
         return []
     rows = []
     for label, values in mean.items():
-        dice = values.get("Dice") if isinstance(values, dict) else None
-        if isinstance(dice, (int, float)) and not math.isnan(dice):
-            try:
-                rows.append((names.get(int(label), str(label)), float(dice)))
-            except ValueError:
-                rows.append((str(label), float(dice)))
+        dice = finite_number(values.get("Dice") if isinstance(values, dict) else None)
+        if dice is not None:
+            rows.append((class_name(label, names), dice))
     return rows
 
 
@@ -434,13 +487,13 @@ def prediction_status(input_dir: Path | None, output_dir: Path | None) -> list[t
     if input_dir is None or not input_dir.is_dir():
         return []
     cases: dict[str, set[str | None]] = {}
-    for path in input_dir.iterdir():
-        if path.is_file() and has_image_suffix(path):
+    for path in input_dir.iterdir():  # an unreadable input folder raises: the stage shows the error
+        if _is_file(path) and has_image_suffix(path):
             case, channel = _image_case(path)
             cases.setdefault(case, set()).add(channel)
     predicted = set()
     if output_dir is not None and output_dir.is_dir():
-        predicted = {strip_image_suffix(path) for path in output_dir.iterdir()
-                     if path.is_file() and image_suffix(path)}
+        predicted = {strip_image_suffix(path) for path in _entries(output_dir)
+                     if _is_file(path) and image_suffix(path)}
     return [(case, "0000" in cases[case] or None in cases[case], case in predicted)
             for case in sorted(cases, key=str.casefold)]
