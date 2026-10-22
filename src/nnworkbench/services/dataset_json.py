@@ -73,6 +73,13 @@ def definition_errors(manifest: dict) -> tuple[str, ...]:
                            for identifier in label_ids)
                 or sorted(label_ids) != list(range(len(label_ids)))):
             errors.append("Labels must have continuous numeric IDs and a name for every label.")
+    if isinstance(labels, dict):
+        # nnU-Net recognises the ignore label only by the exact key "ignore"; anything else is trained as a class
+        for name in labels:
+            if isinstance(name, str) and name != "ignore" and name.strip().casefold() == "ignore":
+                errors.append(f'Label "{name}" is not an ignore label for nnU-Net, which only accepts the exact key '
+                              '"ignore" (lower case, no spaces) and would train it as a normal class. Rename it to '
+                              '"ignore" for sparse labels, or give the class another name.')
     return tuple(errors)
 
 

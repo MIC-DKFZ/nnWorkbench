@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import (
+    QAbstractScrollArea,
     QCheckBox,
     QGridLayout,
     QHBoxLayout,
@@ -38,11 +39,11 @@ from ..editable_dropdown import EditableDropdownComboBox
 from ..widgets import (
     Card,
     ChoiceGroup,
+    FlowLayout,
     HowToCard,
     IconButtonsDelegate,
     ToggleGroup,
     badge,
-    breakable,
     button,
     cell_widget,
     clear_layout,
@@ -53,7 +54,9 @@ from ..widgets import (
     icon_html,
     label,
     make_table,
+    scroll,
     section_label,
+    separator,
     table_item,
     tip,
 )
@@ -67,11 +70,14 @@ from .common import (
     arguments_error,
     arguments_field,
     detail_row,
+    fold_cells,
     fold_chip,
+    header_note,
     mean_dice_item,
     model_name_cell,
     models_table,
     size_models_table,
+    wrappable,
 )
 
 
@@ -100,17 +106,20 @@ class TrainStage(StagePage):
         self._trainers_loaded = False
         models_card = Card()
         head = models_card.add_header("Models")
-        self._models_path = label("", muted=True, mono=True, size=12)
-        head.addWidget(self._models_path)
-        head.addStretch()
+        self._models_path = header_note(mono=True)
+        head.addWidget(self._models_path, 1)
         self._models_count = label("", muted=True, size=12)
         head.addWidget(self._models_count)
         self._models = models_table("Folds")
         self._models.itemSelectionChanged.connect(self._model_selected)
         models_card.body.addWidget(self._models)
-        legend = QHBoxLayout()
-        legend.setContentsMargins(16, 6, 16, 8)
-        legend.setSpacing(12)
+        # Below the table, never on it: the table shrinks (and scrolls) in a low window. Wraps when narrow.
+        models_card.body.addWidget(separator())  # a table cut off in a low window ends here, visibly
+        legend_holder = QWidget()
+        legend_margins = QVBoxLayout(legend_holder)
+        legend_margins.setContentsMargins(16, 8, 16, 8)
+        legend = FlowLayout(spacing=12)
+        legend_margins.addLayout(legend)
         legend.addWidget(section_label("Training status"))
         for state, text in (("done", "done"), ("training", "training"), ("stopped", "stopped"),
                             ("reduced", "final checkpoint only")):
@@ -118,20 +127,19 @@ class TrainStage(StagePage):
             chip.setFixedSize(16, 16)
             chip.setObjectName("foldChip")
             chip.setProperty("state", state)
-            legend.addWidget(chip)
-            legend.addWidget(label(text, muted=True, size=12))
-        legend.addStretch()
-        models_card.body.addLayout(legend)
+            legend.addWidget(cell_widget(chip, label(text, muted=True, size=12), spacing=6))
+        models_card.body.addWidget(legend_holder)
         self._models_empty = empty_state("No trained models yet. Choose trainer, plans, configuration and fold, then "
                                          "click ▶ Train….")
         models_card.body.addWidget(self._models_empty)
         self.center.addWidget(models_card)
         self._folds_card = Card()
         folds_head = self._folds_card.add_header("Folds")
-        self._folds_model = label("", muted=True, mono=True, size=12)
-        folds_head.addWidget(self._folds_model)
-        folds_head.addStretch()
-        self._folds = make_table(["Fold", "Status", "Epoch", "Dice", "Pseudo Dice", ""], stretch=4)
+        self._folds_model = header_note(mono=True)
+        folds_head.addWidget(self._folds_model, 1)
+        self._folds = make_table(["Fold", "Status", "Epoch", "Dice", "Pseudo Dice", ""], stretch=3)  # Dice: fold all has a note
+        # all folds up to six rows, shrinking to two (then it scrolls) in a low window
+        self._folds.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
         self._folds.setItemDelegateForColumn(5, IconButtonsDelegate(
             self._folds, lambda _row: [("folder", "Open folder · this fold", False)],
             lambda row, _number: self._model is not None and self.context.open_folder(self._model.folds[row].path)))
@@ -140,7 +148,7 @@ class TrainStage(StagePage):
         self._folds_card.body.addStretch()
         self.center.addWidget(self._folds_card, 1)
         # Right: details of the selected fold. New runs start from "▶ Train…" in the header (form in a dialog).
-        self.right.addWidget(self._build_details())
+        self.right.addWidget(scroll(self._build_details()))
         self._run_dialog = RunDialog(self, "Train", self._build_panel(), on_open=self.update_actions)
         self.header_actions.addWidget(button("▶ Train…", primary=True, clicked=self._open_defaults,
                                              tooltip="Train one or more folds with the default trainer, plans and "
@@ -172,7 +180,7 @@ class TrainStage(StagePage):
             self._details_body.addWidget(label("Click ▶ Train… in the header to train a fold.", muted=True, wrap=True))
             return
         self._details_title.setText(f"Fold {fold.name}")
-        self._details_model.setText(breakable(f"{model.trainer}\n{model.plans} · {model.configuration}"))
+        self._details_model.setText(wrappable(f"{model.trainer}\n{model.plans} · {model.configuration}"))
         text, tone = FOLD_STATUS[fold.status]
         epoch = "—" if fold.epoch is None else (
             f"{fold.epoch + (1 if fold.finished else 0)} / {fold.total_epochs}" if fold.total_epochs else str(fold.epoch))
@@ -356,7 +364,7 @@ class TrainStage(StagePage):
             # Same layout as the Validate models table: trainer with plans · configuration below
             self._models.setItem(row, 0, table_item("", data=row))
             self._models.setCellWidget(row, 0, model_name_cell(model))
-            self._models.setCellWidget(row, 2, cell_widget(*(fold_chip(fold) for fold in model.folds)))
+            self._models.setCellWidget(row, 2, fold_cells(fold_chip(fold) for fold in model.folds))
             self._models.setItem(row, 1, mean_dice_item(model))
             if model.label == previous:
                 select = row
@@ -462,7 +470,9 @@ class TrainStage(StagePage):
             if fold.finished and fold.has_validation and (self._fold is None or self._fold.path == fold.path):
                 select = row
         self._folds.blockSignals(False)
-        self._folds.setFixedHeight(42 + 38 * min(len(model.folds), 6))
+        header = self._folds.horizontalHeader().sizeHint().height() + 4
+        self._folds.setMinimumHeight(header + 38 * min(len(model.folds), 2))
+        self._folds.setMaximumHeight(header + 38 * min(len(model.folds), 6))
         fit_columns(self._folds)
         self._folds.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
         self._folds.setColumnWidth(5, 56)

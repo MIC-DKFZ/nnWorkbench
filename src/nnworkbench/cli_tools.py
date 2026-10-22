@@ -96,7 +96,10 @@ def run_new_iteration(roots: dict[str, Path | None], source_id: int, dataset_id:
 
 
 def validation_report(roots: dict[str, Path | None], dataset_id: int, model: str = "", fold: str = "") -> dict:
-    """Validation results per model: Dice per fold and class, and every validation case, weakest first."""
+    """Validation results per model: Dice per fold and class, and every validation case, weakest first.
+
+    Classes and cases come from the cross-validation folds only: fold "all" is validated on its own training
+    cases (and would list each case a second time). It is used only when asked for with ``fold="all"``."""
     records = scan_datasets(roots.get("raw"), roots.get("preprocessed"), roots.get("results"))
     record = next((item for item in records if item.dataset_id == dataset_id), None)
     if record is None:
@@ -117,9 +120,10 @@ def validation_report(roots: dict[str, Path | None], dataset_id: int, model: str
             if summary is None:
                 continue
             folds[fold_info.name] = fold_info.dice
-            if fold_info.name != "all":  # validated on its own training cases: not a validation score
-                for class_name, dice in mean_class_dice(summary, names):
-                    class_values.setdefault(class_name, []).append(dice)
+            if fold_info.name == "all" and fold != "all":  # validated on its own training cases: not a validation
+                continue
+            for class_name, dice in mean_class_dice(summary, names):
+                class_values.setdefault(class_name, []).append(dice)
             for case in validation_cases(summary, names):
                 cases.append({"case": case.case_id, "fold": fold_info.name, "dice": case.mean_dice,
                               "weakest_class": case.weakest[0] if case.weakest else None,
@@ -135,19 +139,29 @@ def validation_report(roots: dict[str, Path | None], dataset_id: int, model: str
     return {"dataset": record.directory_name, "models": models}
 
 
-def _format_validation(report: dict, limit: int) -> str:
+CLASS_LINES = 20  # classes in the text output of `validation` (at least; all with --cases 0)
+
+
+def _format_validation(report: dict, limit: int, fold: str = "") -> str:
     lines = [report["dataset"]]
     if not report["models"]:
         lines.append("  No validation results yet (train a fold first; nnU-Net validates it at the end).")
     for model in report["models"]:
         mean = f"{model['mean_dice']:.3f}" if model["mean_dice"] is not None else "-"
         lines += ["", f"  {model['model']}   mean Dice {mean} (fold all excluded)"]
+        source = ("fold all, trained on these cases" if fold == "all" else f"fold {fold}" if fold
+                  else "the cross-validation folds, fold all excluded")
         lines.append("    folds    " + " | ".join(
             f"{name}: {dice:.3f}" if dice is not None else f"{name}: -" for name, dice in model["folds"].items()))
-        if model["classes"]:
-            lines.append("    classes  " + " | ".join(f"{name}: {dice:.3f}" for name, dice in model["classes"].items()))
+        # one class per line, weakest first; with many classes only the weakest (--json lists all)
+        classes = sorted(model["classes"].items(), key=lambda item: item[1])
+        shown_classes = classes[:max(limit, CLASS_LINES)] if limit else classes
+        if classes:
+            lines.append(f"    weakest classes ({len(shown_classes)} of {len(classes)}):" if len(shown_classes) < len(classes)
+                         else f"    classes ({len(classes)}), weakest first:")
+            lines += [f"      {dice:.3f}  {name}" for name, dice in shown_classes]
         shown = model["cases"][:limit] if limit else model["cases"]
-        lines.append(f"    weakest cases ({len(shown)} of {len(model['cases'])}):")
+        lines.append(f"    weakest cases ({len(shown)} of {len(model['cases'])}) from {source}:")
         for case in shown:
             dice = f"{case['dice']:.3f}" if case["dice"] is not None else "-"
             weakest = (f"  weakest class {case['weakest_class']} ({case['weakest_dice']:.3f})"
@@ -161,7 +175,7 @@ def run_validation(roots: dict[str, Path | None], dataset_id: int, *, model: str
     report = validation_report(roots, dataset_id, model, fold)
     if open_case:
         return _open_validation_case(roots, report, dataset_id, open_case)
-    _print(report, as_json, _format_validation(report, limit))
+    _print(report, as_json, _format_validation(report, limit, fold))
     return 0
 
 

@@ -197,7 +197,9 @@ nnworkbench-set-paths --raw /data/nnUNet_raw --preprocessed /data/nnUNet_preproc
 nnworkbench-run create-dataset -d 42 --name CellSegmentation --labels background,cell,nucleus --ignore --channels fluorescence --add-description --json
 ```
 
-- Pick an unused dataset ID (`create-dataset` refuses used ones). `--ignore` only for sparse labels.
+- Pick an unused dataset ID (`create-dataset` refuses used ones). `--ignore` only for sparse labels. nnU-Net
+  recognises the ignore label only by the exact key `ignore` (lower case); `Ignore` or ` ignore ` would be trained
+  as a normal class, so `status` reports it as a problem.
 - **Images** into `imagesTr` as `<case>_0000<ending>` (e.g. `cells_001_0000.nii.gz`; more channels `_0001`, …).
   Only images that will get labels go into `imagesTr`; images to predict later go elsewhere (e.g. `imagesTs`).
 - **Existing labels** into `labelsTr` as `<case><ending>` (same case name, no `_0000`), with the class numbers of
@@ -352,6 +354,8 @@ nnworkbench-run inspect-predictions OUT --images IN
   or not a finite number (NaN, Infinity) is `null`.
 - **`validation --json`:** `dataset`, `models[]` with `model`, `mean_dice`, `folds` (fold → Dice), `classes`
   (class → Dice), `cases[]` weakest first (`case`, `fold`, `dice`, `weakest_class`, `weakest_dice`, `prediction`).
+  `classes` and `cases` come from the cross-validation folds only (each case once); fold `all` (validated on its own
+  training cases) only with `--fold all`. The text output lists the classes weakest first, one per line.
 - **`suggest --json`:** `dataset`, `step`, `command` (shell-quoted), `arguments` (list), `reasons[]`.
 - **`reduce-checkpoints --dry-run --json`** (and without `--yes`): `model`, `dry_run`, `actions[]` (`action`, `path`).
 - **`create-dataset --json`:** `dataset`, `path`, `dataset_json` (+ `description` with `--add-description`).
@@ -376,7 +380,7 @@ nnworkbench-run inspect-predictions OUT --images IN
 | --- | --- |
 | `device.kind` is `cpu` although there is an NVIDIA GPU | PyTorch without CUDA (default on Windows) or a driver mismatch; `device.problem` has the fix |
 | "CUDA out of memory" | Smaller planner, preprocess again, train with its plans |
-| Data stage `error` | Read `problems`: missing labels, names not matching, `numTraining` wrong, ignore not the highest ID |
+| Data stage `error` | Read `problems`: missing labels, names not matching, `numTraining` wrong, ignore not the highest ID or not spelled exactly `ignore` |
 | `annotate` / `inspect` says Napari is not installed | Core installation: install the full one |
 | `nnworkbench-gui` prints an install hint | Same: `pip install -e ".[all]"` |
 | nnInteractive **Initialize** fails with `_out_slice_checkbox_control` | Napari 0.9 is not supported by napari-nninteractive yet: `pip install "napari<0.9"` |

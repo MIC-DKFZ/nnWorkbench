@@ -5,15 +5,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from qtpy.QtCore import Qt
+from qtpy.QtCore import QEvent, QRect, QSize, Qt
+from qtpy.QtGui import QColor, QFont, QFontMetrics, QPainter
 from qtpy.QtWidgets import (
     QButtonGroup,
-    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QStackedWidget,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -30,21 +32,20 @@ from nnworkbench.services.workflow_status import (
     validation_cases,
 )
 
+from .. import style
 from ..context import AppContext
 from ..dataset_state import DatasetState
 from ..widgets import (
-    Bar,
     Card,
     HowToCard,
     IconButtonsDelegate,
     badge,
     button,
-    cell_widget,
-    clear_layout,
     empty_state,
     icon_html,
     label,
     make_table,
+    scroll,
     section_label,
     table_item,
 )
@@ -52,11 +53,99 @@ from .common import (
     FOLD_ALL_NOTE,
     FOLD_SIZE,
     StagePage,
+    fold_cells,
+    header_note,
     mean_dice_item,
     model_name_cell,
     models_table,
     size_models_table,
+    wrappable,
 )
+
+WEAKEST_CLASSES = 15  # with more than SHOW_ALL_FROM classes only the weakest are listed until "Show all"
+SHOW_ALL_FROM = 20
+
+
+class DiceBars(QWidget):
+    """Name, bar and Dice for each class (or fold), painted in one widget.
+
+    One label, bar and label widget per class took 4 s (150 classes) to 13 s (500) per click; painting only the
+    visible rows is instant. Long names end with "…"; the hover text has the full name and the Dice.
+    """
+
+    ROW_HEIGHT = 20
+    NAME_WIDTH = 160  # at most; 45 % of a narrow panel
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._rows: list[tuple[str, float, str, str, bool]] = []  # name, Dice, value text, tooltip, muted
+        font = QFont(self.font())
+        font.setPixelSize(12)
+        self.setFont(font)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setFixedHeight(0)
+
+    @property
+    def rows(self) -> list[tuple[str, float, str, str]]:
+        """The shown rows as (name, Dice, value text, tooltip)."""
+        return [row[:4] for row in self._rows]
+
+    def set_rows(self, rows) -> None:
+        """``(name, Dice)`` or ``(name, Dice, value text, tooltip, muted)`` per row."""
+        self._rows = []
+        for row in rows:
+            name, dice = str(row[0]), max(0.0, min(1.0, float(row[1])))
+            text = row[2] if len(row) > 2 else f"{row[1]:.2f}"
+            tooltip = row[3] if len(row) > 3 and row[3] else f"{name}\nDice {row[1]:.3f}"
+            self._rows.append((name, dice, text, tooltip, bool(row[4]) if len(row) > 4 else False))
+        self.setFixedHeight(len(self._rows) * self.ROW_HEIGHT)
+        self.update()
+
+    def sizeHint(self) -> QSize:
+        return QSize(200, len(self._rows) * self.ROW_HEIGHT)
+
+    def _columns(self) -> tuple[int, int]:
+        """Width of the name and the value column."""
+        metrics = self.fontMetrics()
+        value = max((metrics.horizontalAdvance(row[2]) for row in self._rows), default=0) + 4
+        return min(self.NAME_WIDTH, max(60, self.width() * 45 // 100)), value
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        metrics = self.fontMetrics()
+        name_width, value_width = self._columns()
+        bar_left = name_width + 10
+        bar_width = max(20, self.width() - bar_left - value_width - 10)
+        first = max(0, event.rect().top() // self.ROW_HEIGHT)
+        last = min(len(self._rows), event.rect().bottom() // self.ROW_HEIGHT + 1)
+        text, muted = self.palette().color(self.foregroundRole()), QColor(style.MUTED)
+        for index in range(first, last):
+            name, dice, value, _tooltip, gray = self._rows[index]
+            top = index * self.ROW_HEIGHT
+            painter.setPen(muted if gray else text)
+            painter.drawText(QRect(0, top, name_width, self.ROW_HEIGHT), Qt.AlignmentFlag.AlignVCenter,
+                             metrics.elidedText(name, Qt.TextElideMode.ElideRight, name_width))
+            painter.setPen(Qt.PenStyle.NoPen)
+            bar = QRect(bar_left, top + (self.ROW_HEIGHT - 6) // 2, bar_width, 6)
+            painter.setBrush(QColor("#edf1f6"))
+            painter.drawRoundedRect(bar, 3, 3)
+            painter.setBrush(QColor("#94a3b8" if gray else style.BLUE))
+            painter.drawRoundedRect(QRect(bar.x(), bar.y(), int(bar_width * dice), 6), 3, 3)
+            painter.setPen(muted)
+            painter.drawText(QRect(bar_left + bar_width + 10, top, value_width, self.ROW_HEIGHT),
+                             Qt.AlignmentFlag.AlignVCenter, value)
+        painter.end()
+
+    def event(self, event) -> bool:
+        if event.type() == QEvent.Type.ToolTip:
+            index = event.pos().y() // self.ROW_HEIGHT
+            if 0 <= index < len(self._rows):
+                QToolTip.showText(event.globalPos(), self._rows[index][3], self)
+            else:
+                QToolTip.hideText()
+            return True
+        return super().event(event)
 
 
 def _howto() -> HowToCard:
@@ -88,9 +177,8 @@ class ValidateStage(StagePage):
         self._fold_buttons.setExclusive(False)  # a second click on the open fold goes back to the model
         models_card = Card()
         head = models_card.add_header("Models")
-        self._models_hint = label("click a fold for its results, again to go back", muted=True, size=12)
-        head.addWidget(self._models_hint)
-        head.addStretch()
+        self._models_hint = header_note("click a fold for its results, again to go back")
+        head.addWidget(self._models_hint, 1)
         self._models = models_table("Folds")
         self._models.cellClicked.connect(lambda row, _column: self._choose_model(self._model_rows[row]))
         self._model_rows: list[ModelInfo] = []
@@ -103,16 +191,16 @@ class ValidateStage(StagePage):
         cases_head = self._cases_card.add_header()
         self._cases_title = label("", name="h3")
         cases_head.addWidget(self._cases_title)
-        self._cases_note = label("", muted=True, size=12)
-        cases_head.addWidget(self._cases_note)
-        cases_head.addStretch()
-        self._cases_table = make_table(["Case", "Dice", "Weakest class", ""], stretch=0)
+        self._cases_note = header_note()
+        cases_head.addWidget(self._cases_note, 1)
+        # The weakest class (Dice first, then the name) takes the free width; long names end with "…".
+        self._cases_table = make_table(["Case", "Dice", "Weakest class", ""], stretch=2)
         self._cases_table.cellClicked.connect(lambda row, column: column != 3 and self._select_case(row))
         self._cases_table.setItemDelegateForColumn(3, IconButtonsDelegate(
             self._cases_table, lambda _row: [("search", "Open in Napari · prediction and label", False)],
             lambda row, _number: self._inspect(self._cases[row])))
         header = self._cases_table.horizontalHeader()
-        for column, width in ((1, 110), (2, 220), (3, 60)):
+        for column, width in ((0, 160), (1, 70), (3, 52)):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
             self._cases_table.setColumnWidth(column, width)
         # Click "Case" or "Dice" to sort (again to reverse); the rows are re-filled, not sorted by Qt.
@@ -141,13 +229,13 @@ class ValidateStage(StagePage):
         panel.body.addLayout(layout)
         head = QHBoxLayout()
         self._panel_title = label("summary.json", name="h3")  # "Model" at model level (no single file there)
-        head.addWidget(self._panel_title)
+        head.addWidget(self._panel_title, 0, Qt.AlignmentFlag.AlignTop)
         # Wraps instead of being cut off when the trainer or case name is long or the window is narrow.
         self._panel_subject = label("", muted=True, mono=True, size=11, wrap=True, selectable=True)
         self._panel_subject.setMinimumWidth(1)
         head.addWidget(self._panel_subject, 1)
         self._close_case = button("✕", ghost=True, small=True, clicked=lambda: self._select_case(-1))
-        head.addWidget(self._close_case)
+        head.addWidget(self._close_case, 0, Qt.AlignmentFlag.AlignTop)
         layout.addLayout(head)
         mean = QHBoxLayout()
         mean.setSpacing(12)
@@ -158,39 +246,44 @@ class ValidateStage(StagePage):
         self._mean_title = section_label("Dice (foreground mean)")
         mean_text.addWidget(self._mean_title)
         self._foreground_note = label("Dice", muted=True, size=12, wrap=True)
+        self._foreground_note.setMinimumWidth(1)
         mean_text.addWidget(self._foreground_note)
-        mean.addLayout(mean_text)
-        mean.addStretch()
+        mean.addLayout(mean_text, 1)
         layout.addLayout(mean)
         self._fold_section = QWidget()
         fold_section = QVBoxLayout(self._fold_section)
         fold_section.setContentsMargins(0, 0, 0, 0)
         fold_section.setSpacing(4)
         fold_section.addWidget(label("Dice per fold", name="h3"))
-        self._fold_bars = QGridLayout()
-        self._fold_bars.setHorizontalSpacing(10)
-        self._fold_bars.setVerticalSpacing(3)
-        fold_section.addLayout(self._fold_bars)
+        self._fold_bars = DiceBars()
+        fold_section.addWidget(self._fold_bars)
         layout.addWidget(self._fold_section)
         dice_head = QHBoxLayout()
         dice_head.addWidget(label("Dice per class", name="h3"))
-        self._dice_note = label("", muted=True, size=11, wrap=True)
-        dice_head.addWidget(self._dice_note)
         dice_head.addStretch()
+        # Many classes: the weakest first; "Show all" lists every class in label order.
+        self._show_all = button("Show all", ghost=True, small=True, clicked=self._toggle_all_classes)
+        dice_head.addWidget(self._show_all)
         layout.addLayout(dice_head)
-        self._dice_bars = QGridLayout()
-        self._dice_bars.setHorizontalSpacing(10)
-        self._dice_bars.setVerticalSpacing(3)
-        layout.addLayout(self._dice_bars)
+        self._dice_note = label("", muted=True, size=11, wrap=True)
+        self._dice_note.setMinimumWidth(1)
+        layout.addWidget(self._dice_note)
+        self._dice_bars = DiceBars()
+        self._class_rows: list[tuple[str, float]] = []
+        self._dice_base_note = ""
+        self._all_classes = False
+        layout.addWidget(self._dice_bars)
         # The real summary.json (fold) or its entry (case); hidden at model level, where the bars say it all.
         self._details_label = section_label("Details")
         layout.addWidget(self._details_label)
         self._details = QPlainTextEdit()
         self._details.setObjectName("codeView")
         self._details.setReadOnly(True)
+        self._details.setMinimumHeight(160)
         layout.addWidget(self._details, 1)
         layout.addStretch()  # keeps the summary at the top while the details are hidden
-        return panel
+        # In a scroll area: with many classes ("Show all") or a low window the details stay reachable.
+        return scroll(panel)
 
     def _set_details_visible(self, visible: bool) -> None:
         self._panel_title.setText("summary.json" if visible else "Model")
@@ -238,7 +331,7 @@ class ValidateStage(StagePage):
                 buttons.append(fold_button)
                 if self._fold is not None and fold.path == self._fold.path:
                     keep_button = (model, fold)
-            self._models.setCellWidget(row, 2, cell_widget(*buttons))
+            self._models.setCellWidget(row, 2, fold_cells(buttons))
         size_models_table(self._models, models)
         if keep_button:
             self._show_fold(*keep_button)
@@ -297,24 +390,14 @@ class ValidateStage(StagePage):
         self._foreground.setText(f"{mean:.2f}" if mean is not None else "—")
         self._mean_title.setText("MEAN DICE")
         self._foreground_note.setText("over the folds · fold all excluded")
-        self._panel_subject.setText(f"{model.trainer} · {model.configuration}")
-        clear_layout(self._fold_bars)
+        self._panel_subject.setText(wrappable(f"{model.trainer} · {model.plans} · {model.configuration}"))
         folds = [fold for fold in model.folds if fold.has_validation and fold.dice is not None]
-        for index, fold in enumerate(folds):
-            name = label(f"fold {fold.name}", size=12, muted=fold.name == "all")
-            if fold.name == "all":
-                name.setToolTip(FOLD_ALL_NOTE)
-            name.setFixedWidth(130)
-            self._fold_bars.addWidget(name, index, 0)
-            self._fold_bars.addWidget(Bar(fold.dice, "#94a3b8" if fold.name == "all" else "#1f5fbf"), index, 1)
-            value = label(f"{fold.dice:.2f}" + ("  (trained on these cases)" if fold.name == "all" else ""),
-                          muted=True, size=12)
-            if fold.name == "all":
-                value.setToolTip(FOLD_ALL_NOTE)
-            self._fold_bars.addWidget(value, index, 2)
-        self._fold_bars.setColumnStretch(1, 1)
-        self._dice_note.setText("mean over the folds")
-        clear_layout(self._dice_bars)
+        self._fold_bars.set_rows([
+            (f"fold {fold.name}" + (" · trained on these cases" if fold.name == "all" else ""), fold.dice,
+             f"{fold.dice:.2f}",
+             f"Fold {fold.name} · Dice {fold.dice:.3f}" + (f"\n{FOLD_ALL_NOTE}" if fold.name == "all" else ""),
+             fold.name == "all") for fold in folds])
+        self._set_class_rows([], "mean over the folds")
         self._set_details_visible(False)
         paths = [fold.path for fold in folds if fold.name != "all"]
         self.context.tasks.run("validate-model", lambda: [json_object(path / "validation" / "summary.json")
@@ -330,17 +413,33 @@ class ValidateStage(StagePage):
             for name, dice in mean_class_dice(summary, names):
                 per_class.setdefault(name, []).append(dice)
         rows = [(name, sum(values) / len(values)) for name, values in per_class.items()]
-        self._fill_bars(self._dice_bars, rows)
+        self._set_class_rows(rows, "mean over the folds")
 
-    def _fill_bars(self, grid: QGridLayout, rows: list) -> None:
-        clear_layout(grid)
-        for index, (name, dice) in enumerate(rows):
-            name_label = label(str(name), size=12)
-            name_label.setFixedWidth(130)
-            grid.addWidget(name_label, index, 0)
-            grid.addWidget(Bar(dice), index, 1)
-            grid.addWidget(label(f"{dice:.2f}", muted=True, size=12), index, 2)
-        grid.setColumnStretch(1, 1)
+    def _set_class_rows(self, rows: list, note: str) -> None:
+        """Dice per class: all classes in label order, or with many classes the weakest until "Show all"."""
+        self._class_rows, self._dice_base_note = list(rows), note
+        self._show_class_rows()
+
+    def _toggle_all_classes(self) -> None:
+        self._all_classes = not self._all_classes
+        self._show_class_rows()
+
+    def _show_class_rows(self) -> None:
+        rows, note = self._class_rows, self._dice_base_note
+        many = len(rows) > SHOW_ALL_FROM
+        self._show_all.setVisible(many)
+        if many and not self._all_classes:
+            shown = sorted(rows, key=lambda row: row[1])[:WEAKEST_CLASSES]
+            note = f"{note} · weakest {len(shown)} of {len(rows)}" if note else f"weakest {len(shown)} of {len(rows)}"
+            self._show_all.setText(f"Show all {len(rows)}")
+            self._show_all.setToolTip("List every class in label order")
+        else:
+            shown = rows
+            self._show_all.setText("Weakest only")
+            self._show_all.setToolTip(f"List only the {WEAKEST_CLASSES} weakest classes")
+        self._dice_note.setText(note)
+        self._dice_note.setVisible(bool(note))
+        self._dice_bars.set_rows(shown)
 
     def _show_fold(self, model: ModelInfo, fold: FoldInfo) -> None:
         self._model, self._fold = model, fold
@@ -395,11 +494,16 @@ class ValidateStage(StagePage):
 
     def _fill_cases(self) -> None:
         self._cases_table.setRowCount(len(self._cases))
+        # Case column: the longest case name, measured with the item font (longer names end with "…")
+        metrics = QFontMetrics(table_item("x", mono=True).font())
+        longest = max((metrics.horizontalAdvance(case.case_id) for case in self._cases), default=60)
+        self._cases_table.setColumnWidth(0, max(90, min(longest + 24, 240)))
         for row, case in enumerate(self._cases):
             self._cases_table.setItem(row, 0, table_item(case.case_id, mono=True))
             self._cases_table.setItem(row, 1, table_item(f"{case.mean_dice:.2f}" if case.mean_dice is not None else "—",
                                                          bold=True))
-            weakest = f"{case.weakest[0]} {case.weakest[1]:.2f}" if case.weakest else "—"
+            # the Dice first: a long class name is cut at the end of the column, never the value
+            weakest = f"{case.weakest[1]:.2f} · {case.weakest[0]}" if case.weakest else "—"
             self._cases_table.setItem(row, 2, table_item(weakest, muted=True))
 
     def _select_case(self, row: int) -> None:
@@ -411,8 +515,8 @@ class ValidateStage(StagePage):
         self._close_case.setVisible(self._case is not None)
         names = self.state.names if self.state else {}
         if self._case is not None:
-            self._panel_subject.setText(self._case.case_id)
-            self._dice_note.setText("")
+            self._panel_subject.setText(wrappable(self._case.case_id))
+            note = ""  # the case is the subject above
             self._foreground.setText(f"{self._case.mean_dice:.2f}" if self._case.mean_dice is not None else "—")
             self._foreground_note.setText(f"Dice · case {self._case.case_id}")
             rows = []
@@ -426,7 +530,7 @@ class ValidateStage(StagePage):
         else:
             fold = self._fold.name if self._fold else ""
             self._panel_subject.setText(f"fold {fold} · foreground_mean and mean")
-            self._dice_note.setText(f"fold {fold} · mean")
+            note = f"fold {fold} · mean"
             foreground = summary_foreground_dice(self._summary)  # also when foreground_mean is null or a list
             self._foreground.setText(f"{foreground:.2f}" if foreground is not None else "—")
             self._foreground_note.setText(f"Dice · fold {fold}")
@@ -434,7 +538,7 @@ class ValidateStage(StagePage):
             summary = self._summary or {}
             self._details.setPlainText(json.dumps({"foreground_mean": summary.get("foreground_mean"),
                                                    "mean": summary.get("mean")}, indent=2))
-        self._fill_bars(self._dice_bars, rows)
+        self._set_class_rows(rows, note)
 
     def _inspect(self, case: ValidationCase) -> None:
         if self._fold is None:

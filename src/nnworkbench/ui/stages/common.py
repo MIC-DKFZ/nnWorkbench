@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import html
+import re
 import shlex
 
-from qtpy.QtCore import Qt, QTimer, Signal
+from qtpy.QtCore import QEvent, QObject, QSize, Qt, QTimer, Signal
 from qtpy.QtGui import QGuiApplication
 from qtpy.QtWidgets import (
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -22,7 +24,7 @@ from nnworkbench.services.dataset_json import REGIONS_NOTE
 
 from ..context import AppContext
 from ..dataset_state import DatasetState
-from ..widgets import Card, ElidedLabel, HowToCard, badge, button, clear_layout, label
+from ..widgets import Card, ElidedLabel, FlowLayout, HowToCard, badge, button, clear_layout, label
 
 
 def format_command(command: str) -> str:
@@ -136,12 +138,13 @@ class StagePage(QWidget):
         row = QHBoxLayout(self)
         row.setContentsMargins(24, 16, 24, 16)
         row.setSpacing(18)
+        self._row = row
         self.howto = howto
         self.howto.guide_requested.connect(lambda: self.guide_requested.emit(*self.guide))
         from ..widgets import scroll
 
         self._howto_area = scroll(self.howto)
-        self._howto_area.setFixedWidth(290)  # 280 card + room for a scrollbar when the console is expanded
+        self._howto_area.setFixedWidth(HOWTO_WIDTH[1] + 10)  # card + room for a scrollbar (console expanded)
         row.addWidget(self._howto_area)
         # Collapsed: a slim strip that brings the how-to back. The choice is shared by all stages and remembered.
         self._howto_strip = button("»", tooltip="Show the how-to", clicked=lambda: context.set_howto_expanded(True))
@@ -160,7 +163,7 @@ class StagePage(QWidget):
         row.addWidget(center, 1)
         self._build_header()
         self.right = QStackedWidget()
-        self.right.setFixedWidth(410)
+        self.right.setFixedWidth(RIGHT_WIDTH[1])
         row.addWidget(self.right)
         context.jobs.busy_changed.connect(lambda _busy: self.update_actions())
         context.annotation_changed.connect(lambda _enabled: self.annotation_changed())
@@ -172,25 +175,38 @@ class StagePage(QWidget):
         layout.setContentsMargins(20, 14, 20, 14)
         layout.setSpacing(10)
         card.body.addLayout(layout)
-        top = QHBoxLayout()
-        names = QVBoxLayout()
-        names.setSpacing(2)
+        # The name next to the buttons, or (narrow window, long name) the buttons in a row below it; the name is
+        # shortened with "…" only when even its own row is too narrow. The summary line takes the full card width,
+        # so it does not wrap word by word. Buttons keep their text (fixed horizontal size).
+        self._top = QGridLayout()
+        self._top.setHorizontalSpacing(10)
+        self._top.setVerticalSpacing(8)
         self._name = ElidedLabel()
         self._name.setObjectName("h2")
-        self._sub = label("", muted=True, size=12, rich=True, wrap=True)
-        names.addWidget(self._name)
-        names.addWidget(self._sub)
-        top.addLayout(names, 1)
-        top.addWidget(button("⟳ Refresh", tooltip="Reload the dataset files from disk",
-                             clicked=self.reload_requested.emit))
+        self._name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self._header_buttons = QWidget()
+        buttons = QHBoxLayout(self._header_buttons)
+        buttons.setContentsMargins(0, 0, 0, 0)
+        refresh = button("⟳ Refresh", tooltip="Reload the dataset files from disk", clicked=self.reload_requested.emit)
+        buttons.addWidget(refresh)
         self._open = button("Open", icon="folder", tooltip=f"Open folder · nnUNet_{self.folder}", clicked=self._open_folder)
-        top.addWidget(self._open)
+        buttons.addWidget(self._open)
         self.header_actions = QHBoxLayout()
         self.header_actions.setSpacing(8)
-        top.addLayout(self.header_actions)
-        layout.addLayout(top)
-        self._badges = QHBoxLayout()
-        self._badges.setSpacing(6)
+        buttons.addLayout(self.header_actions)
+        self._header_buttons.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+        self._top.addWidget(self._name, 0, 0)
+        self._top.addWidget(self._header_buttons, 0, 1)
+        self._top.setColumnStretch(0, 1)
+        self._buttons_below = False
+        layout.addLayout(self._top)
+        self._header_card = card
+        card.installEventFilter(self)  # re-place the buttons whenever the card changes its width
+        self._sub = label("", muted=True, size=12, rich=True, wrap=True)
+        self._sub.setMinimumWidth(1)
+        layout.addWidget(self._sub)
+        # Wraps into more lines when the badges do not fit next to each other (instead of cutting them off).
+        self._badges = FlowLayout(spacing=6)
         layout.addLayout(self._badges)
         self.center.addWidget(card)
 
@@ -207,7 +223,7 @@ class StagePage(QWidget):
         cases = len(state.raw.cases)
         if not cases and isinstance(state.manifest, dict):
             cases = state.manifest.get("numTraining", 0)
-        classes = len([name for name in state.names.values() if name.strip().casefold() != "ignore"])
+        classes = len([name for name in state.names.values() if name != IGNORE_KEY])
         return (f"{cases} training case{'s' if cases != 1 else ''} · {channels} channel{'s' if channels != 1 else ''} · "
                 f"{classes} class{'es' if classes != 1 else ''}")
 
@@ -218,6 +234,7 @@ class StagePage(QWidget):
     def show_header_loading(self, name: str) -> None:
         self._name.setText(name)
         self._sub.setText("Loading files…")
+        QTimer.singleShot(0, self._place_header_buttons)
         clear_layout(self._badges)
 
     def show_load_error(self, message: str) -> None:
@@ -234,6 +251,50 @@ class StagePage(QWidget):
     def follow_model(self, label: str) -> None:
         """Select the model chosen on another stage, if this stage lists it (Train, Validate, Predict)."""
 
+    def _place_header_buttons(self) -> None:
+        """Buttons next to the name when both fit, otherwise in their own row below it."""
+        if not self._header_card.isVisible():
+            return
+        room = self._header_card.width() - 40  # card margins
+        below = self._name.sizeHint().width() + 10 + self._header_buttons.sizeHint().width() > room
+        if below != self._buttons_below:
+            self._buttons_below = below
+            self._top.removeWidget(self._header_buttons)
+            if below:
+                self._top.addWidget(self._header_buttons, 1, 0, 1, 2, Qt.AlignmentFlag.AlignLeft)
+            else:
+                self._top.addWidget(self._header_buttons, 0, 1)
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self._header_card and event.type() == QEvent.Type.Resize:
+            self._place_header_buttons()
+        return super().eventFilter(watched, event)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        # Towards the minimum window width the how-to, the right panel and the margins narrow, so the tables in
+        # the middle keep room for the model names and all folds.
+        narrow = self.width() < 1300
+        if self._row.spacing() != (12 if narrow else 18):
+            self._row.setContentsMargins(12 if narrow else 24, 16, 12 if narrow else 24, 16)
+            self._row.setSpacing(12 if narrow else 18)
+        for widget, (low, high), extra in ((self.right, RIGHT_WIDTH, 0), (self.howto, HOWTO_WIDTH, 0),
+                                           (self._howto_area, HOWTO_WIDTH, 10)):
+            width = max(low, min(high, low + (self.width() - 1200) * (high - low) // 240)) + extra
+            if widget.width() != width:
+                widget.setFixedWidth(width)
+
+    def minimumSizeHint(self) -> QSize:
+        """The minimum at the narrow widths: a hidden stage keeps the widths of the size it was last shown at, and
+        its wider minimum would hold the window wider than the minimum window width."""
+        hint = super().minimumSizeHint()
+        extra = self.right.minimumWidth() - RIGHT_WIDTH[0]
+        if self._howto_area.isVisibleTo(self):
+            extra += self._howto_area.minimumWidth() - HOWTO_WIDTH[0] - 10
+        if self._row.spacing() != 12:
+            extra += 2 * (24 - 12) + 2 * (18 - 12)
+        return QSize(max(0, hint.width() - max(0, extra)), hint.height())
+
     def _show_howto(self, expanded: bool) -> None:
         self._howto_area.setVisible(expanded)
         self._howto_strip.setVisible(not expanded)
@@ -249,7 +310,7 @@ class StagePage(QWidget):
         clear_layout(self._badges)
         for item in self.header_badges(state):
             self._badges.addWidget(item)
-        self._badges.addStretch()
+        QTimer.singleShot(0, self._place_header_buttons)
 
     def update_actions(self) -> None:
         """Enable or disable run buttons (one job at a time, missing folders)."""
@@ -268,29 +329,68 @@ class StagePage(QWidget):
         return ""
 
 
-FOLD_SIZE = (48, 26)  # fold chips (Train) and fold buttons (Validate) share one width
-MODEL_ROW_HEIGHT = 48  # Validate buttons show the fold and its Dice on two lines
+IGNORE_KEY = "ignore"  # nnU-Net's ignore label: exactly this key in dataset.json "labels"
+RIGHT_WIDTH = (340, 410)  # right panel at the minimum window width (1200 px) and from 1440 px on
+HOWTO_WIDTH = (245, 280)  # how-to card, likewise
+FOLD_SIZE = (38, 26)  # fold chips (Train, Predict) and fold buttons (Validate) share one width
+FOLD_SPACING = 3
+MODEL_ROW_HEIGHT = 48  # trainer on the first line, plans · configuration on the second
+MODEL_MIN_WIDTH = 180  # narrower, model variants could not be told apart; the table scrolls sideways instead
+
+
+class _ModelColumn(QObject):
+    """Gives the Model column of a models table the free width, but never less than MODEL_MIN_WIDTH."""
+
+    def __init__(self, table) -> None:
+        super().__init__(table)
+        self._table = table
+        table.viewport().installEventFilter(self)
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.Type.Resize:
+            self.fit()
+        return False
+
+    def fit(self) -> None:
+        table = self._table
+        others = sum(table.columnWidth(column) for column in range(1, table.columnCount()))
+        width = max(MODEL_MIN_WIDTH, table.viewport().width() - others)
+        if table.columnWidth(0) != width:
+            table.setColumnWidth(0, width)
 
 
 def models_table(folds_header: str):
-    """The models table used on Train and Validate: same columns, widths and row heights."""
+    """The models table used on Train, Validate and Predict: same columns, widths and row heights."""
+    from qtpy.QtWidgets import QAbstractScrollArea, QHeaderView
+
     from ..widgets import make_table
 
-    table = make_table(["Model", "Mean Dice", folds_header], stretch=0, row_height=MODEL_ROW_HEIGHT)
+    table = make_table(["Model", "Mean Dice", folds_header], stretch=None, row_height=MODEL_ROW_HEIGHT)
     header = table.horizontalHeader()
-    from qtpy.QtWidgets import QHeaderView
-
-    header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-    header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-    table.setColumnWidth(1, 90)
+    header.setStretchLastSection(False)
+    for column in range(3):
+        header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
+    table.setColumnWidth(1, 84)
+    # A narrow window: scroll sideways to the last folds instead of squeezing the model names.
+    table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+    # Height: all rows up to five (then it scrolls), and it may shrink to one row in a low window, so the
+    # cards below never overlap it.
+    table.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
+    table._model_column = _ModelColumn(table)
     return table
 
 
 def size_models_table(table, models) -> None:
     """Folds column fits the model with the most folds; height fits up to five rows."""
     most = max((len(model.folds) for model in models), default=1)
-    table.setColumnWidth(2, max(150, 24 + most * (FOLD_SIZE[0] + 6)))
-    table.setFixedHeight(table.horizontalHeader().sizeHint().height() + 4 + MODEL_ROW_HEIGHT * min(max(len(models), 1), 5))
+    # the cell widget is 16 px narrower than its column (item margins); it needs 12 + its chips and spacing
+    table.setColumnWidth(2, max(120, 28 + most * (FOLD_SIZE[0] + FOLD_SPACING)))
+    table._model_column.fit()
+    header = table.horizontalHeader().sizeHint().height() + 4
+    rows = min(max(len(models), 1), 5)
+    bar = table.horizontalScrollBar().sizeHint().height()
+    table.setMinimumHeight(header + MODEL_ROW_HEIGHT + bar)
+    table.setMaximumHeight(header + MODEL_ROW_HEIGHT * rows + bar)
 
 
 FOLD_STATUS = {"done": ("✓ done", "green"), "training": ("● training", "orange"), "stopped": ("■ stopped", "orange"),
@@ -318,6 +418,40 @@ def label_mode_badge(state: DatasetState):
     return badge("Dense labels · no ignore", "gray", "dataset.json has no ignore label")
 
 
+def wrappable(text: str) -> str:
+    """Like ``breakable`` (line breaks after "_"), and also inside long runs without one (e.g. 40 x in a trainer
+    name), so a wrapped title or model name in a side panel never runs past its edge."""
+    from ..widgets import breakable
+
+    return re.sub(r"[^\s\u200b]{16}(?=[^\s\u200b])", lambda match: match.group(0) + "\u200b", breakable(text))
+
+
+def header_note(text: str = "", *, mono: bool = False) -> ElidedLabel:
+    """A muted hint or path in a card header: shortened with "…" (full text on hover) instead of making the page
+    wider than the window. Add it with stretch 1."""
+    note = ElidedLabel(text)
+    note.setProperty("muted", True)
+    if mono:
+        note.setProperty("mono", True)
+    else:
+        font = note.font()
+        font.setPixelSize(12)
+        note.setFont(font)
+    note.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+    return note
+
+
+def fold_cells(widgets) -> QWidget:
+    """The fold chips or buttons of a models table row (narrow spacing, so six folds fit a narrow window)."""
+    from ..widgets import cell_widget
+
+    widgets = list(widgets)
+    holder = cell_widget(*widgets, spacing=FOLD_SPACING)
+    # the chips and buttons have a fixed size; their size hint (used by cell_widget) may be larger
+    holder.setMinimumWidth(12 + len(widgets) * (FOLD_SIZE[0] + FOLD_SPACING))
+    return holder
+
+
 def fold_chip(fold) -> QLabel:
     chip = QLabel(fold.name)
     chip.setFixedSize(*FOLD_SIZE)
@@ -329,16 +463,16 @@ def fold_chip(fold) -> QLabel:
 
 
 def model_name_cell(model):
-    """Trainer with plans · configuration below. Long names are shortened with "…" in the middle, so the
-    distinguishing start (e.g. iter_4) and end (e.g. 1000epochs) stay visible; the full name is the hover text."""
+    """Trainer with plans · configuration below. Long names are shortened with "…" at the end (the column is
+    at least MODEL_MIN_WIDTH wide, so variants such as ..._variant07_... stay apart); the full name is the hover
+    text."""
     cell = QWidget()
     layout = QVBoxLayout(cell)
     layout.setContentsMargins(6, 0, 6, 0)
     layout.setSpacing(0)
     layout.addStretch()
-    for text, muted, mode in ((model.trainer, False, Qt.TextElideMode.ElideMiddle),
-                              (f"{model.plans} · {model.configuration}", True, Qt.TextElideMode.ElideRight)):
-        line = ElidedLabel(text, mode=mode)
+    for text, muted in ((model.trainer, False), (f"{model.plans} · {model.configuration}", True)):
+        line = ElidedLabel(text)
         line.setProperty("mono", True)
         line.setProperty("muted", muted)
         line.setMinimumWidth(1)

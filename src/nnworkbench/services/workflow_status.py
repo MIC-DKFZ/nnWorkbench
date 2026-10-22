@@ -72,15 +72,15 @@ def _numbers(value: object) -> tuple:
 # ---------------------------------------------------------------- dataset.json helpers
 
 def ignore_label_id(manifest: dict | None) -> int | None:
-    """Return the ``ignore`` label ID, or ``None`` for dense labels."""
+    """Return the ``ignore`` label ID, or ``None`` for dense labels.
+
+    As in nnU-Net, only the exact key ``"ignore"`` counts: "Ignore" or " ignore " is a normal class there
+    (``definition_errors`` reports it as a dataset.json problem)."""
     labels = manifest.get("labels") if isinstance(manifest, dict) else None
     if not isinstance(labels, dict):
         return None
-    for name, value in labels.items():
-        if isinstance(name, str) and name.strip().casefold() == "ignore" and isinstance(value, int) \
-                and not isinstance(value, bool):
-            return value
-    return None
+    value = labels.get("ignore")
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def channel_count(manifest: dict | None) -> int:
@@ -482,8 +482,44 @@ def geometries_match(first: Geometry | None, second: Geometry | None, tolerance:
                                second.spacing + second.origin + second.direction))
 
 
-def prediction_status(input_dir: Path | None, output_dir: Path | None) -> list[tuple[str, bool, bool]]:
-    """List input cases as ``(case ID, channels present, prediction exists)``."""
+class PredictionCase(tuple):
+    """An input case for prediction: ``(case ID, ready, predicted)`` (equal to that plain tuple), plus the channel
+    suffixes found (``"0000"``, …; ``None`` for a file without one), the channels of dataset.json that have no
+    file, and whether a file has no channel suffix. nnU-Net needs one file per channel, each with its suffix."""
+
+    found: frozenset
+    missing: tuple[str, ...]
+    unsuffixed: bool
+
+    def __new__(cls, case_id: str, found, predicted: bool, channels: int = 1):
+        found = frozenset(found)
+        missing = tuple(suffix for suffix in (f"{index:04d}" for index in range(max(1, channels)))
+                        if suffix not in found)
+        unsuffixed = None in found
+        case = super().__new__(cls, (case_id, not missing and not unsuffixed, predicted))
+        case.found, case.missing, case.unsuffixed = found, missing, unsuffixed
+        return case
+
+    @property
+    def case_id(self) -> str:
+        return self[0]
+
+    @property
+    def ready(self) -> bool:
+        return self[1]
+
+    @property
+    def predicted(self) -> bool:
+        return self[2]
+
+    def for_channels(self, channels: int) -> PredictionCase:
+        """The same case checked against the channel count of dataset.json."""
+        return PredictionCase(self[0], self.found, self[2], channels)
+
+
+def prediction_status(input_dir: Path | None, output_dir: Path | None, channels: int = 1) -> list[PredictionCase]:
+    """List input cases as ``(case ID, ready, prediction exists)``: ready when every channel of dataset.json
+    (``channels``) has its file (``case_0000``, ``case_0001``, …) and no file of the case lacks the suffix."""
     if input_dir is None or not input_dir.is_dir():
         return []
     cases: dict[str, set[str | None]] = {}
@@ -495,5 +531,4 @@ def prediction_status(input_dir: Path | None, output_dir: Path | None) -> list[t
     if output_dir is not None and output_dir.is_dir():
         predicted = {strip_image_suffix(path) for path in _entries(output_dir)
                      if _is_file(path) and image_suffix(path)}
-    return [(case, "0000" in cases[case] or None in cases[case], case in predicted)
-            for case in sorted(cases, key=str.casefold)]
+    return [PredictionCase(case, cases[case], case in predicted, channels) for case in sorted(cases, key=str.casefold)]

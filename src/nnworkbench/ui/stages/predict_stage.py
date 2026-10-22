@@ -36,9 +36,7 @@ from ..widgets import (
     NumberField,
     ToggleGroup,
     badge,
-    breakable,
     button,
-    cell_widget,
     empty_state,
     form_hint,
     form_row,
@@ -58,12 +56,20 @@ from .common import (
     StagePage,
     arguments_error,
     arguments_field,
+    fold_cells,
     fold_chip,
+    header_note,
     mean_dice_item,
     model_name_cell,
     models_table,
     size_models_table,
+    wrappable,
 )
+
+# Narrower row titles than in the run dialogs: the panel is 340 px wide at the minimum window width, and
+# "Skip already predicted cases" or the processes fields did not fit next to the default 112 px titles.
+_TITLE_WIDTH = 84
+_HINT_INDENT = _TITLE_WIDTH + 10
 
 
 def _howto() -> HowToCard:
@@ -85,11 +91,10 @@ class PredictStage(StagePage):
         self._selected: ModelInfo | None = None
         self._input_cases: int | None = None  # cases in the input folder; None while it is listed
         self._input_error = ""  # why the input folder cannot be listed
+        self._not_ready = ""  # why cases of the input folder cannot be predicted (missing channels, no suffix)
         models_card = Card()
         head = models_card.add_header("Models")
-        head.addWidget(label("models with at least one finished fold · click one to predict with it", muted=True,
-                             size=12))
-        head.addStretch()
+        head.addWidget(header_note("models with at least one finished fold · click one to predict with it"), 1)
         self._models_table = models_table("Folds")
         self._models_table.itemSelectionChanged.connect(self._model_selected)
         models_card.body.addWidget(self._models_table)
@@ -119,9 +124,8 @@ class PredictStage(StagePage):
         self.center.addWidget(folders)
         images = Card()
         head = images.add_header("Input cases")
-        self._images_note = label("", muted=True, size=12)
-        head.addWidget(self._images_note)
-        head.addStretch()
+        self._images_note = header_note()
+        head.addWidget(self._images_note, 1)
         self._table = make_table(["Case", "Images", "Prediction", ""], stretch=0)
         self._predicted: list[bool] = []
         self._table.setItemDelegateForColumn(3, IconButtonsDelegate(
@@ -157,7 +161,7 @@ class PredictStage(StagePage):
                                   "nnU-Net predicts every image again and overwrites existing predictions.")
         self._continue.setChecked(True)  # default: keep existing predictions and only predict the missing cases
         self._continue.toggled.connect(self._update_command)
-        self._continue_hint = form_hint("")
+        self._continue_hint = form_hint("", width=_HINT_INDENT)
         # Processes for preprocessing (-npp) and segmentation export (-nps); nnU-Net's default is 3 each.
         self._npp, self._nps = NumberField(1, 99, PREDICTION_PROCESSES), NumberField(1, 99, PREDICTION_PROCESSES)
         processes = QWidget()
@@ -176,27 +180,29 @@ class PredictStage(StagePage):
             processes_grid.addWidget(label(name, muted=True, size=12), row, 0)
             processes_grid.addWidget(with_stepper(field), row, 1)
         processes_grid.setColumnStretch(2, 1)
-        self._processes_hint = form_hint("Fewer processes use less RAM and CPU but take longer. Reduce them if you run "
-                                         "out of RAM.")
+        self._processes_hint = form_hint("Fewer processes use less RAM and CPU but take longer. Reduce them if you "
+                                         "run out of RAM.", width=_HINT_INDENT)
         self._device = ToggleGroup(DEVICE_CHOICES)
         self._device.changed.connect(lambda _index: self._update_command())
-        self._device_hint = form_hint("")
+        self._device_hint = form_hint("", width=_HINT_INDENT)
         self._device.set_index(DEVICE_CHOICES.index(default_choice(self.context.device)))
         self.context.device_changed.connect(self._preselect_device)
         self._arguments = arguments_field()
         self._arguments.setPlaceholderText("Optional, e.g. --save_probabilities")
         self._arguments.textChanged.connect(self._update_command)
-        self._folds_hint = form_hint("")
-        layout.addLayout(form_row("Folds", self._folds))
+        self._folds_hint = form_hint("", width=0)  # below the fold buttons
+        # the fold buttons below their title: six of them next to the title are wider than a narrow panel
+        layout.addWidget(label("Folds", muted=True))
+        layout.addWidget(self._folds)
         layout.addWidget(self._folds_hint)
-        layout.addLayout(form_row("Mirroring (TTA)", self._tta))
-        layout.addLayout(form_row("Continue", self._continue))
+        layout.addLayout(form_row("Mirroring (TTA)", self._tta, width=_TITLE_WIDTH))
+        layout.addLayout(form_row("Continue", self._continue, width=_TITLE_WIDTH))
         layout.addWidget(self._continue_hint)
-        layout.addLayout(form_row("Processes", processes))
+        layout.addLayout(form_row("Processes", processes, width=_TITLE_WIDTH))
         layout.addWidget(self._processes_hint)
-        layout.addLayout(form_row("Device", self._device, info=DEVICE_INFO))
+        layout.addLayout(form_row("Device", self._device, width=_TITLE_WIDTH, info=DEVICE_INFO))
         layout.addWidget(self._device_hint)
-        layout.addLayout(form_row("Additional arguments", self._arguments))
+        layout.addLayout(form_row("Additional arguments", self._arguments, width=_TITLE_WIDTH))
         layout.addWidget(section_label("Command"))
         self._command = CommandBox()
         self._command.setFixedHeight(130)
@@ -231,7 +237,7 @@ class PredictStage(StagePage):
         for row, model in enumerate(self._models):
             self._models_table.setCellWidget(row, 0, model_name_cell(model))
             self._models_table.setItem(row, 1, mean_dice_item(model))
-            self._models_table.setCellWidget(row, 2, cell_widget(*(fold_chip(fold) for fold in model.finished_folds)))
+            self._models_table.setCellWidget(row, 2, fold_cells(fold_chip(fold) for fold in model.finished_folds))
             if model.label == previous:
                 select = row
         self._models_table.blockSignals(False)
@@ -270,7 +276,7 @@ class PredictStage(StagePage):
 
     def _model_changed(self, *_args) -> None:
         model = self._current_model()
-        self._model_name.setText(breakable(f"{model.trainer}\n{model.plans} · {model.configuration}") if model
+        self._model_name.setText(wrappable(f"{model.trainer}\n{model.plans} · {model.configuration}") if model
                                  else "No model with a finished fold yet")
         finished = [fold.name for fold in model.finished_folds] if model else []
         self._folds.set_options(finished, selected=prediction_folds(finished))  # same default as `suggest`
@@ -289,12 +295,14 @@ class PredictStage(StagePage):
         self.context.store.setValue("predict/input", self._input.text().strip())
         self.context.store.setValue("predict/output", self._output.text().strip())
         source, target = _folder(self._input), _folder(self._output)
-        self._input_cases, self._input_error = None, ""
+        self._input_cases, self._input_error, self._not_ready = None, "", ""
+        channels = self.state.raw.channels if self.state else 1
 
         def listing() -> list:
             if source is not None and not source.is_dir():
                 raise NotADirectoryError(f"{source} does not exist or is not a folder")
-            return prediction_status(source, target)
+            # every channel of dataset.json needs its file (case_0000, case_0001, …), as nnU-Net expects
+            return [case.for_channels(channels) for case in prediction_status(source, target)]
 
         self.context.tasks.run("predict-status", listing, self._fill_images, self._listing_failed)
         self._update_command()
@@ -312,7 +320,10 @@ class PredictStage(StagePage):
         self._table.setVisible(bool(rows))
         self._images_empty.setVisible(not rows)
         predicted = sum(1 for _case, _channels, done in rows if done)
-        self._images_note.setText(f"{len(rows)} cases · {predicted} already in the output folder" if rows else "")
+        not_ready = [case for case in rows if not case[1]]
+        self._not_ready = _not_ready_reason(not_ready, self.state.raw.channels if self.state else 1)
+        self._images_note.setText(f"{len(rows)} cases" + (f" · {len(not_ready)} not ready" if not_ready else "")
+                                  + f" · {predicted} already in the output folder" if rows else "")
         self._continue_hint.setText(
             f"{predicted} of {len(rows)} cases are already predicted. Without Continue they are predicted again and "
             "overwritten." if predicted else "No predictions in the output folder yet.")
@@ -322,7 +333,10 @@ class PredictStage(StagePage):
         self._table.setUpdatesEnabled(False)
         for index, (case, channels, done) in enumerate(rows):
             self._table.setItem(index, 0, table_item(case, mono=True))
-            self._table.setItem(index, 1, mark_item(channels))
+            images = mark_item(channels)
+            if not channels:
+                images.setToolTip(_case_problem(rows[index]))
+            self._table.setItem(index, 1, images)
             self._table.setItem(index, 2, mark_item(done))
         self._table.setUpdatesEnabled(True)
         self.update_actions()
@@ -377,6 +391,8 @@ class PredictStage(StagePage):
             reason = "Listing the input folder…"
         if not reason and not self._input_cases:
             reason = "The input folder has no images (named like in imagesTr, e.g. case_0000.nii.gz)."
+        if not reason and self._not_ready:
+            reason = self._not_ready
         if not reason and _same_folder(source, target):
             reason = "Choose an output folder different from the input folder."
         if not reason and not self._folds.selected():
@@ -390,6 +406,35 @@ class PredictStage(StagePage):
         self.update_actions()
         if self.state is not None and self._predict.isEnabled():
             self.context.jobs.start_nnunet("Predict", self.state.record.name, self._command_text())
+
+
+def _case_problem(case) -> str:
+    """Why one input case cannot be predicted (hover text of its ✗)."""
+    if getattr(case, "unsuffixed", False):
+        return f"A file without channel suffix: rename it to {case[0]}_0000 (and so on for more channels)."
+    if getattr(case, "missing", ()):
+        return "No file for channel " + ", ".join(f"_{suffix}" for suffix in case.missing) + "."
+    return "Not ready."
+
+
+def _not_ready_reason(cases: list, channels: int) -> str:
+    """Why Predict is disabled when input cases lack channels or the channel suffix, or ""."""
+    if not cases:
+        return ""
+    unsuffixed_ids = {case[0] for case in cases if getattr(case, "unsuffixed", False)}
+    missing = [case for case in cases if getattr(case, "missing", ()) and case[0] not in unsuffixed_ids]
+    unsuffixed = [case for case in cases if getattr(case, "unsuffixed", False)]
+    expected = "_0000" if channels == 1 else f"_0000 to _{channels - 1:04d}"
+    parts = []
+    if missing:
+        parts.append(f"{len(missing)} case{'s' if len(missing) != 1 else ''} without a file for every channel of "
+                     f"dataset.json (e.g. {missing[0][0]}: "
+                     f"{', '.join('_' + suffix for suffix in missing[0].missing)} missing)")
+    if unsuffixed:
+        parts.append(f"{len(unsuffixed)} file name{'s' if len(unsuffixed) != 1 else ''} without channel suffix "
+                     f"(e.g. {unsuffixed[0][0]})")
+    return (f"Cannot predict: {' and '.join(parts)}. nnU-Net needs one file per channel, named like in imagesTr "
+            f"(suffix {expected}). Add or rename the files, then the cases are listed as ready.")
 
 
 def _folder(field: QLineEdit) -> Path | None:
