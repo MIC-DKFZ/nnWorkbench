@@ -7,20 +7,22 @@ import json
 import os
 from pathlib import Path
 
-from qtpy.QtCore import Qt, Signal
-from qtpy.QtGui import QGuiApplication
+from qtpy.QtCore import QSize, Qt, Signal
+from qtpy.QtGui import QFontMetrics, QGuiApplication
 from qtpy.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QHeaderView,
     QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
@@ -35,21 +37,28 @@ from nnworkbench.services.dataset_scanner import id_badge
 
 from .context import AppContext
 from .widgets import (
+    AvailabilityDelegate,
     Card,
+    ElidedLabel,
     FlowLayout,
-    availability,
+    availability_item,
+    availability_width,
     badge,
+    breakable,
     button,
     cell_widget,
+    clear_layout,
     dataset_id_label,
+    elide_to,
     empty_state,
-    fit_columns,
     format_time,
     label,
     make_table,
+    scroll,
     section_label,
     separator,
     set_badge,
+    set_elided_text,
     svg_icon,
     table_item,
 )
@@ -57,6 +66,8 @@ from .widgets import (
 _KEYS = ("raw", "preprocessed", "results")
 _DESCRIPTION_LIMIT = 1000  # characters of the dataset.json description shown in the details
 _CHIP_LIMIT = 100  # label chips shown in the details, then "+N more"
+_CHIP_WIDTH = 400  # at most (the details panel is 470 wide): longer label names end with "…"
+_PROFILES_HEIGHT = 84  # path profiles shown before the list scrolls (two), so the card stays low
 
 
 def _expanded(text: str) -> Path:
@@ -101,6 +112,37 @@ def _short(value: object, limit: int) -> str:
     except (RecursionError, ValueError):
         return "…"
     return text if len(text) <= limit else text[:limit].rstrip() + "…"
+
+
+def _wrap_anywhere(text: str) -> str:
+    """``text`` that a word-wrapping label may break after "_" and inside long words (folder names)."""
+    words = (word if len(word) <= 30 else "\u200b".join(word[index:index + 20] for index in range(0, len(word), 20))
+             for word in text.split(" "))
+    return breakable(" ".join(words))
+
+
+class _ValueLabel(QLabel):
+    """A value of the details grid and a muted note ("· 8 channels"): the value ends with "…" when it is longer
+    than the panel is wide (the note stays visible), the full value is the tooltip."""
+
+    def __init__(self, value: str, note: str) -> None:
+        super().__init__()
+        self._value, self._note = value, f"· {note}" if note else ""
+        self.setTextFormat(Qt.TextFormat.RichText)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(40)
+        self._show(10_000)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._show(self.contentsRect().width())
+
+    def _show(self, width: int) -> None:
+        metrics = self.fontMetrics()
+        room = width - (metrics.horizontalAdvance(" " + self._note) if self._note else 0) - 2
+        shown = metrics.elidedText(self._value, Qt.TextElideMode.ElideRight, max(room, 20))
+        self.setToolTip(self._value if shown != self._value else "")
+        self.setText(f"{html.escape(shown)} <span style='color:#64748b'>{html.escape(self._note)}</span>")
 
 
 def _plain(widget: QLabel) -> QLabel:
@@ -159,13 +201,20 @@ class PathsCard(Card):
             self._browse.append(browse)
         grid.setColumnStretch(1, 1)
         left.addLayout(grid)
+        left.addStretch()  # a higher profile list: the folders stay at the top
         outer.addLayout(left, 1)
         right = QVBoxLayout()
         right.setSpacing(8)
         right.addWidget(section_label("Path profile"))
-        self._profile_list = QVBoxLayout()
+        profiles = QWidget()
+        self._profile_list = QVBoxLayout(profiles)
+        self._profile_list.setContentsMargins(0, 0, 0, 0)
         self._profile_list.setSpacing(8)
-        right.addLayout(self._profile_list)
+        self._profile_scroll = _FitScrollArea(profiles, _PROFILES_HEIGHT)  # many profiles: scroll, card stays low
+        right.addWidget(self._profile_scroll)
+        self._add = button("＋ Add remote profile", clicked=self._add_profile)
+        self._add.setStyleSheet("text-align: left; color: #64748b; font-weight: 500;")
+        right.addWidget(self._add)
         right.addStretch()
         holder = QWidget()
         holder.setFixedWidth(290)
@@ -197,6 +246,7 @@ class PathsCard(Card):
         values = self._local if self._active == "Local" else tuple(self._profiles[self._active][key] for key in _KEYS)
         for key, value in zip(_KEYS, values):
             self._fields[key].setText(value)
+            self._fields[key].setCursorPosition(0)  # a long path shows its start, not its end
         for browse in self._browse:
             browse.setEnabled(self._active == "Local")
         self._update_marks()
@@ -270,9 +320,7 @@ class PathsCard(Card):
         self._profile_list.addWidget(self._profile_row("Local", "used by the GUI"))
         for name in sorted(self._profiles, key=str.casefold):
             self._profile_list.addWidget(self._profile_row(name, ""))
-        add = button("＋ Add remote profile", clicked=self._add_profile)
-        add.setStyleSheet("text-align: left; color: #64748b; font-weight: 500;")
-        self._profile_list.addWidget(add)
+        self._profile_scroll.updateGeometry()
 
     def _profile_row(self, name: str, note: str) -> QWidget:
         active = name == self._active
@@ -284,12 +332,13 @@ class PathsCard(Card):
         layout = QHBoxLayout(row)
         layout.setContentsMargins(10, 4, 6, 4)
         layout.setSpacing(6)
-        title = QPushButton(("● " if active else "") + ("☁ " if name != "Local" else "") + name)
+        title = QPushButton()
         title.setObjectName("link")
-        title.setStyleSheet("color: #1f5fbf;" if active else "color: #1e293b; font-weight: 500;")
+        # left-aligned and shortened with "…" at the end, so a long name keeps its start (full name on hover)
+        title.setStyleSheet("text-align: left; " + ("color: #1f5fbf;" if active else "color: #1e293b; font-weight: 500;"))
+        set_elided_text(title, ("● " if active else "") + ("☁ " if name != "Local" else "") + name)
         title.clicked.connect(lambda _=False, selected=name: self._activate(selected))
-        layout.addWidget(title)
-        layout.addStretch()
+        layout.addWidget(title, 1)
         if note:
             layout.addWidget(label(note, size=11, bold=True))
         if name != "Local":
@@ -340,6 +389,27 @@ class PathsCard(Card):
                                 f"Run this in the remote shell to use the {name} paths there:\n\n{command}")
 
 
+class _FitScrollArea(QScrollArea):
+    """A vertical scroll area as high as its content, but at most ``maximum`` pixels (then it scrolls)."""
+
+    def __init__(self, widget: QWidget, maximum: int, parent=None) -> None:
+        super().__init__(parent)
+        self._maximum = maximum
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        self.setWidget(widget)
+        widget.setAutoFillBackground(False)
+        self.viewport().setAutoFillBackground(False)
+
+    def sizeHint(self) -> QSize:
+        return QSize(super().sizeHint().width(), min(self.widget().sizeHint().height(), self._maximum))
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(super().minimumSizeHint().width(), min(self.widget().sizeHint().height(), self._maximum))
+
+
 def _record_modified(record: DatasetRecord) -> float | None:
     times = []
     for path in (record.raw_path, record.preprocessed_path, record.results_path):
@@ -385,7 +455,7 @@ class DetailsPanel(Card):
         head.addWidget(self._id)
         names = QVBoxLayout()
         names.setSpacing(0)
-        self._name = _plain(label("", name="h2"))
+        self._name = _plain(label("", name="h2"))  # long names end with "…" (set_elided_text)
         self._folder = _plain(label("", muted=True, size=12))
         names.addWidget(self._name)
         names.addWidget(self._folder)
@@ -397,9 +467,13 @@ class DetailsPanel(Card):
         layout.addWidget(self._stack, 1)
         info = QWidget()
         self._info = QVBoxLayout(info)
-        self._info.setContentsMargins(0, 0, 0, 0)
+        self._info.setContentsMargins(0, 0, 4, 0)  # room for the scroll bar
         self._info.setSpacing(10)
-        self._stack.addWidget(info)
+        # scrolls when the window is low or the dataset has much to show, instead of squashing the rows
+        self._scroll = scroll(info)
+        self._scroll.viewport().setAutoFillBackground(False)
+        info.setAutoFillBackground(False)
+        self._stack.addWidget(self._scroll)
         self._json = QPlainTextEdit()
         self._json.setObjectName("codeView")
         self._json.setReadOnly(True)
@@ -410,18 +484,7 @@ class DetailsPanel(Card):
         self._toggle_json = button("{ } Show JSON", ghost=True, small=True, clicked=self._toggle)
         foot.addWidget(self._toggle_json)
         layout.addLayout(foot)
-        self._layout = layout
-        self._bottom = QWidget()  # absorbs the free space below the footnote while the details are shown
-        layout.addWidget(self._bottom, 1)
-        self._fit_stack()
         self.set_record(None, None)
-
-    def _fit_stack(self) -> None:
-        showing_json = self._stack.currentIndex() == 1
-        self._layout.setStretchFactor(self._stack, 1 if showing_json else 0)
-        self._bottom.setVisible(not showing_json)
-        policy = QSizePolicy.Policy.Expanding if showing_json else QSizePolicy.Policy.Maximum
-        self._stack.setSizePolicy(QSizePolicy.Policy.Preferred, policy)
 
     def set_record(self, record: DatasetRecord | None, details: dict | None) -> None:
         self._record = record
@@ -431,28 +494,27 @@ class DetailsPanel(Card):
                 item.widget().hide()
                 item.widget().deleteLater()
             elif item.layout():
-                while item.layout().count():
-                    child = item.layout().takeAt(0)
-                    if child.widget():
-                        child.widget().deleteLater()
+                clear_layout(item.layout())
         self._open.setEnabled(record is not None)
+        self._scroll.verticalScrollBar().setValue(0)
         if record is None:
             self._id.setText("—")
-            self._name.setText("Select a dataset")
-            self._folder.setText("")
+            set_elided_text(self._name, "Select a dataset")
+            set_elided_text(self._folder, "")
             self._json.setPlainText("")
             return
         self._id.setText(f"{record.dataset_id:03d}")
-        self._name.setText(record.name)
-        self._folder.setText(record.directory_name)
+        set_elided_text(self._name, record.name)
+        set_elided_text(self._folder, record.directory_name, Qt.TextElideMode.ElideMiddle)
         if (id_warning := id_badge(record)) is not None:
             self._info.addWidget(badge(*id_warning))
-            self._info.addWidget(_plain(label(id_warning[2], muted=True, wrap=True)))
+            self._info.addWidget(_plain(label(_wrap_anywhere(id_warning[2]), muted=True, wrap=True)))
         if details is None:
             self._info.addWidget(label("Loading dataset.json…", muted=True))
             return
         if "error" in details:  # unreadable folder or dataset.json
-            self._info.addWidget(_plain(label(f"Could not read the dataset: {details['error']}", muted=True, wrap=True)))
+            self._info.addWidget(_plain(label(_wrap_anywhere(f"Could not read the dataset: {details['error']}"),
+                                              muted=True, wrap=True)))
             self._json.setPlainText(str(details["error"]))
             return
         manifest = details.get("manifest")
@@ -467,32 +529,32 @@ class DetailsPanel(Card):
             return
         description = manifest.get("description")
         if isinstance(description, str) and description.strip():
-            self._info.addWidget(_plain(label(_short(description.strip(), _DESCRIPTION_LIMIT), muted=True, wrap=True)))
+            self._info.addWidget(_plain(label(_wrap_anywhere(_short(description.strip(), _DESCRIPTION_LIMIT)),
+                                              muted=True, wrap=True)))
         channels = manifest.get("channel_names") if isinstance(manifest.get("channel_names"), dict) else {}
         labels = manifest.get("labels") if isinstance(manifest.get("labels"), dict) else {}
         classes = [name for name in labels if str(name).casefold() != "ignore"]
         grid = QGridLayout()
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(6)
-        rows = (("Modality", _short(" · ".join(_short(value, 40) for value in list(channels.values())[:20]), 200) or "—",
+        rows = (("Modality", _short(" · ".join(_short(value, 40) for value in list(channels.values())[:20]), 400) or "—",
                  f"{len(channels)} channel{'s' if len(channels) != 1 else ''}"),
                 ("Cases", _short(manifest.get("numTraining", "—"), 40), "numTraining"),
                 ("Labels", f"{len(classes)} classes", "+ ignore" if len(classes) != len(labels) else "dense"),
                 ("File ending", _short(manifest.get("file_ending", "—"), 40), ""))
         for row, (key, value, note) in enumerate(rows):
-            grid.addWidget(label(key, muted=True), row, 0)
-            text = label(f"{html.escape(value)} <span style='color:#64748b'>{'· ' + note if note else ''}</span>",
-                         rich=True)
-            grid.addWidget(text, row, 1)
+            grid.addWidget(label(key, muted=True), row, 0, Qt.AlignmentFlag.AlignTop)
+            grid.addWidget(_ValueLabel(value, note), row, 1)
         grid.setColumnStretch(1, 1)
         self._info.addLayout(grid)
         chips_holder = QWidget()
         chips = FlowLayout(chips_holder)
         for name, value in list(labels.items())[:_CHIP_LIMIT]:  # one widget per chip: thousands would freeze
-            chip = _plain(QLabel(f"{_short(name, 60)} · {_short(value, 40)}"))
+            chip = _plain(QLabel())
             chip.setObjectName("chip")
             if str(name).casefold() == "ignore":
                 chip.setProperty("ignore", True)
+            elide_to(chip, f"{_short(name, 60)} · {_short(value, 40)}", _CHIP_WIDTH)
             chips.addWidget(chip)
         if len(labels) > _CHIP_LIMIT:
             more = QLabel(f"+{len(labels) - _CHIP_LIMIT} more")
@@ -505,21 +567,27 @@ class DetailsPanel(Card):
         folders.setHorizontalSpacing(12)
         folders.setVerticalSpacing(6)
         mode = "sparse labels" if any(str(name).casefold() == "ignore" for name in labels) else "dense labels"
-        entries = (("RAW", ", ".join(details["raw_folders"]) + f" · {mode}" if details["raw_folders"] else "—"),
-                   ("PRE", ", ".join(details["plans"]) or "—"),
-                   ("RES", f"{details['models']} model{'s' if details['models'] != 1 else ''} · "
-                           f"{details['folds']} fold{'s' if details['folds'] != 1 else ''}" if details["models"] else "—"))
-        for row, (key, value) in enumerate(entries):
-            folders.addWidget(label(key, muted=True), row, 0)
-            folders.addWidget(_plain(label(value, wrap=True)), row, 1)
+        entries = (("RAW", [", ".join(details["raw_folders"]) + f" · {mode}" if details["raw_folders"] else "—"]),
+                   ("PRE", details["plans"] or ["—"]),  # one line per plans file, long names end with "…"
+                   ("RES", [f"{details['models']} model{'s' if details['models'] != 1 else ''} · "
+                            f"{details['folds']} fold{'s' if details['folds'] != 1 else ''}" if details["models"] else "—"]))
+        for row, (key, values) in enumerate(entries):
+            folders.addWidget(label(key, muted=True), row, 0, Qt.AlignmentFlag.AlignTop)
+            lines = QVBoxLayout()
+            lines.setSpacing(2)
+            for value in values:
+                line = _plain(label())
+                set_elided_text(line, value)
+                lines.addWidget(line)
+            folders.addLayout(lines, row, 1)
         folders.setColumnStretch(1, 1)
         self._info.addLayout(folders)
+        self._info.addStretch()
 
     def _toggle(self) -> None:
         showing_json = self._stack.currentIndex() == 1
         self._stack.setCurrentIndex(0 if showing_json else 1)
         self._toggle_json.setText("{ } Show JSON" if showing_json else "✕ Hide JSON")
-        self._fit_stack()
 
     def _open_clicked(self) -> None:
         if self._record is not None:
@@ -568,8 +636,9 @@ class OverviewPage(QWidget):
         self._search = QLineEdit()
         self._search.setPlaceholderText("Search datasets by name or ID…")
         self._search.addAction(svg_icon("search", "#94a3b8"), QLineEdit.ActionPosition.LeadingPosition)
-        self._search.setFixedWidth(360)
-        self._search.textChanged.connect(self._render)
+        self._search.setMinimumWidth(180)
+        self._search.setMaximumWidth(360)
+        self._search.textChanged.connect(self._filter)  # hides rows: fast also with 1000 datasets
         toolbar.addWidget(self._search)
         self._count = QLabel()
         self._count.setStyleSheet("background: #1e293b; color: white; border-radius: 12px; padding: 4px 12px;"
@@ -585,6 +654,10 @@ class OverviewPage(QWidget):
         left.addLayout(toolbar)
         table_card = Card()
         self._table = make_table(["ID", "Dataset", "Available", "Modified", ""], stretch=1, row_height=40)
+        self._table.setItemDelegateForColumn(2, AvailabilityDelegate(self._table))  # painted: no widget per row
+        header = self._table.horizontalHeader()
+        for column in (0, 2, 3, 4):  # widths set in _fit_columns: measuring 1000 rows on every change is slow
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
         self._table.itemSelectionChanged.connect(self._selection_changed)
         self._table.cellDoubleClicked.connect(lambda row, _column: self._open_row(row))
         self._table_stack = QStackedWidget()
@@ -605,10 +678,8 @@ class OverviewPage(QWidget):
         self._render(keep=keep)
         self._update_iteration()
 
-    def _visible(self) -> list[DatasetRecord]:
-        needle = self._search.text().strip().casefold()
-        records = [record for record in self._records
-                   if not needle or needle in record.name.casefold() or needle in f"{record.dataset_id:03d}"]
+    def _ordered(self) -> list[DatasetRecord]:
+        records = list(self._records)
         order = self._sort.currentIndex()
         if order == 1:
             records.sort(key=lambda record: record.name.casefold())
@@ -617,38 +688,78 @@ class OverviewPage(QWidget):
         return records
 
     def _render(self, *_args, keep: int | None = None) -> None:
+        """Rebuild the rows (new records or another order); the search only hides rows (``_filter``)."""
         selected = keep if keep is not None else self._selected_id()
-        visible = self._visible()
+        records = self._ordered()
         self._count.setText(f"All {len(self._records)}")
         self._table.blockSignals(True)
-        self._table.setRowCount(len(visible))
-        select_row = 0 if visible else -1
-        for row, record in enumerate(visible):
+        self._table.setUpdatesEnabled(False)
+        self._table.setRowCount(0)  # also removes the cell widgets
+        self._table.setRowCount(len(records))
+        for row, record in enumerate(records):
             self._table.setItem(row, 0, table_item(f"{record.dataset_id:03d}", mono=True, data=record))
             # with an ID problem the name is drawn by the cell widget (name and red badge) instead of the item
             id_warning = id_badge(record)
             self._table.setItem(row, 1, table_item("" if id_warning else record.name, bold=True))
             if id_warning:
-                name = _plain(label(record.name, bold=True))
-                self._table.setCellWidget(row, 1, cell_widget(
-                    name, badge(*id_warning)))
-            self._table.setCellWidget(row, 2, cell_widget(availability(
-                record.raw_path is not None, record.preprocessed_path is not None, record.results_path is not None)))
+                name = ElidedLabel(record.name)  # shrinks with "…", so the badge stays visible inside the column
+                name.setTextFormat(Qt.TextFormat.PlainText)
+                font = name.font()
+                font.setBold(True)
+                name.setFont(font)
+                self._table.setCellWidget(row, 1, cell_widget(name, badge(*id_warning)))
+            self._table.setItem(row, 2, availability_item(
+                record.raw_path is not None, record.preprocessed_path is not None, record.results_path is not None))
             self._table.setItem(row, 3, table_item(format_time(self._modified.get(record.dataset_id)), muted=True))
             arrow = table_item("›")
             arrow.setForeground(Qt.GlobalColor.blue)
             self._table.setItem(row, 4, arrow)
-            if record.dataset_id == selected:
-                select_row = row
         self._table.blockSignals(False)
-        fit_columns(self._table)
-        self._show_empty(visible)
+        self._fit_columns(records)
+        self._table.setUpdatesEnabled(True)
+        self._filter(selected=selected)
+
+    def _fit_columns(self, records: list[DatasetRecord]) -> None:
+        header = self._table.horizontalHeader()
+        titles = header.fontMetrics()
+        mono = QFontMetrics(self._table.item(0, 0).font()) if records else self._table.fontMetrics()
+        texts = {format_time(self._modified.get(record.dataset_id)) for record in records}
+        contents = {
+            0: max((mono.horizontalAdvance(f"{record.dataset_id:03d}") for record in records), default=0),
+            2: availability_width(),
+            3: max((self._table.fontMetrics().horizontalAdvance(text) for text in texts), default=0),
+            4: self._table.fontMetrics().horizontalAdvance("›"),
+        }
+        for column, width in contents.items():
+            title = self._table.horizontalHeaderItem(column).text()
+            header.resizeSection(column, max(width + 28, titles.horizontalAdvance(title) + 32))
+
+    def _filter(self, *_args, selected: int | None = None) -> None:
+        """Hide the rows that do not match the search; keep the selection when its row is still shown."""
+        needle = self._search.text().strip().casefold()
+        if selected is None:
+            selected = self._selected_id()
+        select_row = current_row = -1
+        for row in range(self._table.rowCount()):
+            record: DatasetRecord = self._table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+            hidden = bool(needle) and needle not in record.name.casefold() and needle not in f"{record.dataset_id:03d}"
+            if self._table.isRowHidden(row) != hidden:
+                self._table.setRowHidden(row, hidden)
+            if not hidden:
+                if select_row < 0:
+                    select_row = row
+                if record.dataset_id == selected:
+                    current_row = row
+        self._show_empty(select_row >= 0)
+        if current_row >= 0:
+            select_row = current_row
         if select_row >= 0:
             self._table.selectRow(select_row)
         else:
+            self._table.clearSelection()
             self.details.set_record(None, None)
 
-    def _show_empty(self, visible: list[DatasetRecord]) -> None:
+    def _show_empty(self, visible: bool) -> None:
         """Instead of an empty table: what to do when there is no dataset (yet), or none matches the search."""
         if visible:
             self._table_stack.setCurrentWidget(self._table)

@@ -8,7 +8,9 @@ from qtpy.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFor
 from nnworkbench.models.dataset import DatasetRecord
 from nnworkbench.services.dataset_creator import MAX_NAME_LENGTH, directory_name
 
-from .widgets import NumberField, label, with_stepper
+from .widgets import ElidedLabel, NumberField, with_stepper
+
+_MAX_WIDTH = 600
 
 
 class NewDatasetDialog(QDialog):
@@ -23,15 +25,27 @@ class NewDatasetDialog(QDialog):
         self.dataset_id = NumberField(1, 999999, dataset_id)
         self.name = QLineEdit(name); self.name.setPlaceholderText("e.g. LiverCT")
         self.name.setMaxLength(MAX_NAME_LENGTH)
-        self.folder = label(muted=True, size=12)  # the folder name: only A-Z and 0-9 are kept
+        self.name.setCursorPosition(0)
+        self.setMinimumWidth(460)
+        self.setMaximumWidth(_MAX_WIDTH)  # long names: the folder line ends with "…", the dialog stays on screen
+        self.folder = _FolderLabel()  # the folder name: only A-Z and 0-9 are kept
+        self.folder.setProperty("muted", True)
+        font = self.folder.font()
+        font.setPixelSize(12)
+        self.folder.setFont(font)
         self.folder.setTextFormat(Qt.TextFormat.PlainText)
         self._sources = sources or []
         self._suggest = suggest
         self.source_box: QComboBox | None = None
         if self._sources:
             self.source_box = QComboBox()
+            # as wide as the dialog, not as the longest name (the list shows names with "…", full on hover)
+            self.source_box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            self.source_box.setMinimumContentsLength(24)
+            self.source_box.view().setTextElideMode(Qt.TextElideMode.ElideRight)
             for record in self._sources:
                 self.source_box.addItem(f"{record.dataset_id:03d} · {record.name}")
+                self.source_box.setItemData(self.source_box.count() - 1, record.name, Qt.ItemDataRole.ToolTipRole)
             self.source_box.setToolTip("The dataset whose images, labels and dataset.json are copied")
             layout.addRow("Source dataset", self.source_box)
             start = self._sources.index(source) if source in self._sources else 0
@@ -42,7 +56,6 @@ class NewDatasetDialog(QDialog):
         layout.addRow("Folder", self.folder)
         self.dataset_id.valueChanged.connect(self._update_folder)
         self.name.textChanged.connect(self._update_folder)
-        self._update_folder()
         self.description: QCheckBox | None = None
         if not self._sources:  # a new iteration copies the description of its source instead
             self.description = QCheckBox("Add dataset-description.md")
@@ -53,6 +66,8 @@ class NewDatasetDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Ok)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
         layout.addRow(buttons)
+        self._ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        self._update_folder()
 
     def source(self) -> DatasetRecord | None:
         return self._sources[self.source_box.currentIndex()] if self.source_box is not None else None
@@ -62,9 +77,32 @@ class NewDatasetDialog(QDialog):
             dataset_id, name = self._suggest(self._sources[index])
             self.dataset_id.setValue(dataset_id)
             self.name.setText(name)
+            self.name.setCursorPosition(0)  # a long suggested name shows its start
 
     def _update_folder(self, *_args) -> None:
+        valid = True
         try:
-            self.folder.setText(directory_name(self.dataset_id.value(), self.name.text()))
+            text = directory_name(self.dataset_id.value(), self.name.text())
         except ValueError as error:
-            self.folder.setText(str(error))
+            valid = False
+            text = str(error)
+            if self.name.text().strip() and "letters or numbers" in text:  # e.g. a name in Chinese only
+                text = "Only A–Z and 0–9 are kept: add Latin letters or numbers"
+        # a long folder name keeps its start and end, a message its start
+        self.folder.set_mode(Qt.TextElideMode.ElideMiddle if valid else Qt.TextElideMode.ElideRight)
+        self.folder.setText(text)
+        if hasattr(self, "_ok"):  # not yet while the dialog is built
+            self._ok.setEnabled(valid)  # the folder could not be created
+
+
+class _FolderLabel(ElidedLabel):
+    """The folder name, shortened in the middle when it is long; ``text()`` is the full name."""
+
+    def __init__(self) -> None:
+        super().__init__(mode=Qt.TextElideMode.ElideMiddle)
+
+    def text(self) -> str:
+        return self._full
+
+    def set_mode(self, mode) -> None:
+        self._mode = mode

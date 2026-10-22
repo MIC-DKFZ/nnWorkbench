@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from qtpy.QtGui import QGuiApplication
 from qtpy.QtWidgets import QDialog, QMainWindow, QMessageBox, QStackedWidget, QVBoxLayout, QWidget
 
 from nnworkbench.models.dataset import DatasetRecord
@@ -31,7 +32,8 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("nnWorkbench — nnU-Net workflows and nnInteractive-powered annotation")
-        self.setMinimumSize(1_280, 760)
+        # fits a 1366x768 laptop (about 728 px usable) and 1920x1080 at 150 % scaling (1280x720 minus the task bar)
+        self.setMinimumSize(1_200, 700)
         self.resize(1600, 1000)
         self.context = AppContext(self)
         self.records: list[DatasetRecord] = []
@@ -160,7 +162,13 @@ class MainWindow(QMainWindow):
         if self._guide is None:
             self._guide = QDialog(self)
             self._guide.setWindowTitle("nnWorkbench guide")
-            self._guide.resize(980, 820)
+            # never taller or wider than the screen (minus task bar and title bar), e.g. on a 1366x768 laptop
+            screen = (self.screen() if hasattr(self, "screen") else None) or QGuiApplication.primaryScreen()
+            width, height = 980, 820
+            if screen is not None:
+                room = screen.availableGeometry()
+                width, height = max(480, min(width, room.width() - 40)), max(400, min(height, room.height() - 60))
+            self._guide.resize(width, height)
             layout = QVBoxLayout(self._guide)
             self._guide_view = AnnotationWorkflowGuide(parent=self._guide)
             layout.addWidget(self._guide_view)

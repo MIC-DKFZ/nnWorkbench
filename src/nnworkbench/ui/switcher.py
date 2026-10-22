@@ -2,21 +2,80 @@
 
 from __future__ import annotations
 
-from qtpy.QtCore import QPoint, QSize, Qt, Signal
+from qtpy.QtCore import QPoint, QRect, QRectF, QSize, Qt, Signal
+from qtpy.QtGui import QColor, QFont, QFontMetrics, QPainter
 from qtpy.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QVBoxLayout,
     QWidget,
 )
 
 from nnworkbench.models.dataset import DatasetRecord
 
-from .widgets import availability, button, dataset_id_label, label
+from . import style
+from .widgets import availability_width, button, label, paint_availability
+
+_ROW_HEIGHT = 46
+
+
+class _RowDelegate(QStyledItemDelegate):
+    """Paints a dataset row (ID, name with "…", RAW PRE RES) instead of one widget per row: 1000 datasets
+    took a second to open as widgets. The current dataset's ID is filled blue."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.current_id: int | None = None
+
+    def paint(self, painter: QPainter, option, index) -> None:
+        record: DatasetRecord = index.data(Qt.ItemDataRole.UserRole)
+        background = QStyleOptionViewItem(option)
+        self.initStyleOption(background, index)
+        background.text = ""  # the name is drawn below, elided
+        widget = option.widget
+        (widget.style() if widget else QApplication.style()).drawControl(
+            QStyle.ControlElement.CE_ItemViewItem, background, painter, widget)
+        rect = option.rect.adjusted(16, 0, -18, 0)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        id_font = QFont(style.MONO)
+        id_font.setPixelSize(11)
+        id_font.setBold(True)
+        painter.setFont(id_font)
+        text = f"{record.dataset_id:03d}"
+        metrics = QFontMetrics(id_font)
+        pill = QRectF(rect.x(), rect.center().y() - (metrics.height() + 4) / 2 + 1,
+                      metrics.horizontalAdvance(text) + 12, metrics.height() + 4)
+        current = record.dataset_id == self.current_id
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(style.BLUE if current else "#eef2f7"))
+        painter.drawRoundedRect(pill, 6, 6)
+        painter.setPen(QColor("white" if current else "#475569"))
+        painter.drawText(pill, Qt.AlignmentFlag.AlignCenter, text)
+        pills = availability_width()
+        name_font = QFont(option.font)
+        name_font.setBold(True)
+        painter.setFont(name_font)
+        painter.setPen(QColor(style.TEXT))
+        left = int(pill.right()) + 10
+        name_rect = QRect(left, rect.y(), max(0, rect.right() - pills - 10 - left), rect.height())
+        name = QFontMetrics(name_font).elidedText(record.name, Qt.TextElideMode.ElideRight, name_rect.width())
+        painter.drawText(name_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, name)
+        painter.restore()
+        paint_availability(painter, QRect(rect.right() - pills, rect.y(), pills, rect.height()),
+                           (record.raw_path is not None, record.preprocessed_path is not None,
+                            record.results_path is not None))
+
+    def sizeHint(self, option, index) -> QSize:
+        return QSize(430, _ROW_HEIGHT)
 
 
 class DatasetSwitcher(QFrame):
@@ -43,6 +102,9 @@ class DatasetSwitcher(QFrame):
         self._list = QListWidget()
         self._list.setFixedHeight(322)
         self._list.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self._list.setUniformItemSizes(True)
+        self._delegate = _RowDelegate(self._list)
+        self._list.setItemDelegate(self._delegate)
         self._list.itemActivated.connect(lambda item: self._choose(item))
         self._list.itemClicked.connect(lambda item: self._choose(item))
         layout.addWidget(self._list)
@@ -61,25 +123,14 @@ class DatasetSwitcher(QFrame):
         self._records = records
         self._search.clear()
         self._list.clear()
+        self._delegate.current_id = current.dataset_id if current is not None else None
         current_item = None
         for record in records:
-            item = QListWidgetItem()
+            item = QListWidgetItem(record.name)  # the text: keyboard search; painted by _RowDelegate
             item.setData(Qt.ItemDataRole.UserRole, record)
-            row = QWidget()
-            row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(16, 0, 18, 0)
-            row_layout.setSpacing(10)
-            is_current = current is not None and record.dataset_id == current.dataset_id
-            row_layout.addWidget(dataset_id_label(record.dataset_id, current=is_current))
-            name = label(record.name, bold=True)
-            name.setTextFormat(Qt.TextFormat.PlainText)  # folder names are not HTML
-            row_layout.addWidget(name, 1)
-            row_layout.addWidget(availability(record.raw_path is not None, record.preprocessed_path is not None,
-                                              record.results_path is not None))
-            item.setSizeHint(QSize(430, 46))
+            item.setToolTip(f"{record.name}\n{record.directory_name}")  # long names are shortened with "…"
             self._list.addItem(item)
-            self._list.setItemWidget(item, row)
-            if is_current:
+            if current is not None and record.dataset_id == current.dataset_id:
                 current_item = item
         # Below the button, but always inside the window: shift left if needed and shorten the list on low windows.
         window = anchor.window().geometry()  # global coordinates of the main window's content

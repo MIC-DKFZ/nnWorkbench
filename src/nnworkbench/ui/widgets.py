@@ -7,7 +7,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import ClassVar
 
-from qtpy.QtCore import QByteArray, QPoint, QPointF, QRect, QRectF, QSize, Qt, QUrl, Signal
+from qtpy.QtCore import (
+    QByteArray,
+    QEvent,
+    QObject,
+    QPoint,
+    QPointF,
+    QRect,
+    QRectF,
+    QSize,
+    Qt,
+    QUrl,
+    Signal,
+)
 from qtpy.QtGui import (
     QAction,
     QColor,
@@ -36,7 +48,9 @@ from qtpy.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QStyle,
     QStyledItemDelegate,
+    QStyleOptionButton,
     QTableWidget,
     QTableWidgetItem,
     QToolTip,
@@ -231,6 +245,60 @@ class ElidedLabel(QLabel):
         super().setText(self.fontMetrics().elidedText(self._full, self._mode, width))
 
 
+class _Elider(QObject):
+    """Re-elides the text of labels and buttons (see ``set_elided_text``) whenever they are resized."""
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.Type.Resize:
+            _elide_widget(watched)
+        return False
+
+
+def _elide_widget(widget) -> None:
+    full = widget.property("fullText")
+    if full is None:
+        return
+    if isinstance(widget, QPushButton):  # the room inside the stylesheet padding (and next to an icon)
+        option = QStyleOptionButton()
+        widget.initStyleOption(option)
+        room = widget.style().subElementRect(QStyle.SubElement.SE_PushButtonContents, option, widget).width()
+        if not widget.icon().isNull():
+            room -= widget.iconSize().width() + 4
+    else:
+        room = widget.contentsRect().width()
+    mode = Qt.TextElideMode(int(widget.property("elideMode") or 0))
+    shown = widget.fontMetrics().elidedText(full, mode, max(room - 2, 20))
+    if shown != widget.text():
+        widget.setText(shown)
+
+
+def set_elided_text(widget: QLabel | QPushButton, text: str, mode=Qt.TextElideMode.ElideRight) -> None:
+    """Show ``text`` in a plain label or button, shortened with "…" to the widget's width (full text on hover).
+    The widget keeps its type (unlike ``ElidedLabel``) and may shrink below the text width."""
+    if widget.property("fullText") is None:
+        widget.installEventFilter(_Elider(widget))  # a child: lives as long as the widget
+        policy = widget.sizePolicy()
+        policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        widget.setSizePolicy(policy)
+        widget.setMinimumWidth(40)
+    widget.setProperty("fullText", text)
+    widget.setProperty("elideMode", int(getattr(mode, "value", mode)))
+    widget.setToolTip(text)
+    widget.setText(text)
+    _elide_widget(widget)
+
+
+def elide_to(widget: QLabel, text: str, width: int) -> None:
+    """Show ``text`` shortened with "…" so that the whole widget (with its stylesheet padding) is at most
+    ``width`` wide, e.g. a chip; the full text is the tooltip when it was shortened."""
+    widget.ensurePolished()
+    widget.setText(text)
+    chrome = widget.sizeHint().width() - widget.fontMetrics().horizontalAdvance(text)
+    if widget.sizeHint().width() > width:
+        widget.setText(widget.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, max(width - chrome, 20)))
+        widget.setToolTip(text)
+
+
 def breakable(text: str) -> str:
     """Allow line breaks after "_" in long identifiers (trainer and plans names), so wrapped labels do not widen."""
     return text.replace("_", "_\u200b")
@@ -328,6 +396,68 @@ def availability(raw: bool, preprocessed: bool, results: bool) -> QWidget:
         row.addWidget(item, 0, Qt.AlignmentFlag.AlignVCenter)
     row.addStretch()
     return holder
+
+
+_PILL_PADDING, _PILL_GAP, _PILL_MIN = 6, 4, 24  # as QLabel#availOn/availOff in style.py
+
+
+def _pill_font() -> QFont:
+    font = QFont(QGuiApplication.font())
+    font.setPixelSize(10)
+    font.setBold(True)
+    return font
+
+
+def availability_width() -> int:
+    """Width of the RAW PRE RES pills painted by ``paint_availability``."""
+    metrics = QFontMetricsF(_pill_font())
+    return int(sum(max(metrics.horizontalAdvance(text), _PILL_MIN) + 2 * _PILL_PADDING
+                   for text in ("RAW", "PRE", "RES")) + 2 * _PILL_GAP + 1)
+
+
+def paint_availability(painter: QPainter, rect: QRect, present: Iterable[bool]) -> None:
+    """The RAW PRE RES pills of ``availability`` painted at the left of ``rect``, vertically centred (for item
+    views with hundreds of rows, where one widget per row would be slow)."""
+    painter.save()
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    font = _pill_font()
+    painter.setFont(font)
+    metrics = QFontMetricsF(font)
+    height = metrics.height() + 2
+    x, y = float(rect.x()), rect.center().y() - height / 2 + 1
+    for text, on in zip(("RAW", "PRE", "RES"), present):
+        width = max(metrics.horizontalAdvance(text), _PILL_MIN) + 2 * _PILL_PADDING
+        pill = QRectF(x, y, width, height)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(style.BLUE_SOFT if on else "#eef1f5"))
+        painter.drawRoundedRect(pill, 5, 5)
+        painter.setPen(QColor(style.BLUE if on else "#b6c0cd"))
+        painter.drawText(pill, Qt.AlignmentFlag.AlignCenter, text)
+        x += width + _PILL_GAP
+    painter.restore()
+
+
+class AvailabilityDelegate(QStyledItemDelegate):
+    """Paints the RAW PRE RES pills of an item whose ``Qt.UserRole`` data is ``(raw, preprocessed, results)``."""
+
+    def paint(self, painter: QPainter, option, index) -> None:
+        super().paint(painter, option, index)  # background and selection
+        present = index.data(Qt.ItemDataRole.UserRole)
+        if present:
+            paint_availability(painter, option.rect.adjusted(6, 0, 0, 0), present)
+
+    def sizeHint(self, option, index) -> QSize:
+        return QSize(availability_width() + 12, super().sizeHint(option, index).height())
+
+
+def availability_item(raw: bool, preprocessed: bool, results: bool) -> QTableWidgetItem:
+    """A table item for ``AvailabilityDelegate``; the tooltip names the folders."""
+    item = QTableWidgetItem()
+    item.setData(Qt.ItemDataRole.UserRole, (raw, preprocessed, results))
+    found = [name for name, present in (("nnUNet_raw", raw), ("nnUNet_preprocessed", preprocessed),
+                                        ("nnUNet_results", results)) if present]
+    item.setToolTip("Found in " + ", ".join(found) if found else "Not found in any nnU-Net folder")
+    return item
 
 
 def format_time(timestamp: float | None) -> str:
@@ -432,6 +562,7 @@ class FlowLayout(QLayout):
         x, y, line_height = rect.x(), rect.y(), 0
         for item in self._items:
             hint = item.sizeHint()
+            hint.setWidth(min(hint.width(), max(rect.width(), 1)))  # a wider item is cut to the line, not beyond it
             if x + hint.width() > rect.right() and line_height > 0:
                 x = rect.x()
                 y += line_height + self._spacing
@@ -891,7 +1022,9 @@ def cell_widget(*widgets: QWidget, align_right: bool = False, spacing: int = 4) 
     for widget in widgets:
         widget.ensurePolished()  # stylesheet padding must be known for the column width
         row.addWidget(widget)
-        width += widget.sizeHint().width() + spacing
+        # an ElidedLabel may shrink (with "…"): with its full width the cell would be drawn over the next columns
+        hint = widget.minimumSizeHint() if isinstance(widget, ElidedLabel) else widget.sizeHint()
+        width += hint.width() + spacing
     if not align_right:
         row.addStretch()
     holder.setMinimumWidth(width)
