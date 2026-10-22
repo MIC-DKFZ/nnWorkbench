@@ -10,12 +10,16 @@ from nnworkbench.services.dataset_contents import json_object
 from nnworkbench.services.dataset_json import (
     definition_errors,
     file_ending_error,
+    file_ending_mismatch,
     has_regions,
+    listed_cases,
     manifest_source,
     num_training_error,
 )
+from nnworkbench.services.image_files import has_image_suffix
 from nnworkbench.services.label_analysis import analysis_path, load_label_analysis
 from nnworkbench.services.workflow_status import (
+    UNSUPPORTED_IMAGE_SUFFIXES,
     ModelInfo,
     PlansInfo,
     RawOverview,
@@ -59,6 +63,12 @@ class DatasetState:
         return label_names(self.manifest)
 
     @property
+    def inherits_from(self) -> str:
+        """The dataset this one is a later round of (New iteration writes it into dataset.json), or ""."""
+        value = self.manifest.get("inherits_from") if isinstance(self.manifest, dict) else None
+        return value if isinstance(value, str) else ""
+
+    @property
     def raw_path(self) -> Path | None:
         return self.record.raw_path
 
@@ -76,14 +86,61 @@ class DatasetState:
             problems.append(f"{raw.missing_labels} image{'s' if raw.missing_labels != 1 else ''} without label")
         if not raw.names_valid:
             problems.append("image names need a _0000 channel suffix")
-        if not raw.channels_complete:
+        if raw.unlisted_images:
+            problems.append(f"{len(raw.unlisted_images)} image{'s' if len(raw.unlisted_images) != 1 else ''} in "
+                            f"imagesTr (e.g. {raw.unlisted_images[0]}) not in the \"dataset\" file list of "
+                            "dataset.json: nnU-Net uses only the listed files. Add them to the list, or remove them")
+        if raw.missing_files:
+            problems.append(f"{len(raw.missing_files)} file{'s' if len(raw.missing_files) != 1 else ''} listed in "
+                            f"dataset.json (\"dataset\") not found (e.g. {raw.missing_files[0]})")
+        if raw.channel_problem:
+            problems.append(raw.channel_problem)
+        elif not raw.channels_complete:
             problems.append("channels missing")
+        extra = [] if raw.file_list else sorted(
+            {channel for case in raw.cases for channel in case.extra_channels(raw.required_suffixes)})
+        if extra and not raw.channel_problem:
+            problems.append(f"image files with channel {', '.join('_' + channel for channel in extra)}, which "
+                            f"dataset.json does not list ({raw.channels} channel{'s' if raw.channels != 1 else ''} in "
+                            "channel_names): add the channel there or remove the files")
+        if raw.unsupported_images:
+            problems.append(f"{len(raw.unsupported_images)} JPEG file{'s' if len(raw.unsupported_images) != 1 else ''} "
+                            f"in imagesTr (e.g. {raw.unsupported_images[0]}), which nnU-Net cannot read: convert "
+                            "them to .png or .tif")
+        if raw.unmatched_labels:
+            problems.append(f"{len(raw.unmatched_labels)} label file{'s' if len(raw.unmatched_labels) != 1 else ''} "
+                            f"match no image (e.g. {raw.unmatched_labels[0]}): a label is named like its image "
+                            "without the _0000 (case_001.nii.gz for case_001_0000.nii.gz)")
+        undefined = self.undefined_label_ids()
+        if undefined:
+            problems.append(f"label files contain IDs that dataset.json does not define: "
+                            f"{', '.join(map(str, undefined[:10]))} (see Statistics; e.g. 255 instead of 1); "
+                            "nnU-Net fails on them")
         return problems
 
+    def undefined_label_ids(self) -> list[int]:
+        """Label IDs that Compute statistics found in labelsTr but dataset.json does not define (while the
+        statistics are up to date)."""
+        found = self.analysis.get("undefined_label_ids") if isinstance(self.analysis, dict) else None
+        if not isinstance(found, dict) or self.analysis_outdated:
+            return []
+        ids = {value for values in found.values() if isinstance(values, list) for value in values
+               if isinstance(value, int) and not isinstance(value, bool)}
+        return sorted(ids - set(self.names) - {self.ignore_id})
+
     def data_state(self) -> tuple[str, str]:
+        if self.raw_path is not None and not _is_dir(self.raw_path):
+            return "error", (f"Data · {self.raw_path} no longer exists (moved, renamed or its drive disconnected): "
+                             "reconnect it, or go back to the overview and click Refresh")
         if not self.raw.cases:
             if self.raw_path is None:
                 return "", "Data · no raw data on this computer (nnUNet_raw)"
+            if self.raw.file_list:
+                return "error", "Data · the \"dataset\" file list in dataset.json lists no cases"
+            misplaced = _images_in(self.raw_path)
+            if misplaced:
+                return "error", (f"Data · {misplaced} image{'s are' if misplaced != 1 else ' is'} in the dataset "
+                                 "folder itself: move images into imagesTr (and labels into labelsTr)")
             return "error", "Data · no images in imagesTr yet: add images and labels before preprocessing"
         problems = self.data_problems()
         if problems:
@@ -97,6 +154,10 @@ class DatasetState:
             if any(plans.outdated for plans in preprocessed):
                 return "warn", "Preprocess · outdated: labelsTr changed after preprocessing"
             return "ok", "Preprocess · preprocessed and up to date"
+        if self.plans and self.raw.cases and not self.data_problems():
+            planned = sorted({config.name for plans in self.plans for config in plans.configurations})
+            return "todo", (f"Preprocess · planned ({', '.join(planned)}), but nothing preprocessed yet: preprocess "
+                            "one of these configurations (2D images have no 3d_fullres)")
         if self.raw.cases and not self.data_problems():
             return "todo", "Preprocess · ready to preprocess"
         if self.raw.cases or self.raw_path is not None:
@@ -137,10 +198,13 @@ def _analysis_outdated(raw_path: Path | None, analysis: dict | None) -> int:
         analysed = analysis_path(raw_path).stat().st_mtime
     except OSError:
         return 0
+    listed = listed_cases(raw_path)
     labels = raw_path / "labelsTr"
-    if not labels.is_dir():
-        return 0
     try:
+        if listed is not None:  # the "dataset" file list of dataset.json
+            return sum(1 for _images, path in listed.values() if path.is_file() and path.stat().st_mtime > analysed)
+        if not labels.is_dir():
+            return 0
         return sum(1 for path in labels.iterdir() if path.is_file() and path.stat().st_mtime > analysed)
     except OSError:  # unreadable labelsTr, or a label removed while counting
         return 0
@@ -155,7 +219,8 @@ def _label_analysis(raw_path: Path | None) -> dict | None:
         return None
 
 
-def load_state(record: DatasetRecord) -> DatasetState:
+def load_state(record: DatasetRecord, ended: dict[Path, float] | None = None) -> DatasetState:
+    """Everything the pages show. ``ended``: fold folders whose GUI training job ended, and when (see fold_info)."""
     source = manifest_source(record.raw_path, record.preprocessed_path, record.results_path)
     manifest = json_object(source[1] / "dataset.json") if source else None
     errors = [*definition_errors(manifest), *filter(None, [file_ending_error(manifest)])] \
@@ -170,6 +235,10 @@ def load_state(record: DatasetRecord) -> DatasetState:
         problem = num_training_error(manifest, len(raw.cases))
         if problem:
             errors.append(problem)
+        problem = file_ending_mismatch(manifest, [path.name for case in raw.cases for path in case.image_files],
+                                       [case.label_file.name for case in raw.cases if case.label_file])
+        if problem:
+            errors.append(problem)
     analysis = _label_analysis(record.raw_path)
     return DatasetState(
         record=record,
@@ -178,8 +247,24 @@ def load_state(record: DatasetRecord) -> DatasetState:
         manifest_errors=tuple(errors),
         raw=raw,
         plans=plans_overview(record.preprocessed_path, record.raw_path),
-        models=models_overview(record.results_path),
+        models=models_overview(record.results_path, ended),
         analysis=analysis,
         analysis_outdated=_analysis_outdated(record.raw_path, analysis),
         fold_count=splits_fold_count(record.preprocessed_path),
     )
+
+
+def _is_dir(path: Path) -> bool:
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
+
+
+def _images_in(folder: Path) -> int:
+    """Image files directly in a dataset folder (copied there instead of into imagesTr)."""
+    try:
+        return sum(1 for path in folder.iterdir() if (has_image_suffix(path) or path.suffix.lower()
+                                                       in UNSUPPORTED_IMAGE_SUFFIXES) and path.is_file())
+    except OSError:
+        return 0

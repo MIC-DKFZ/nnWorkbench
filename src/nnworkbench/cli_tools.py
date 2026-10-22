@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import sys
 from pathlib import Path
@@ -21,7 +22,9 @@ from .services.dataset_creator import (
     next_iteration_name,
 )
 from .services.dataset_description import create_description, description_path
+from .services.dataset_json import file_ending_error
 from .services.dataset_scanner import scan_datasets
+from .services.image_files import IMAGE_SUFFIXES, image_suffix
 from .services.workflow_status import (
     label_names,
     mean_class_dice,
@@ -47,6 +50,9 @@ def run_create_dataset(roots: dict[str, Path | None], dataset_id: int, name: str
                        channels: list[str], *, ignore: bool = False, file_ending: str = ".nii.gz",
                        description: str = "", add_description: bool = False, as_json: bool = False) -> int:
     """Create ``DatasetXXX_Name`` with imagesTr, labelsTr and a complete dataset.json (as New dataset in the GUI)."""
+    if file_ending_error({"file_ending": file_ending}) or image_suffix("x" + file_ending) != file_ending:
+        raise ValueError(f"--file-ending {file_ending!r} is not an image ending nnU-Net reads: use one of "
+                         f"{', '.join(IMAGE_SUFFIXES)} (with the dot; JPEG is not supported).")
     names = [label.strip() for label in labels if label.strip()]
     if not names or names[0].casefold() != "background":
         names.insert(0, "background")  # nnU-Net needs background as label 0
@@ -79,20 +85,63 @@ def run_create_dataset(roots: dict[str, Path | None], dataset_id: int, name: str
 
 
 def run_new_iteration(roots: dict[str, Path | None], source_id: int, dataset_id: int | None = None,
-                      name: str | None = None, *, as_json: bool = False) -> int:
-    """Copy imagesTr, labelsTr and dataset.json of a dataset into the next round (as New iteration in the GUI)."""
+                      name: str | None = None, *, link_images: bool = False, as_json: bool = False) -> int:
+    """Copy imagesTr, labelsTr and dataset.json of a dataset into the next round (as New iteration in the GUI);
+    ``link_images`` lists the source's images in dataset.json instead of copying them."""
     records = scan_datasets(roots.get("raw"), roots.get("preprocessed"), roots.get("results"))
     source = next((record for record in records if record.dataset_id == source_id and record.raw_path), None)
     if source is None:
         raise ValueError(f"No dataset with ID {source_id} in nnUNet_raw.")
     new_id = dataset_id or next_free_dataset_id(source_id + 1, _roots_list(roots))
     new_name = name or next_iteration_name(source.name)
-    destination = create_next_iteration(roots.get("raw"), _roots_list(roots), source.raw_path, new_id, new_name)
+    destination = create_next_iteration(roots.get("raw"), _roots_list(roots), source.raw_path, new_id, new_name,
+                                        link_images=link_images)
     result = {"source": source.directory_name, "dataset": destination.name, "dataset_id": new_id,
-              "path": str(destination)}
-    _print(result, as_json, f"Created {destination}\n  from {source.directory_name} (images, labels and "
-           "dataset.json). Annotate there, then preprocess and train the new dataset.")
+              "path": str(destination), "images": "linked" if link_images else "copied"}
+    _print(result, as_json, f"Created {destination}\n  from {source.directory_name} ("
+           + ("images linked in dataset.json; labels and dataset.json copied" if link_images
+              else "images, labels and dataset.json") + "). Annotate there, then preprocess and train the new dataset.")
     return 0
+
+
+def dataset_list(roots: dict[str, Path | None]) -> dict:
+    """Every dataset of the saved folders, for picking a free ID or the latest annotation round."""
+    from .services.dataset_scanner import id_badge
+
+    datasets = []
+    for record in scan_datasets(roots.get("raw"), roots.get("preprocessed"), roots.get("results")):
+        manifest = json_object(record.raw_path / "dataset.json") if record.raw_path else None
+        source = manifest.get("inherits_from") if isinstance(manifest, dict) else None
+        match = re.match(r"^(?P<base>.+)_iter(?P<number>\d+)$", record.name, flags=re.IGNORECASE)
+        badge = id_badge(record)
+        datasets.append({
+            "id": record.dataset_id, "name": record.name, "folder": record.directory_name,
+            "raw": record.raw_path is not None, "preprocessed": record.preprocessed_path is not None,
+            "results": record.results_path is not None,
+            "id_problem": badge[0] if badge else None,
+            # annotation rounds: Cells, Cells_iter1, Cells_iter2 (a branch from the same source has the same name;
+            # the higher ID is the newer one)
+            "base_name": match["base"] if match else record.name,
+            "iteration": int(match["number"]) if match else 0,
+            "inherits_from": source if isinstance(source, str) else None,  # written by new-iteration
+        })
+    return {"datasets": datasets}
+
+
+def run_list(roots: dict[str, Path | None], *, as_json: bool = False) -> int:
+    result = dataset_list(roots)
+    lines = [f"{item['id']:>4}  {item['folder']}  ("
+             + ", ".join(name for name in ("raw", "preprocessed", "results") if item[name]) + ")"
+             + (f"  [{item['id_problem']}]" if item["id_problem"] else "")
+             + (f"  from {item['inherits_from']}" if item["inherits_from"] else "") for item in result["datasets"]]
+    _print(result, as_json, "\n".join(lines) or "No datasets in the saved nnU-Net folders.")
+    return 0
+
+
+def matching_models(models, text: str) -> list:
+    """The models whose label is ``text`` exactly, else those that contain it (all for an empty text)."""
+    exact = [info for info in models if info.label == text]
+    return exact or [info for info in models if text in info.label]
 
 
 def validation_report(roots: dict[str, Path | None], dataset_id: int, model: str = "", fold: str = "") -> dict:
@@ -109,9 +158,9 @@ def validation_report(roots: dict[str, Path | None], dataset_id: int, model: str
         manifest = json_object(record.preprocessed_path / "dataset.json")
     names = label_names(manifest)
     models = []
-    for info in models_overview(record.results_path):
-        if model and model not in info.label:
-            continue
+    fold = fold.removeprefix("fold_")  # the folder name, fold_0, for fold 0
+    overview = models_overview(record.results_path)
+    for info in matching_models(overview, model):
         folds, class_values, cases = {}, {}, []
         for fold_info in info.folds:
             if fold and fold_info.name != fold:
@@ -136,6 +185,10 @@ def validation_report(roots: dict[str, Path | None], dataset_id: int, model: str
                        "configuration": info.configuration, "mean_dice": info.mean_dice, "folds": folds,
                        "classes": {name: sum(values) / len(values) for name, values in class_values.items()},
                        "cases": cases})
+    if not models and (model or fold) and any(fold_info.dice is not None for info in overview for fold_info in info.folds):
+        # not "no results yet": an agent would train again
+        available = "; ".join(f"{info.label} (folds {', '.join(item.name for item in info.folds)})" for info in overview)
+        raise ValueError(f"No validation results match --model '{model}' --fold '{fold}'. Models: {available}.")
     return {"dataset": record.directory_name, "models": models}
 
 
@@ -172,6 +225,7 @@ def _format_validation(report: dict, limit: int, fold: str = "") -> str:
 
 def run_validation(roots: dict[str, Path | None], dataset_id: int, *, model: str = "", fold: str = "",
                    limit: int = 10, as_json: bool = False, open_case: str = "") -> int:
+    fold = fold.removeprefix("fold_")
     report = validation_report(roots, dataset_id, model, fold)
     if open_case:
         return _open_validation_case(roots, report, dataset_id, open_case)
@@ -219,6 +273,7 @@ def suggestion(roots: dict[str, Path | None], dataset_id: int, step: str, *, dev
         default_plans,
         next_fold,
         prediction_folds,
+        preprocessing_configuration,
         preprocessing_processes,
         trainer_for,
     )
@@ -233,10 +288,13 @@ def suggestion(roots: dict[str, Path | None], dataset_id: int, step: str, *, dev
                      else "device: GPU (nnU-Net's default; device not checked)")
     if step == "preprocess":
         processes = preprocessing_processes()
-        command = preprocessing_command(dataset, [DEFAULT_CONFIGURATION], DEFAULT_PLANNER, processes=processes)
+        configuration = preprocessing_configuration(state.manifest, (config.name for plans in state.plans
+                                                                     for config in plans.configurations))
+        command = preprocessing_command(dataset, [configuration], DEFAULT_PLANNER, processes=processes)
         reasons = [(f"planner {DEFAULT_PLANNER}: the default (needs ~24 GB of GPU memory for training; with less, "
                     "use nnUNetPlannerResEncM or ExperimentPlanner)"),
-                   f"configuration {DEFAULT_CONFIGURATION}: for 3D images (use 2d for 2D images)",
+                   (f"configuration {configuration}: " + ("2D images (.png/.bmp, or plans without 3d_fullres)" if configuration == "2d"
+                                                          else "for 3D images (use 2d for 2D images)")),
                    f"{processes} processes (-np): up to 8, never more than CPU cores",
                    "--verify_dataset_integrity: checks the dataset before preprocessing"]
     elif step == "train":
@@ -265,7 +323,7 @@ def suggestion(roots: dict[str, Path | None], dataset_id: int, step: str, *, dev
                     "splits_final.json, then all)"),
                    device_reason]
     elif step == "predict":
-        models = [item for item in state.models if item.finished_folds and (not model or model in item.label)]
+        models = [item for item in matching_models(state.models, model) if item.finished_folds]
         if not models:
             raise ValueError("No model with a finished fold" + (f" matching '{model}'" if model else "") + ".")
         chosen = models[0]
@@ -291,7 +349,31 @@ def suggestion(roots: dict[str, Path | None], dataset_id: int, step: str, *, dev
         raise ValueError("Step must be preprocess, train or predict.")
     arguments = ["nnworkbench-run", *shlex.split(command)]
     return {"dataset": state.record.directory_name, "step": step, "command": wrapped_command(command),
-            "arguments": arguments, "reasons": reasons}
+            "arguments": arguments, "reasons": reasons,
+            "warnings": _suggest_warnings(state, step, input_directory, output_directory)}
+
+
+def _suggest_warnings(state, step: str, input_directory: str = "", output_directory: str = "") -> list[str]:
+    """What speaks against running the suggested command now (the GUI disables or asks in these cases)."""
+    warnings = []
+    if step == "preprocess" and state.data_problems():
+        warnings.append("Data must be fixed first: " + "; ".join(state.data_problems()))
+    if step == "train":
+        if any(plans.outdated for plans in state.plans):
+            warnings.append("Preprocessing is outdated (labelsTr changed after it): preprocess again first, or the "
+                            "training uses the old labels.")
+        for model in state.models:
+            for fold in model.folds:
+                if fold.status in ("training", "stopped"):
+                    warnings.append(f"{model.label} fold {fold.name} is {fold.status}" + (
+                        ": wait for it" if fold.status == "training" else ": resume it with --c before a new fold"))
+    if step == "predict" and input_directory:
+        source = Path(input_directory)
+        if not source.is_dir():
+            warnings.append(f"The input folder {source} does not exist.")
+        elif output_directory and source.resolve() == Path(output_directory).resolve():
+            warnings.append("The output folder is the input folder: choose another output folder.")
+    return warnings
 
 
 def run_suggest(roots: dict[str, Path | None], dataset_id: int, step: str, *, check_device: bool = True,
@@ -301,7 +383,9 @@ def run_suggest(roots: dict[str, Path | None], dataset_id: int, step: str, *, ch
     device = probe_device() if check_device and step in ("train", "predict") else None
     result = suggestion(roots, dataset_id, step, device=device, model=model, input_directory=input_directory,
                         output_directory=output_directory)
-    _print(result, as_json, result["command"] + "\n\nWhy:\n" + "\n".join(f"  - {reason}" for reason in result["reasons"]))
+    warnings = "".join(f"\nWarning: {warning}" for warning in result["warnings"])
+    _print(result, as_json, result["command"] + "\n\nWhy:\n" + "\n".join(f"  - {reason}" for reason in result["reasons"])
+           + ("\n" + warnings if warnings else ""))
     return 0
 
 

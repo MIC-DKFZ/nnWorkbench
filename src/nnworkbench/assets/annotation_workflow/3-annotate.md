@@ -96,7 +96,7 @@ nnInteractive creates instance segmentations, meaning that individual objects ar
 - Turn on the **Annotation Workflow** switch in the top bar. On the **Data** page, click the pencil button (**Annotate**) next to a case. The same button continues a saved annotation.
 - Napari opens with the image, its semantic map (empty or previously saved) and the nnInteractive controls, with the semantic map output already enabled.
 - Initialize nnInteractive and segment each object as described above. Use the [annotation IDs](#annotation-ids) listed in the **nnWorkbench — Annotation saving** panel.
-- Click **Save annotation**. The semantic map is saved to `labelsTr` with the correct filename and the original IDs. **Close Napari (Ctrl+C)** closes the window when you are done.
+- Click **Save annotation**. The semantic map is saved to `labelsTr` with the correct filename and the original IDs. **Close Napari (Ctrl+W, on macOS Cmd+W)** closes the window when you are done.
 
 ![Napari during annotation in nnWorkbench: nnInteractive is initialized, a positive point segments the next cell, Label Aggregation writes it to the semantic map with Class ID 2, and the nnWorkbench — Annotation saving panel lists the annotation IDs](images/annotate-nninteractive.png)
 

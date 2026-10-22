@@ -9,6 +9,7 @@ to the final model. Humans start better with the [README](README.md) and the
 
 ```bash
 nnworkbench-set-paths --raw R --preprocessed P --results S          # once per computer
+nnworkbench-run list --json                                           # which datasets exist (IDs, rounds)
 nnworkbench-run create-dataset -d 42 --name Cells --labels background,cell --ignore --channels fluorescence --add-description
 nnworkbench-run status -d 42 --json                                   # where are we, what is missing, which device
 nnworkbench-run annotate -d 42 --case cells_001                       # human annotates in Napari (pencil)
@@ -71,20 +72,25 @@ Find out early, from how they write or by asking "Have you trained a segmentatio
 1. **Environment:** `nnworkbench-run --help` must work (activate the user's environment if not).
    `nnworkbench-gui` prints an install hint in the core installation: annotating and inspecting need the full one
    (`pip install -e ".[all]"` from source, later `pip install "nnworkbench[all]"`).
-2. **Folders:** `nnworkbench-get-paths`. If not set, ask where the data should live (step 2 below).
+2. **Folders:** `nnworkbench-get-paths`. If not set, ask where the data should live (step 2 below). Without saved
+   folders, nnWorkbench uses nnU-Net's `nnUNet_raw`/`nnUNet_preprocessed`/`nnUNet_results` variables when they are
+   set; saved folders win over them (`environment_differs` in `get-paths --json` and a note on stderr say when
+   they differ). `nnworkbench-run list --json` lists the datasets (free IDs, annotation rounds).
 3. **Project notes:** read `nnworkbench/project-notes.md` in the dataset folder (`nnUNet_raw/DatasetXXX_Name/`) if it
    exists.
-4. **State:** `nnworkbench-run status -d <ID> --json`, then pick the next step:
+4. **State:** `nnworkbench-run status -d <ID> --json`, then pick the next step: the first row that matches, from
+   the top.
 
 | `status` shows | Next step |
 | --- | --- |
-| Dataset not found | Interview (step 1), then create it (step 2) |
-| `stages.data.state == "error"` | Fix what `problems` lists (step 2) |
-| Images but few or no label files, Annotation Workflow | Human annotates (step 3) |
-| `stages.preprocess.state` is `todo` or `warn` (labels changed after preprocessing) | Preprocess (again) (step 4) |
-| `stages.train.state == "todo"` | Train fold 0 (step 5) |
-| A fold with `status == "training"` | Wait; check again in 30–60 minutes |
+| Dataset not found (`error` says "No dataset with ID"; `list --json` shows what exists) | Interview (step 1), then create it (step 2) |
+| A fold with `status == "training"` (`models[].folds[]`) | Wait; check again in 30–60 minutes |
 | A fold with `status == "stopped"` | Ask, then resume it with `--c` (step 5) |
+| Annotation Workflow and `unlabeled_cases` not empty (`problems` then says "… without label") | Human annotates (step 3), or remove the images that will not be annotated |
+| `stages.data.state == "error"` | Fix what `problems` lists (step 2) |
+| `stages.preprocess.state` is `todo` or `warn` (labels changed after preprocessing) | Preprocess (again) (step 4) |
+| `stages.train.state == "todo"` (no fold yet) | Train fold 0 (step 5) |
+| Fewer than 5 finished folds and the user wants a reliable model | Next fold: `suggest --step train` (step 5) |
 | Finished folds, `stages.validate.state == "ok"` | Validation summary and human check (step 6) |
 | Human says "good enough" | Predict (step 8) |
 | Human says "not yet" | Next round (step 7) |
@@ -140,9 +146,9 @@ Ask one or two questions at a time. Each answer below says what it decides.
 
 | `device` in `status` | Planner (`-pl`) → plans (`-p`) | Device flag |
 | --- | --- | --- |
-| NVIDIA, ≥ 24 GB | `nnUNetPlannerResEncL` → `nnUNetResEncUNetLPlans` (default) | none |
-| NVIDIA, 9–11 GB | `nnUNetPlannerResEncM` → `nnUNetResEncUNetMPlans` | none |
-| NVIDIA, ~8 GB | `ExperimentPlanner` → `nnUNetPlans` | none |
+| NVIDIA, `memory_gb` ≥ 20 (a "24 GB" card reports about 23.5: GiB) | `nnUNetPlannerResEncL` → `nnUNetResEncUNetLPlans` (default) | none |
+| NVIDIA, 9–20 | `nnUNetPlannerResEncM` → `nnUNetResEncUNetMPlans` | none |
+| NVIDIA, below 9 | `ExperimentPlanner` → `nnUNetPlans` | none |
 | Apple GPU (`kind: mps`) | `nnUNetPlannerResEncM` | `-device mps` (slow; suggest a cluster for training) |
 | CPU only | — | `-device cpu` only if the user accepts days per fold; suggest a cluster |
 | `problem` is set | — | Tell the user the fix in `device.problem` (e.g. PyTorch without CUDA on Windows) |
@@ -197,6 +203,19 @@ nnworkbench-set-paths --raw /data/nnUNet_raw --preprocessed /data/nnUNet_preproc
 nnworkbench-run create-dataset -d 42 --name CellSegmentation --labels background,cell,nucleus --ignore --channels fluorescence --add-description --json
 ```
 
+- Create the three folders first (empty is fine); `set-paths` stores absolute paths and lists folders that do not
+  exist yet in `missing`.
+- `--file-ending` is `.nii.gz` by default: pass the ending of the images for anything else, e.g. `--file-ending .png`
+  or `.tif` (exactly as the files end, also upper/lower case; `status` reports images or labels with another ending).
+- **Colour images** (RGB/RGBA `.png`, `.bmp`, `.tif`, one file per image): nnU-Net reads each colour as a channel,
+  so name all of them, e.g. `--channels R,G,B` (one `_0000` file covers the three); `status` reports a mismatch.
+  Annotating shows them as one colour image with a 2D label.
+- **A `dataset.json` with a `"dataset"` file list** (per case `{"images": [...], "label": "..."}`, relative to the
+  dataset folder or absolute, `$VARS` expanded): nnU-Net and nnWorkbench then use these files and ignore
+  imagesTr/labelsTr; `status`, statistics, `annotate`/`inspect` and preprocessing work as usual (annotations are
+  saved to the listed label file). `new-iteration` copies the files into imagesTr/labelsTr of the new round
+  (`case_0000…`, without the list).
+
 - Pick an unused dataset ID (`create-dataset` refuses used ones). `--ignore` only for sparse labels. nnU-Net
   recognises the ignore label only by the exact key `ignore` (lower case); `Ignore` or ` ignore ` would be trained
   as a normal class, so `status` reports it as a problem.
@@ -209,8 +228,9 @@ nnworkbench-run create-dataset -d 42 --name CellSegmentation --labels background
   real voxel size), then rename the result like the other cases.
 - **`numTraining`** in `dataset.json` = number of cases in `imagesTr` (edit the JSON; keep everything else).
 - **Check:** `status -d 42 --json` → `stages.data.state` is not `error`; `problems` says what is left. With existing
-  labels, offer `nnworkbench-run compute-statistics -d 42` (classes per image) and a look:
-  `nnworkbench-run inspect -d 42 --case cells_001`.
+  labels, always run `nnworkbench-run compute-statistics -d 42 --json`: `undefined_label_ids` must be empty (e.g. 255
+  instead of 1 fails in nnU-Net; `status` lists them under `problems` while the statistics are up to date). Then offer
+  a look: `nnworkbench-run inspect -d 42 --case cells_001`.
 
 ## 3. Annotate (human, Annotation Workflow)
 
@@ -241,19 +261,22 @@ Notes:
   ([napari-nninteractive](https://github.com/MIC-DKFZ/napari-nninteractive)).
 - **GUI alternative:** `nnworkbench-gui` → dataset → switch on **Annotation Workflow** → **Data** page → pencil.
 - More on strategy: [3. Annotate](src/nnworkbench/assets/annotation_workflow/3-annotate.md).
-- Afterwards, `status --json` shows the new label files; update `numTraining` if images were added.
+- Afterwards, `status --json` shows the new label files (`labeled_cases`, `unlabeled_cases[]`); update
+  `numTraining` if images were added.
 
 ## Use `suggest` for every run command
 
 `nnworkbench-run suggest -d 42 --step preprocess|train|predict --json` returns the exact command the GUI would
 prefill (same rules, shared code) in `command` (shell-quoted) and `arguments` (list), with the reason for each
-choice in `reasons`. It picks the trainer from sparse/dense labels, the default plans and configuration, the next
+choice in `reasons`, and in `warnings[]` what speaks against running it now (data problems, outdated
+preprocessing, a fold still training or stopped, a missing input or output = input). It picks the trainer from sparse/dense labels, the default plans and configuration, the next
 fold the model does not have yet, the finished folds for prediction, and the device flag from the device check
 (`--no-device` assumes an NVIDIA GPU). Start from it and change only what the interview requires:
 
 - **Planner** (preprocess): `suggest` always proposes `nnUNetPlannerResEncL`; use the device table in the interview
   for smaller GPUs, and train with the matching plans afterwards.
-- **Configuration**: `suggest` proposes `3d_fullres`; use `2d` for 2D images.
+- **Configuration**: `suggest` proposes `3d_fullres`, and `2d` for `.png`/`.bmp` images or when the plans have no
+  `3d_fullres`; use `2d` for 2D `.tif` images too.
 - **Predict**: pass `--input` and `--output` (otherwise placeholders); `--model` picks a model by name.
 
 The sections below explain the choices, for when the user wants something else.
@@ -264,7 +287,8 @@ The sections below explain the choices, for when the user wants something else.
 nnworkbench-run nnUNetv2_plan_and_preprocess -d 42 -c 3d_fullres -pl nnUNetPlannerResEncL --verify_dataset_integrity
 ```
 
-`-c 2d` for 2D images. Planner from the device table. Needs no GPU; takes minutes to hours. Run it again (same
+`-c 2d` for 2D images (nnU-Net plans no `3d_fullres` for them and skips it without an error; `status` then says
+"planned (2d), but nothing preprocessed yet"). Planner from the device table. Needs no GPU; takes minutes to hours. Run it again (same
 command) when labels changed afterwards (`stages.preprocess.state == "warn"`). Fewer processes if RAM runs out:
 `-np 4`.
 
@@ -280,9 +304,15 @@ nnworkbench-run nnUNetv2_train 42 3d_fullres 0 -tr nnUNetTrainerBetterIgnoreSamp
   another or in parallel on several GPUs). Fold `all` trains on everything but gives no validation score.
 - **Long runs** must survive the session: a cluster job, `nohup … > train_42_fold0.log 2>&1 &`, or the user's own
   terminal. Note the log path and job ID in the project notes.
-- **Following:** `status --json` → `models[].folds[]` (`status`, `epoch`, `total_epochs`, `pseudo_dice`, `dice`).
+- **Following:** `status --json` → `models[].folds[]` (`status`, `epoch`, `total_epochs`, `pseudo_dice`, `dice`,
+  `log_age_seconds`). The status is read from the fold folder (the training may run on a cluster): `training` and
+  `stopped` are a guess from how long ago the log changed, so say "the log was updated 3 minutes ago".
   nnU-Net writes `training_log_*.txt` and `progress.png` into each fold folder. Check every 30–60 minutes, not
-  constantly. `stopped` means the log was not updated for 15 minutes: resume with the same command plus `--c`.
+  constantly. `stopped` means the log was not updated for 15 minutes (or two epochs, when epochs are slower): check
+  that the job or process is gone, then resume with the same command plus `--c`. `nnUNetv2_train` refuses `--c` and
+  a new start on a fold that is still `training`; add `--yes` only when you know that run has ended.
+- **Fewer than 5 cases:** folds `0`–`4` need at least 5 cases (nnU-Net splits them in 5); train fold `all`, or
+  annotate more first.
 - **Training a fold again** (e.g. after more annotations in the same dataset): `nnUNetv2_train` refuses when the
   fold already has results; after the user agreed, add `--yes`. Prefer a new round (`new-iteration`) to keep the
   old model for comparison.
@@ -312,8 +342,17 @@ are understood, and another round brought only small improvements. Typical error
 ## 7. Next annotation round (Annotation Workflow)
 
 ```bash
-nnworkbench-run new-iteration -d 42 --json
+nnworkbench-run new-iteration -d 43 --json
 ```
+
+`--link-images` does not copy the images: the new `dataset.json` lists the source's images (`"dataset"` file list,
+relative paths; the labels are copied, they change). Use it for large datasets; nnU-Net then reads only the
+listed files, so new images must be added to the list too (`status` reports images in imagesTr outside it). Every
+new round names its source in `dataset.json` (`"inherits_from": "Dataset042_…"`; also in `status` and `list`).
+
+`-d` is the latest round (the `dataset_id` of the last `new-iteration`, noted in the project notes), not the first
+dataset: the name continues from the source (`Cells_iter1` → `Cells_iter2`); a second round from the same source
+is a branch and gets the same name under a new ID (`Cells_iter1` twice is fine, the ID tells them apart).
 
 Copies images, labels and `dataset.json` into a new dataset (e.g. `Dataset043_CellSegmentation_iter1`); the previous
 round and its model stay unchanged for comparison; it also copies the `nnworkbench/` folder (description and project
@@ -345,34 +384,47 @@ nnworkbench-run inspect-predictions OUT --images IN
 
 ## Output reference
 
-- **`status --json`:** `dataset`, `cases`, `channels`, `labels` (`sparse`/`dense`), `ignore_label`, `problems[]`,
-  `device` (`kind` = `cuda`/`mps`/`cpu`/`unknown`, `gpus[]` with `name`, `memory_gb`, `torch`, `cuda`, `problem`;
-  `null` with `--no-device`), `stages.<data|preprocess|train|validate|predict>` with `state`
-  (`ok`, `todo` = ready to run, `warn` = outdated, `error` = must be fixed, `none`) and `detail`, `plans[]`,
-  `models[]` with `trainer`, `plans`, `configuration`, `mean_dice`, `folds[]` (`fold`, `status` =
-  `done`/`training`/`stopped`/`reduced`, `epoch`, `total_epochs`, `pseudo_dice`, `dice`); a value that is missing
-  or not a finite number (NaN, Infinity) is `null`.
-- **`validation --json`:** `dataset`, `models[]` with `model`, `mean_dice`, `folds` (fold → Dice), `classes`
-  (class → Dice), `cases[]` weakest first (`case`, `fold`, `dice`, `weakest_class`, `weakest_dice`, `prediction`).
+- **`status --json`:** `dataset`, `inherits_from` (the source round, or `null`), `images_listed` (cases from the
+  `"dataset"` file list of dataset.json), `folders` (`raw`, `preprocessed`, `results`; `null` when absent), `cases`,
+  `labeled_cases`, `unlabeled_cases[]` (case names), `channels`, `labels` (`sparse`/`dense`), `ignore_label`,
+  `problems[]`, `device` (`kind` = `cuda`/`mps`/`cpu`/`unknown`, `summary`, `gpus[]` with `name` and `memory_gb`
+  (GiB), `torch`, `cuda`, `problem`; `null` with `--no-device`), `stages.<data|preprocess|train|validate|predict>`
+  with `state` (`ok`, `todo` = ready to run, `warn` = outdated, `error` = must be fixed, `none`) and `detail`,
+  `plans[]` (`name`, `planner`, `configurations[]` that are preprocessed, `outdated`), `models[]` with `trainer`,
+  `plans`, `configuration`, `mean_dice`, `folds[]` (`fold`, `status` = `done`/`training`/`stopped`/`reduced`,
+  `epoch`, `total_epochs`, `pseudo_dice`, `dice`, `log_age_seconds` = seconds since the training log changed); a
+  value that is missing or not a finite number (NaN, Infinity) is `null`.
+- **`validation --json`:** `dataset`, `models[]` with `model`, `trainer`, `plans`, `configuration`, `mean_dice`,
+  `folds` (fold → Dice), `classes` (class → Dice), `cases[]` weakest first (`case`, `fold`, `dice`,
+  `weakest_class`, `weakest_dice`, `prediction`).
   `classes` and `cases` come from the cross-validation folds only (each case once); fold `all` (validated on its own
-  training cases) only with `--fold all`. The text output lists the classes weakest first, one per line.
-- **`suggest --json`:** `dataset`, `step`, `command` (shell-quoted), `arguments` (list), `reasons[]`.
-- **`reduce-checkpoints --dry-run --json`** (and without `--yes`): `model`, `dry_run`, `actions[]` (`action`, `path`).
+  training cases) only with `--fold all`. The text output lists the classes weakest first, one per line. `--model`
+  takes the exact model name (or a part of it), `--fold` `0` or `fold_0`; when they match no results, it is an error
+  that lists the models and folds.
+- **`suggest --json`:** `dataset`, `step`, `command` (shell-quoted), `arguments` (list), `reasons[]`, `warnings[]`.
+- **`reduce-checkpoints --dry-run --json`:** `model`, `dry_run`, `actions[]` (`action`, `path`); without `--yes` the
+  same object plus `error`, exit code 1.
 - **`create-dataset --json`:** `dataset`, `path`, `dataset_json` (+ `description` with `--add-description`).
   **`describe --json`:** `dataset`, `path`, `created` (false if it existed). **`new-iteration --json`:** `source`, `dataset`,
-  `dataset_id`, `path`.
+  `dataset_id`, `path`, `images` (`copied`/`linked`).
 - **`compute-statistics --json`:** `dataset`, `path` (`nnworkbench/class_distribution.json`), `files_analyzed`, `classes[]`,
   `per_image[]`, `undefined_label_ids`, `unreadable_files[]`. **`stack-images --json`:** `input`, `output`, `file_type`, `scale_factor`,
   `spacing`. **`reduce-checkpoints --json`:** `model`, `folds[]`, `trainer_name_reset`.
+- **`list --json`:** `datasets[]` with `id`, `name`, `folder`, `raw`/`preprocessed`/`results` (present), `id_problem`,
+  `base_name` and `iteration` (from the `_iterN` name; a second round from the same source has the same name, the
+  higher ID is the newer one), `inherits_from` (the source round, from dataset.json).
 - **`nnworkbench-get-paths --json`:** `config`, `paths` (`nnUNet_raw`, `nnUNet_preprocessed`, `nnUNet_results`,
-  `nnUNet_extTrainer`); `nnworkbench-set-paths … --json`: `saved`, `paths`.
+  `nnUNet_extTrainer`), `environment_differs[]` (nnU-Net variables that point elsewhere); `nnworkbench-set-paths … --json`: `saved`, `paths`, `missing[]` (folders that do not exist).
 - Every JSON object starts with `"schema_version": 1`; the number increases only when a field is renamed or removed
   (new fields keep it). Check it if you depend on exact fields.
 - With `--json`, stdout holds only the JSON result; progress and library logs go to stderr. Errors are JSON as well
   (`{"error": "…"}`) with exit code 1. Wrong options exit with 2 (usage message on stderr). Without `--json`, errors
   print a readable message and exit non-zero.
-- `annotate`, `inspect`, `inspect-predictions` and `validation --open` only open Napari for the human and have no
+- `annotate`, `inspect`, `inspect-predictions` and `validation --open` only open Napari for the human and refuse
   `--json`; they return when Napari is closed.
+- A job killed by a signal exits with 128 + the signal number (137: killed, often out of memory).
+- Commands that nnWorkbench prints (`suggest`, `--dry-run`, the GUI's Copy command) are quoted for bash/zsh and
+  PowerShell alike (single quotes, one command per line); on Windows run them in PowerShell, not the command prompt.
 
 ## Troubleshooting
 

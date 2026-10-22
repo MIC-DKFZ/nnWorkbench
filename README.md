@@ -95,7 +95,7 @@ or from source (works now, inside the cloned repository):
 pip install -e ".[all]"
 ```
 
-The right command for your CUDA version is on [pytorch.org](https://pytorch.org/get-started/locally/). Everything works in PowerShell and the Windows command prompt.
+The right command for your CUDA version is on [pytorch.org](https://pytorch.org/get-started/locally/). These installation commands work in PowerShell and the Windows command prompt. Commands that nnWorkbench shows or copies (**Copy command**) are written for PowerShell (as for bash and zsh on Linux and macOS), not for the command prompt.
 
 </details>
 
@@ -154,7 +154,7 @@ Start the GUI with `nnworkbench-gui`.
 4. **Preprocess.** On **Preprocess**, click **▶ Preprocess…** and then **▶ Preprocess**, or **Copy command** to run it on a remote machine. The defaults are a good start.
 5. **Train.** On **Train**, click **▶ Train…**, choose the folds and click **▶ Train**, or **Copy command** to run it on a remote machine. The console at the bottom shows the progress.
 6. **Validate.** On **Validate**, click a fold of your model to see its Dice score per case, sort by **Dice** to see the weakest cases first, and open any case in Napari to compare the prediction with your label.
-7. **Iterate** *(Annotation Workflow only)*. Where the model is still wrong, start another annotation round: select the dataset on the start screen and click **＋ New iteration**. It copies the images and labels into a new dataset; continue there with step 3 and annotate where the model fails.
+7. **Iterate** *(Annotation Workflow only)*. Where the model is still wrong, start another annotation round: select the dataset on the start screen and click **＋ New iteration**. It copies the images and labels into a new dataset (or links the images, to save space); continue there with step 3 and annotate where the model fails.
 8. **Predict.** On **Predict**, choose a folder of new images and an output folder and click **▶ Predict**, or **Copy command** to run it on a remote machine.
 
 ![The Data page of a dataset with sparse labels: the cases with their images and labels, dataset.json and the how-to](src/nnworkbench/assets/images/gui-data.png)

@@ -1,3 +1,5 @@
+import os
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -191,8 +193,14 @@ def test_windows_quoting_and_argument_splitting(monkeypatch) -> None:
     monkeypatch.setattr(commands, "WINDOWS", True)
     assert commands.split_arguments(r'-chk "C:\models\best ckpt.pth" -o D:\out') == [
         "-chk", r"C:\models\best ckpt.pth", "-o", r"D:\out"]
+    # PowerShell habits and cmd-style quotes inside an option: one argument each, backslashes kept
+    assert commands.split_arguments(r"""-chk 'checkpoint best.pth' -pretrained_weights="C:\My Folder\w.pth" """) == [
+        "-chk", "checkpoint best.pth", r"-pretrained_weights=C:\My Folder\w.pth"]
     internal = commands.prediction_command(1, r"C:\My data", r"D:\out", "nnUNetPlans", "3d_fullres")
-    assert commands.wrapped_command(internal).startswith(r'nnworkbench-run nnUNetv2_predict -i "C:\My data" -o D:\out')
+    # single quotes: read alike by PowerShell and bash (cmd is not supported)
+    assert commands.wrapped_command(internal).startswith(r"nnworkbench-run nnUNetv2_predict -i 'C:\My data' -o 'D:\out'")
+    assert commands.shell_quote(r"C:\Users\Ana\R&D") == r"'C:\Users\Ana\R&D'"
+    assert commands.shell_quote("Ana's data") == "'Ana''s data'"  # PowerShell doubles it
 
 
 def test_status_command_reports_stages_and_problems(tmp_path, monkeypatch, capsys) -> None:
@@ -397,6 +405,7 @@ def test_training_an_existing_fold_again_needs_yes(tmp_path, monkeypatch, capsys
     fold = tmp_path / "results" / "Dataset042_Cells" / "nnUNetTrainer__nnUNetResEncUNetLPlans__3d_fullres" / "fold_0"
     fold.mkdir(parents=True)
     (fold / "training_log_1.txt").touch()
+    os.utime(fold / "training_log_1.txt", (time.time() - 3600,) * 2)  # stopped an hour ago, not training
     command = ["nnUNetv2_train", "42", "3d_fullres", "0", "-p", "nnUNetResEncUNetLPlans"]
     calls = []
     monkeypatch.setattr(command_runner, "find_executable", lambda name: name)

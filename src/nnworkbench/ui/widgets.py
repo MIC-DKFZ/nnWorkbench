@@ -15,6 +15,7 @@ from qtpy.QtCore import (
     QPointF,
     QRect,
     QRectF,
+    QRegularExpression,
     QSize,
     Qt,
     QUrl,
@@ -27,12 +28,12 @@ from qtpy.QtGui import (
     QFontMetricsF,
     QGuiApplication,
     QIcon,
-    QIntValidator,
     QKeySequence,
     QLinearGradient,
     QPainter,
     QPen,
     QPixmap,
+    QRegularExpressionValidator,
 )
 from qtpy.QtSvg import QSvgRenderer
 from qtpy.QtWidgets import (
@@ -730,7 +731,10 @@ class ToggleGroup(QFrame):
             self._group.addButton(option, index)
             row.addWidget(option)
         self._group.button(0).setChecked(True)
-        self._group.idClicked.connect(self.changed.emit)
+        self._group.idClicked.connect(self._clicked)  # a method: dropped with this widget (see _TableEditor)
+
+    def _clicked(self, index: int) -> None:
+        self.changed.emit(index)
 
     def set_tooltip(self, index: int, text: str) -> None:
         self._group.button(index).setToolTip(text)
@@ -848,14 +852,15 @@ class NumberField(QLineEdit):
     def __init__(self, minimum: int = 0, maximum: int = 99, value: int = 0, parent=None) -> None:
         super().__init__(parent)
         self._minimum, self._maximum, self._value = minimum, maximum, value
-        self.setValidator(QIntValidator(minimum, maximum, self))
+        # Digits only: QIntValidator also takes the locale's group separators ("1,000", in German "1.000"),
+        # which int() then read as another number. Spaces around a pasted number are fine.
+        self.setValidator(QRegularExpressionValidator(QRegularExpression(r"\s*[+-]?\d{0,9}\s*"), self))
         self.setText(str(value))
         self.textEdited.connect(self._typed)
         self.editingFinished.connect(lambda: self.setText(str(self._value)))  # e.g. an empty field again
 
     def setRange(self, minimum: int, maximum: int) -> None:
         self._minimum, self._maximum = minimum, max(minimum, maximum)
-        self.setValidator(QIntValidator(self._minimum, self._maximum, self))
         self.setValue(self._value)
 
     def value(self) -> int:
@@ -875,9 +880,13 @@ class NumberField(QLineEdit):
     def stepDown(self) -> None:
         self.setValue(self._value - 1)
 
+    def focusOutEvent(self, event) -> None:
+        super().focusOutEvent(event)
+        self.setText(str(self._value))  # an empty or out-of-range field shows the number that is used
+
     def _typed(self, text: str) -> None:
         try:
-            number = int(text)  # also "+5" and "-3", which the validator accepts
+            number = int(text.strip())  # also "+5" and "-3", which the validator accepts
         except ValueError:  # e.g. empty or only a sign while typing
             return
         if self._minimum <= number <= self._maximum and number != self._value:
@@ -915,6 +924,7 @@ def with_stepper(field) -> QWidget:
         arrow.setToolTip(tooltip)
         arrow.setCursor(Qt.CursorShape.PointingHandCursor)
         arrow.setAutoRepeat(True)  # keep pressed to count on
+        arrow.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # the field takes ↑/↓; no two extra Tab stops
         arrow.clicked.connect(lambda _checked=False, step=step: step())
         arrows.addWidget(arrow)
     row.addLayout(arrows)
@@ -960,7 +970,7 @@ def make_table(headers: Iterable[str], *, stretch: int | None = 0, row_height: i
     table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
     table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
     table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-    table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # Ctrl+C on a clicked cell, arrow keys without a mouse
     table.setWordWrap(False)
     header = table.horizontalHeader()
     header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)

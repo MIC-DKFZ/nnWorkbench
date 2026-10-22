@@ -12,7 +12,7 @@ from html import escape
 from pathlib import Path
 
 from qtpy.QtCore import QObject, QSize, Qt, QTimer, Signal
-from qtpy.QtGui import QColor, QKeySequence, QPainter, QShortcut
+from qtpy.QtGui import QColor, QKeySequence, QPainter
 from qtpy.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -29,7 +29,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from .image_files import has_image_suffix, image_suffix, strip_image_suffix
+from .image_files import color_components, has_image_suffix, image_suffix, strip_image_suffix
 
 _CHANNEL_SUFFIX = re.compile(r"_\d{4}$")
 _B2ND_SUFFIX = ".b2nd"
@@ -91,18 +91,46 @@ class PrefetchStatusBar(QWidget):
         painter.end()
 
 
+# Files of datasets whose dataset.json lists its cases ("dataset" key; they may lie outside imagesTr/labelsTr):
+# file → (dataset folder, case ID), filled by use_listed_cases when such a dataset is opened.
+_LISTED_FILES: dict[Path, tuple[Path, str]] = {}
+
+
+def use_listed_cases(dataset: Path) -> dict[str, tuple[tuple[Path, ...], Path]] | None:
+    """The dataset's "dataset" file list (None without one); its files are remembered for case_id & co."""
+    from .dataset_json import listed_cases
+
+    listed = listed_cases(dataset)
+    for case, (images, label) in (listed or {}).items():
+        for path in (*images, label):
+            _LISTED_FILES[path] = (dataset, case)
+    return listed
+
+
+def _dataset_of(path: Path) -> Path:
+    """The raw dataset folder of an image or label file."""
+    return _LISTED_FILES.get(path, (path.parent.parent, ""))[0]
+
+
 def case_id(path: Path) -> str:
     """Derive the nnU-Net case ID, stripping an image-channel suffix when present."""
+    if path in _LISTED_FILES:
+        return _LISTED_FILES[path][1]
     return _CHANNEL_SUFFIX.sub("", strip_image_suffix(path))
 
 
 def related_files(selected: Path) -> InspectionFiles:
     """Find the raw image and label files belonging to ``selected``'s case."""
-    return related_files_for_case(selected.parent.parent, case_id(selected))
+    return related_files_for_case(_dataset_of(selected), case_id(selected))
 
 
 def related_files_for_case(dataset: Path, identifier: str) -> InspectionFiles:
     """Find all raw files for a known nnU-Net case ID."""
+    listed = use_listed_cases(dataset)
+    if listed is not None:
+        images, label = listed.get(identifier, ((), None))
+        return InspectionFiles(tuple(path for path in images if path.is_file()),
+                               (label,) if label is not None and label.is_file() else ())
 
     def matching(folder: str, images_only: bool = False) -> tuple[Path, ...]:
         directory = dataset / folder
@@ -117,6 +145,10 @@ def related_files_for_case(dataset: Path, identifier: str) -> InspectionFiles:
 
 def image_case_ids(dataset: Path) -> tuple[str, ...]:
     """Return the ordered case IDs represented by training image files."""
+    listed = use_listed_cases(dataset)
+    if listed is not None:
+        return tuple(sorted((case for case, (paths, _label) in listed.items() if any(path.is_file() for path in paths)),
+                            key=str.casefold))
     images = dataset / "imagesTr"
     if not images.is_dir():
         return ()
@@ -178,13 +210,21 @@ def file_ending(path: Path) -> str:
 
 
 def annotation_target_path(image_path: Path) -> Path:
-    """Return the labelsTr file that annotations of an image channel are saved to."""
+    """Return the labelsTr file that annotations of an image channel are saved to (the listed label file for a
+    "dataset" file list in dataset.json)."""
+    if image_path in _LISTED_FILES:
+        dataset, case = _LISTED_FILES[image_path]
+        listed = use_listed_cases(dataset) or {}
+        if case in listed:
+            return listed[case][1]
     return image_path.parent.parent / "labelsTr" / f"{case_id(image_path)}{file_ending(image_path)}"
 
 
 def annotation_source_image(path: Path) -> Path:
     """Return an imagesTr source for a label, preferring channel 0000."""
-    if path.parent.name != "labelsTr":
+    listed = use_listed_cases(_LISTED_FILES[path][0]) if path in _LISTED_FILES else None
+    listed_label = listed is not None and listed.get(_LISTED_FILES[path][1], ((), None))[1] == path
+    if path.parent.name != "labelsTr" and not listed_label:
         return path
     images = related_files(path).images
     if not images:
@@ -203,13 +243,19 @@ def _read_image(path: Path) -> tuple[object, object]:
 
     image = mitk.Image(path)
     data = np.asarray(image)
+    # A colour 2D image (RGB/RGBA PNG, BMP, TIFF) comes as (colour, Y, X): colour last, so Napari shows one RGB
+    # image (not three slices) and the annotation is 2D, as nnU-Net reads such images.
+    components = color_components(path) or 1
+    rgb = components in (3, 4) and data.ndim == 3 and data.shape[0] == components
+    if rgb:
+        data = np.moveaxis(data, 0, -1)
     # MITK geometry is expressed in x, y, z while its NumPy view is z, y, x.
     # Reverse both coordinate axes to produce Napari's data-coordinate affine.
     reverse = np.flipud(np.eye(3))
     linear = reverse @ np.asarray(image.direction) @ reverse @ np.diag(np.asarray(image.spacing)[::-1])
     # MITK always reports 3D geometry; a 2D image uses only its last two (Y, X) axes.
-    spatial = min(data.ndim, 3)
-    affine = np.eye(data.ndim + 1)
+    spatial = 2 if rgb else min(data.ndim, 3)
+    affine = np.eye((2 if rgb else data.ndim) + 1)
     affine[-spatial - 1:-1, -spatial - 1:-1] = linear[-spatial:, -spatial:]
     affine[-spatial - 1:-1, -1] = np.asarray(image.origin)[::-1][-spatial:]
     return data, affine
@@ -352,7 +398,7 @@ def _dataset_ignore_id(image_path: Path) -> int | None:
     from .workflow_status import ignore_label_id
 
     try:
-        with (image_path.parent.parent / "dataset.json").open(encoding="utf-8") as file:
+        with (_dataset_of(image_path) / "dataset.json").open(encoding="utf-8") as file:
             manifest = json.load(file)
     except (OSError, ValueError, json.JSONDecodeError):
         return None
@@ -390,7 +436,7 @@ def annotation_label_summary(image_path: Path) -> tuple[tuple[int, str], ...]:
     from .workflow_status import ignore_label_id
 
     try:
-        with (image_path.parent.parent / "dataset.json").open(encoding="utf-8") as file:
+        with (_dataset_of(image_path) / "dataset.json").open(encoding="utf-8") as file:
             manifest = json.load(file)
     except (OSError, ValueError, json.JSONDecodeError):
         return ()
@@ -467,12 +513,10 @@ class AnnotationSaveWidget(QWidget):
         self._status = QLabel(); self._status.hide(); layout.addWidget(self._status)
         save = QPushButton("Save annotation")
         save.clicked.connect(self._save); layout.addWidget(save)
-        close = QPushButton("Close Napari (Ctrl+C)")
+        # Napari's own Close Window shortcut (Ctrl+W, Cmd+W); Ctrl+C closed it and lost unsaved annotation.
+        close = QPushButton(f"Close Napari ({_close_keys()})")
         close.clicked.connect(self._viewer.close); layout.addWidget(close)
         layout.addStretch()  # a tall dock keeps the rows together at the top
-        self._close_shortcut = QShortcut(QKeySequence("Ctrl+C"), self)
-        self._close_shortcut.setContext(Qt.ApplicationShortcut)
-        self._close_shortcut.activated.connect(self._viewer.close)
         self._viewer.layers.events.inserted.connect(self._update_layer_info)
         self._viewer.layers.events.removed.connect(self._update_layer_info)
         self._update_layer_info()
@@ -488,7 +532,7 @@ class AnnotationSaveWidget(QWidget):
     def _save(self) -> None:
         try:
             save_semantic_annotation(self._viewer, self._image_path, self._target)
-        except (OSError, ValueError) as error:
+        except Exception as error:  # noqa: BLE001  (e.g. mitk.Exception for an RGB .png: say so, the window stays)
             self._status.setText(f"Could not save: {error}"); self._status.show()
             QMessageBox.warning(self, "Annotation not saved", str(error))
             return
@@ -547,6 +591,11 @@ def _expand_nninteractive_dock(viewer, save_dock, nninteractive_dock) -> None:
         print(f"Could not expand nnInteractive controls: {error}")
 
 
+def _close_keys() -> str:
+    """Napari's Close Window shortcut (Ctrl+W, Cmd+W on macOS) as shown in menus."""
+    return QKeySequence("Ctrl+W").toString(QKeySequence.SequenceFormat.NativeText)
+
+
 def _show_message(viewer, text: str) -> None:
     """Show a short message in the middle of the canvas, e.g. while data is loading."""
     overlay = viewer.text_overlay
@@ -590,8 +639,10 @@ def open_annotation(selected_path: Path) -> None:
     import napari
 
     image_path = annotation_source_image(selected_path)
-    target = (selected_path if selected_path.parent.name == "labelsTr"
-              and has_image_suffix(selected_path) else annotation_target_path(image_path))
+    # a selected label file is saved back to itself; an image to its case's label file
+    target = annotation_target_path(image_path)
+    if selected_path.parent.name == "labelsTr" and has_image_suffix(selected_path):
+        target = selected_path
     viewer = napari.Viewer(title=f"nnWorkbench annotation — {case_id(image_path)}")
 
     _load_in_background(viewer, case_id(image_path), lambda: load_annotation_case(image_path, target),
@@ -620,7 +671,8 @@ def _set_up_annotation(viewer, image_path: Path, target: Path, image: tuple, ann
     import numpy as np
 
     data, affine = image
-    viewer.add_image(data, name=image_layer_name(image_path), affine=affine)
+    image_layer = viewer.add_image(data, name=image_layer_name(image_path), affine=affine)
+    shape = data.shape[:-1] if getattr(image_layer, "rgb", False) else data.shape  # RGB: a 2D annotation
     if annotation is not None:
         annotation_data, annotation_affine = annotation
         # MITK exposes an efficient, read-only NumPy view. nnInteractive updates the
@@ -629,7 +681,7 @@ def _set_up_annotation(viewer, image_path: Path, target: Path, image: tuple, ann
     else:
         # Always provide nnInteractive with a writable semantic map matching the
         # source image's dimensions and geometry, even before its first save.
-        viewer.add_labels(np.zeros(data.shape, dtype=np.uint16), name=semantic_map_name(image_path), affine=affine)
+        viewer.add_labels(np.zeros(shape, dtype=np.uint16), name=semantic_map_name(image_path), affine=affine)
     _reset_middle_slice(viewer, _CaseData((_LayerData(image_layer_name(image_path), "image", data, affine),)))
     viewer.reset_view()
     save_widget = AnnotationSaveWidget(viewer, image_path, target)
@@ -696,11 +748,8 @@ class CaseNavigator(QWidget):
         prefetch_line = QHBoxLayout(); prefetch_line.setContentsMargins(0, 0, 0, 0)
         prefetch_line.addWidget(QLabel("Prefetch")); prefetch_line.addWidget(self._prefetch_status)
         prefetch_line.addStretch(); layout.addLayout(prefetch_line)
-        self._close = QPushButton("Close Napari (Ctrl+C)"); self._close.clicked.connect(self.close_viewer)
+        self._close = QPushButton(f"Close Napari ({_close_keys()})"); self._close.clicked.connect(self.close_viewer)
         layout.addWidget(self._close)
-        self._close_shortcut = QShortcut(QKeySequence("Ctrl+C"), self)
-        self._close_shortcut.setContext(Qt.ApplicationShortcut)
-        self._close_shortcut.activated.connect(self.close_viewer)
         self._update_controls()
         self._prefetch_neighbours()
 
@@ -811,7 +860,7 @@ def _open_navigated_viewer(title: str, identifier: str, cases: tuple[str, ...],
 def open_case(selected: Path, prefetch_previous: bool = True, prefetch_next: bool = True,
               prefetch_radius: int = 1) -> None:
     """Start Napari and add all supported raw files related to the selected case."""
-    dataset, identifier = selected.parent.parent, case_id(selected)
+    dataset, identifier = _dataset_of(selected), case_id(selected)
     _open_navigated_viewer(f"nnWorkbench — {identifier}", identifier, image_case_ids(dataset),
                            lambda case: _read_case(dataset, case), prefetch_previous, prefetch_next, prefetch_radius)
 
@@ -869,6 +918,9 @@ def main() -> None:
     parser.add_argument("--reference-folder", type=Path)
     arguments = parser.parse_args()
     selected = arguments.file
+    if arguments.raw_dataset is not None and selected is not None:  # its dataset.json may list files elsewhere
+        use_listed_cases(arguments.raw_dataset)
+        selected = selected.absolute()
     if arguments.prediction_folder is None and (selected is None or not selected.is_file()):
         raise SystemExit(f"File not found: {selected}")
     if arguments.prediction_folder is not None and not arguments.prediction_folder.is_dir():

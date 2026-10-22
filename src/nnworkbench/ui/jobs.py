@@ -13,11 +13,14 @@ import shlex
 import signal
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 from qtpy.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
+
+from nnworkbench.services.commands import shell_join
 
 
 @dataclass
@@ -39,6 +42,7 @@ class Job:
     log: Path | None = None  # the job's output, also after the GUI quit
     output_size: int = 0  # characters in ``output``
     truncated: bool = False  # earlier output was dropped from ``output`` (it stays in the log file)
+    arguments: list[str] = field(default_factory=list)  # of the step that runs now
 
     @property
     def label(self) -> str:
@@ -187,6 +191,8 @@ class JobRunner(QObject):
         super().__init__(parent)
         self._log_folder = log_folder
         self.jobs: list[Job] = []
+        # nnUNetv2_train commands of this session whose step ended, and when: their folds are no longer training
+        self.ended_trainings: list[tuple[list[str], float]] = []
         self._process: QProcess | None = None
         self._job: Job | None = None
 
@@ -208,7 +214,7 @@ class JobRunner(QObject):
                      ) -> bool:
         """Run nnU-Net command(s) through ``nnworkbench-run`` so the saved paths are used. Several commands run
         one after another as one job (``step_labels`` names them in the progress hint, e.g. "fold 2")."""
-        from nnworkbench.services.commands import wrapped_command
+        from nnworkbench.services.commands import join_commands, wrapped_command
 
         commands = [command] if isinstance(command, str) else list(command)
         labels = step_labels or [""] * len(commands)
@@ -218,7 +224,7 @@ class JobRunner(QObject):
             # scripts folder on PATH (e.g. when the app is started from the macOS Dock or a Windows shortcut).
             arguments = ["-m", "nnworkbench.command_runner", *shlex.split(text)]
             steps.append((step_label, sys.executable, arguments))
-        display = " && ".join(wrapped_command(text) for text in commands)
+        display = join_commands([wrapped_command(text) for text in commands])
         return self._start(title, dataset, display, steps)
 
     def start_analysis(self, dataset: str, raw_path: Path, workers: int) -> bool:
@@ -240,12 +246,13 @@ class JobRunner(QObject):
     def _launch(self, job: Job, total: int) -> None:
         """Start the next step of *job*."""
         step_label, program, arguments = job.steps.pop(0)
+        job.arguments = list(arguments)
         number = total - len(job.steps)
         job.step_prefix = f"{step_label} ({number}/{total}) · " if total > 1 else ""
         job.progress = job.step_prefix.removesuffix(" · ")
         runner = ["-m", "nnworkbench.command_runner"]
-        shown = (shlex.join(["nnworkbench-run", *arguments[2:]]) if arguments[:2] == runner
-                 else shlex.join([program, *arguments]))
+        shown = (shell_join(["nnworkbench-run", *arguments[2:]]) if arguments[:2] == runner
+                 else shell_join([program, *arguments]))
         header = f"$ {shown}\n" if number == 1 else f"\n$ {shown}\n"
         if number == 1:
             add_output(job, f"Log file: {job.log}\n{header}")
@@ -272,8 +279,8 @@ class JobRunner(QObject):
         echo(f"Run: {shown}")
 
     def terminate(self) -> None:
-        if self._process is None or self._job is None:
-            return
+        if self._process is None or self._job is None or self._job.status == "terminated":
+            return  # clicked again: the first request is being carried out (and repeated after 5 s)
         self._job.status = "terminated"
         self._append(self._job, "\nTermination requested.\n")
         process = self._process
@@ -323,8 +330,25 @@ class JobRunner(QObject):
             job.last_line = lines[-1][-LAST_LINE_LIMIT:]
         self.job_output.emit(job, text)
 
+    def _step_ended(self, job: Job) -> None:
+        runner = ["-m", "nnworkbench.command_runner"]
+        if job.arguments[:2] == runner and job.arguments[2:3] == ["nnUNetv2_train"]:
+            self.ended_trainings.append((job.arguments[2:], time.time()))
+
+    def ended_folds(self, results_root: Path | None) -> dict[Path, float]:
+        """Fold folders trained by a job of this session that has ended, with the time it ended."""
+        from nnworkbench.command_runner import trained_fold
+
+        folds = {}
+        for command, ended in self.ended_trainings:
+            found = trained_fold(command, results_root)
+            if found is not None:
+                folds[found[0]] = max(ended, folds.get(found[0], 0.0))
+        return folds
+
     def _finished(self, process: QProcess, job: Job, code: int, status, total: int = 1) -> None:
         self._read(process, job)
+        self._step_ended(job)
         job.exit_code = code
         succeeded = status == QProcess.ExitStatus.NormalExit and code == 0
         if job.status == "running" and succeeded and job.steps and process is self._process:
@@ -348,6 +372,7 @@ class JobRunner(QObject):
             return
         job.status = "failed"
         job.steps.clear()
+        self._step_ended(job)
         self._append(job, f"Could not start: {process.errorString()}\n")
         self._clear(process, job)
 

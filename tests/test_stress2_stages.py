@@ -153,6 +153,9 @@ class _Env:
                 self.context.store.setValue(key, value)
         self.context.set_howto_expanded(self._howto)
         self.context.shutdown()
+        # as the app on quit: results of background reads still running must not reach the closed page
+        self.context.tasks.shutdown()
+        self.context.tasks._pool.waitForDone(10_000)
         self.holder.close()
         self.holder.deleteLater()
         self.application.processEvents()

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import html
 import re
-import shlex
 
 from qtpy.QtCore import QEvent, QObject, QSize, Qt, QTimer, Signal
-from qtpy.QtGui import QGuiApplication
+from qtpy.QtGui import QGuiApplication, QTextOption
 from qtpy.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
@@ -28,29 +27,11 @@ from ..widgets import Card, ElidedLabel, FlowLayout, HowToCard, badge, button, c
 
 
 def format_command(command: str) -> str:
-    """The wrapped command with one option per line, so it never breaks inside a word. Quoting and the line
-    continuation follow the platform's shell (``\\`` for POSIX shells, ``^`` for the Windows command prompt)."""
-    from nnworkbench.services.commands import WINDOWS, shell_join
+    """The wrapped command on one line, quoted for bash/zsh and PowerShell alike (no line continuation: the two
+    shells have none in common). The command box wraps it on screen; a selected line is the whole command."""
+    from nnworkbench.services.commands import wrapped_command
 
-    parts = ["nnworkbench-run", *shlex.split(command)]
-    lines: list[str] = []
-    current: list[str] = []
-    for part in parts:
-        if part.startswith("-") and current and not _is_number(part):
-            lines.append(shell_join(current))
-            current = []
-        current.append(part)
-    if current:
-        lines.append(shell_join(current))
-    return (" ^\n  " if WINDOWS else " \\\n  ").join(lines)
-
-
-def _is_number(text: str) -> bool:
-    try:
-        float(text)
-    except ValueError:
-        return False
-    return True
+    return wrapped_command(command)
 
 
 class CommandBox(QPlainTextEdit):
@@ -60,17 +41,21 @@ class CommandBox(QPlainTextEdit):
         super().__init__(parent)
         self.setObjectName("commandView")
         self.setReadOnly(True)
+        # one command per line, wrapped on screen only (no line continuation): break anywhere in long paths
+        self.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
         self.setFixedHeight(120)
         self._command = ""
         self._commands: list[str] = []
         self._copy_buttons: list = []
 
     def set_command(self, command: str | list[str]) -> None:
-        """One command, or several that run one after another (shown and copied joined with &&)."""
+        """One command, or several that run one after another (shown and copied one per line)."""
+        from nnworkbench.services.commands import join_commands
+
         self._commands = [command] if isinstance(command, str) else list(command)
         self._commands = [text for text in self._commands if text]
-        self._command = " && ".join(self._commands)
-        self.setPlainText(" &&\n".join(format_command(text) for text in self._commands))
+        self._command = join_commands(self._commands)
+        self.setPlainText(join_commands([format_command(text) for text in self._commands]))
         self._update_copy()
 
     def set_error(self, message: str) -> None:
@@ -94,10 +79,10 @@ class CommandBox(QPlainTextEdit):
             widget.setEnabled(bool(self._command))
 
     def copy(self) -> None:
-        from nnworkbench.services.commands import wrapped_command
+        from nnworkbench.services.commands import join_commands, wrapped_command
 
         if self._command:
-            QGuiApplication.clipboard().setText(" && ".join(wrapped_command(text) for text in self._commands))
+            QGuiApplication.clipboard().setText(join_commands([wrapped_command(text) for text in self._commands]))
 
 
 def arguments_error(text: str) -> str:
@@ -105,10 +90,19 @@ def arguments_error(text: str) -> str:
     from nnworkbench.services.commands import split_arguments
 
     try:
-        split_arguments(text)
+        arguments = split_arguments(text)
     except ValueError as error:
         return (f"Additional arguments cannot be read ({error}): close the quote or remove the trailing "
                 "backslash.")
+    if any(argument.startswith(("nnworkbench-run", "nnUNetv2_")) for argument in arguments):
+        return "Additional arguments hold a whole command: enter only the extra options, e.g. --npz."
+    # dashes starting an option, quotes around an argument, non-breaking spaces (a path may contain ’ or –)
+    typographic = sorted({character for argument in arguments for character in
+                          {argument[:1]} & set("–—‑“”„‘’‚") | {argument[-1:]} & set("“”‘’") | set(argument) & {"\u00a0"}})
+    if typographic:
+        shown = ", ".join("non-breaking space" if character == "\u00a0" else character for character in typographic)
+        return (f"Additional arguments contain {shown} (copied from a web page or document?): type the quotes, "
+                "dashes and spaces again on the keyboard.")
     return ""
 
 
@@ -232,6 +226,12 @@ class StagePage(QWidget):
         return []
 
     def show_header_loading(self, name: str) -> None:
+        """Another dataset is opened: until it is loaded nothing runs for the previous one (an open run form
+        would still hold its ID)."""
+        self.state = None
+        run_dialog = getattr(self, "_run_dialog", None)
+        if isinstance(run_dialog, RunDialog):
+            run_dialog.close()
         self._name.setText(name)
         self._sub.setText("Loading files…")
         QTimer.singleShot(0, self._place_header_buttons)
@@ -247,6 +247,10 @@ class StagePage(QWidget):
 
     def show_loading(self) -> None:
         """Called while the dataset is read in the background; stages may override it."""
+
+    def confirm_leave(self) -> bool:
+        """Before another dataset opens or nnWorkbench quits; stages with editors ask about unsaved changes."""
+        return True
 
     def follow_model(self, label: str) -> None:
         """Select the model chosen on another stage, if this stage lists it (Train, Validate, Predict)."""
@@ -458,7 +462,8 @@ def fold_chip(fold) -> QLabel:
     chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
     chip.setObjectName("foldChip")
     chip.setProperty("state", fold.status)
-    chip.setToolTip(FOLD_STATUS[fold.status][0])
+    note = fold.log_note()
+    chip.setToolTip(FOLD_STATUS[fold.status][0] + (f" · {note}" if note else ""))
     return chip
 
 

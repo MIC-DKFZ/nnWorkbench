@@ -160,7 +160,9 @@ class _TableEditor(QWidget):
         self._typing = QTimer(self)
         self._typing.setSingleShot(True)
         self._typing.setInterval(TYPING_DELAY)
-        self._typing.timeout.connect(self.changed.emit)
+        # a method, not self.changed.emit: Qt drops the connection with this widget (the timer could fire after the
+        # form closed; PyQt5 then aborted on the signal of a deleted widget)
+        self._typing.timeout.connect(self._typing_paused)
         buttons = QHBoxLayout()
         self._kind = kind
         actions = [(f"＋ add {kind}", lambda: self._add_row(self._next_id(), ""))]
@@ -175,6 +177,9 @@ class _TableEditor(QWidget):
         layout.addLayout(buttons)
         self.set_classes(classes)
 
+
+    def _typing_paused(self) -> None:
+        self.changed.emit()
     def set_classes(self, classes: list[tuple[int, str]]) -> None:
         for _token, row, _value, _name in self._rows:
             row.deleteLater()
@@ -468,6 +473,7 @@ class DescriptionPanel(QWidget):
 
     def set_dataset(self, raw_path: Path | None) -> None:
         if self.editing and raw_path == self._directory:
+            self._update_sync()  # e.g. the JSON editor saved new labels: the class table may differ now
             return  # keep the form open while the page refreshes
         self._directory = raw_path
         self._show(None)
@@ -833,14 +839,25 @@ class DescriptionPanel(QWidget):
         self._close_form()
         return True
 
-    def _cancel_form(self) -> None:
+    def has_unsaved_changes(self) -> bool:
+        """The form is open and Save would change the file."""
+        if not self.editing:
+            return False
         path = self._path()
         current = self._saved_text()
         if current is not None:
-            changed = self._form_text(current) != update_description(current, self._directory, {})
-        else:
-            changed = path is not None and path.exists()  # unreadable: ask before discarding
-        if changed and QMessageBox.question(
+            return self._form_text(current) != update_description(current, self._directory, {})
+        return path is not None and path.exists()  # unreadable: ask before discarding
+
+    def save(self) -> bool:
+        """Save the open form (False: not saved, the form stays open with the reason shown)."""
+        return self._save_form()
+
+    def discard(self) -> None:
+        self._close_form()
+
+    def _cancel_form(self) -> None:
+        if self.has_unsaved_changes() and QMessageBox.question(
                 self, "Discard changes?", "Discard the unsaved changes?",
                 QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
                 QMessageBox.StandardButton.Cancel) != QMessageBox.StandardButton.Discard:

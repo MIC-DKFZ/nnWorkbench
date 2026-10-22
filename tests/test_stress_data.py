@@ -269,6 +269,7 @@ def _json_panel(folder: Path, manifest: dict):
 
     parent = QWidget()
     panel = DatasetJsonPanel(parent)
+    (folder / "dataset.json").write_text(json.dumps(manifest), encoding="utf-8")  # Edit reads the file again
     panel.set_manifest(folder, manifest, editable=True)
     panel._start_edit()
     return parent, panel

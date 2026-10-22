@@ -142,7 +142,7 @@ def stack_image_folder(
         Path(output_path) if output_path is not None else default_output_path(input_directory, scale_factor)
     )
     if destination.exists() and not overwrite:
-        raise ValueError(f"Output already exists: {destination}. Use overwrite=True to replace it.")
+        raise ValueError(f"Output already exists: {destination}. Add --overwrite to replace it.")
     if progress is not None:
         progress(
             f"Loading {len(files)} {files[0].suffix} slice(s) with {worker_count} worker(s)…"

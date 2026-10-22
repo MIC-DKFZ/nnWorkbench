@@ -10,6 +10,10 @@ from qtpy.QtWidgets import QComboBox, QStyle, QStyleOptionComboBox
 class EditableDropdownComboBox(QComboBox):
     """Keep text editable while drawing a clear arrow over custom Qt stylesheets."""
 
+    def currentText(self) -> str:
+        """Without the spaces or newline of a pasted name (nnU-Net would not find "nnUNetTrainer ")."""
+        return super().currentText().strip()
+
     def paintEvent(self, event) -> None:
         super().paintEvent(event)
         option = QStyleOptionComboBox(); self.initStyleOption(option)

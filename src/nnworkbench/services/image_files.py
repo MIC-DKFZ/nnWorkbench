@@ -28,3 +28,27 @@ def strip_image_suffix(name: str | Path) -> str:
     name = Path(name).name
     suffix = image_suffix(name)
     return name[:-len(suffix)] if suffix else Path(name).stem
+
+
+# nnU-Net reads these 2D formats with NaturalImage2DIO: a colour file (RGB/RGBA) gives 3 or 4 channels
+NATURAL_IMAGE_SUFFIXES = (".png", ".bmp", ".tif")
+
+
+def color_components(path: str | Path) -> int | None:
+    """The channels nnU-Net's 2D reader gets from one image file (1 grey, 3 RGB, 4 RGBA; 2 for grey + alpha,
+    which nnU-Net refuses), from the header only. None when the file is no 2D natural image or cannot be read."""
+    suffix = image_suffix(path)
+    if suffix is None or suffix.lower() not in NATURAL_IMAGE_SUFFIXES:
+        return None
+    try:
+        from PIL import Image
+
+        with Image.open(path) as image:
+            if image.mode == "P":  # scikit-image (nnU-Net's reader) turns a colour palette into RGB(A)
+                palette = image.getpalette() or []
+                grey = all(palette[index] == palette[index + 1] == palette[index + 2]
+                           for index in range(0, len(palette) - 2, 3))
+                return 1 if grey else 4 if "transparency" in image.info else 3
+            return len(image.getbands())
+    except Exception:  # noqa: BLE001  (any unreadable or unknown file: no information)
+        return None

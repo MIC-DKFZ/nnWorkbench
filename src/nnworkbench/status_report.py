@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 
 from .json_output import print_json
 from .services.dataset_scanner import scan_datasets
 from .services.device_probe import probe_device
+from .services.workflow_status import format_age
 from .ui.dataset_state import DatasetState, load_state
 
 # ASCII markers, so the report prints in every console (including the Windows command prompt)
@@ -43,9 +45,13 @@ def build_status(state: DatasetState, device: dict | None = None) -> dict:
         stages[title.lower()] = {"state": stage_state or "none", "detail": detail}
     return {
         "dataset": state.record.directory_name,
+        "inherits_from": state.inherits_from or None,
+        "images_listed": state.raw.file_list,
         "folders": {"raw": _text(state.record.raw_path), "preprocessed": _text(state.record.preprocessed_path),
                     "results": _text(state.record.results_path)},
         "cases": len(raw.cases),
+        "labeled_cases": sum(case.has_label for case in raw.cases),
+        "unlabeled_cases": [case.case_id for case in raw.cases if not case.has_label],
         "channels": raw.channels,
         "labels": "sparse" if state.sparse else "dense",
         "ignore_label": state.ignore_id,
@@ -58,6 +64,7 @@ def build_status(state: DatasetState, device: dict | None = None) -> dict:
         "models": [{"trainer": model.trainer, "plans": model.plans, "configuration": model.configuration,
                     "mean_dice": model.mean_dice,
                     "folds": [{"fold": fold.name, "status": fold.status, "epoch": fold.epoch,
+                               "log_age_seconds": round(time.time() - fold.log_time) if fold.log_time else None,
                                "total_epochs": fold.total_epochs, "pseudo_dice": fold.pseudo_dice, "dice": fold.dice}
                               for fold in model.folds]}
                    for model in state.models],
@@ -66,7 +73,7 @@ def build_status(state: DatasetState, device: dict | None = None) -> dict:
 
 def format_status(status: dict) -> str:
     """A short readable report: stage states first, then plans and models."""
-    lines = [status["dataset"],
+    lines = [status["dataset"] + (f"  (from {status['inherits_from']})" if status.get("inherits_from") else ""),
              f"  {status['cases']} cases · {status['channels']} channel(s) · {status['labels']} labels"
              + (f" (ignore = {status['ignore_label']})" if status["ignore_label"] is not None else ""), ""]
     if status.get("device"):
@@ -92,6 +99,9 @@ def format_status(status: dict) -> str:
             for fold in model["folds"]:
                 detail = f"Dice {fold['dice']:.3f}" if fold["dice"] is not None else (
                     f"epoch {fold['epoch']}" if fold["epoch"] is not None else "")
+                if fold["status"] in ("training", "stopped") and fold.get("log_age_seconds") is not None:
+                    # read from the folder: the training may run elsewhere, the log age tells how sure this is
+                    detail += f"{', ' if detail else ''}log {format_age(fold['log_age_seconds'])} ago"
                 folds.append(f"{fold['fold']}: {fold['status']}" + (f" ({detail})" if detail else ""))
             lines.append("      folds  " + " | ".join(folds))
     return "\n".join(lines)

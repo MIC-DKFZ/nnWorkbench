@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import signal
 import sys
 
@@ -56,7 +57,14 @@ def _run() -> None:
     window = MainWindow(); window.show()
     window.context.detect_device()  # in the background; the app bar shows the result
     app.aboutToQuit.connect(window.context.shutdown)
-    sys.exit(app.exec())
+    code = app.exec()
+    if window.context.tasks.active:
+        # A read still waits for a slow or disconnected network share: the thread pool would keep the (invisible)
+        # process alive until it answers. Background tasks only read, so nothing is lost by ending here.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(code)
+    sys.exit(code)
 
 
 if __name__ == "__main__":

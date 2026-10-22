@@ -29,6 +29,7 @@ from nnworkbench.services.defaults import (
     DEFAULT_CONFIGURATION,
     DEFAULT_PLANNER,
     PLANNERS,
+    preprocessing_configuration,
     preprocessing_processes,
 )
 from nnworkbench.services.nnunet_discovery import available_planners
@@ -244,6 +245,7 @@ class PreprocessStage(StagePage):
         self._planner.currentTextChanged.connect(self._update_command)
         self._configurations = ChoiceGroup(exclusive=False)
         self._configurations.set_options(CONFIGURATIONS, selected=[DEFAULT_CONFIGURATION])
+        self._defaults_for: tuple | None = None  # dataset ID and default configuration selected for it
         self._configurations.changed.connect(self._update_command)
         self._processes = NumberField(1, 99, 8)
         self._processes.setRange(1, max(1, os.cpu_count() or 1))
@@ -288,6 +290,11 @@ class PreprocessStage(StagePage):
             self._planners_loaded = True
             self.context.tasks.run("planners", available_planners, self._set_planners)
         record = state.record
+        default = preprocessing_configuration(state.manifest, (config.name for plans in state.plans
+                                                                for config in plans.configurations))
+        if (record.dataset_id, default) != self._defaults_for:  # another dataset or new plans: 2d for 2D images
+            self._defaults_for = (record.dataset_id, default)
+            self._configurations.set_options(CONFIGURATIONS, selected=[default])
         self._plans_path.setText(f"nnUNet_preprocessed/{record.directory_name}")
         self._folder_path.setText(f"nnUNet_preprocessed/{record.directory_name}")
         self._plans_count.setText(f"{len(state.plans)} plan file{'s' if len(state.plans) != 1 else ''}")
@@ -536,6 +543,9 @@ class PreprocessStage(StagePage):
             reason = f"{missing} image{'s' if missing != 1 else ''} without label · cannot preprocess (see Data)"
         if not reason and not self.state.raw.cases:
             reason = "no raw data · cannot preprocess"
+        problems = self.state.data_problems() if not reason else []
+        if problems:  # nnU-Net would fail on them later, often with an unrelated message
+            reason = "fix the data first (see Data) · " + "; ".join(problem.rstrip(".") for problem in problems)
         self._run.setEnabled(not reason)
         self._run.setToolTip(reason)
         self._run_hint.setText(reason)

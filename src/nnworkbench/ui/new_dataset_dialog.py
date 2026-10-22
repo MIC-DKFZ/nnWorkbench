@@ -3,12 +3,23 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from qtpy.QtCore import Qt
-from qtpy.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit
+from qtpy.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 from nnworkbench.models.dataset import DatasetRecord
 from nnworkbench.services.dataset_creator import MAX_NAME_LENGTH, directory_name
 
-from .widgets import ElidedLabel, NumberField, with_stepper
+from .widgets import ElidedLabel, InfoIcon, NumberField, with_stepper
 
 _MAX_WIDTH = 600
 
@@ -46,17 +57,37 @@ class NewDatasetDialog(QDialog):
             for record in self._sources:
                 self.source_box.addItem(f"{record.dataset_id:03d} · {record.name}")
                 self.source_box.setItemData(self.source_box.count() - 1, record.name, Qt.ItemDataRole.ToolTipRole)
-            self.source_box.setToolTip("The dataset whose images, labels and dataset.json are copied")
+            self.source_box.setToolTip("The dataset whose images, labels and dataset.json are copied (or the images "
+                                       "linked); the new dataset.json names it in \"inherits_from\"")
             layout.addRow("Source dataset", self.source_box)
             start = self._sources.index(source) if source in self._sources else 0
             self.source_box.setCurrentIndex(start)
             self.source_box.currentIndexChanged.connect(self._source_changed)
             self._source_changed(start)  # suggested ID and name of the preselected source
-        layout.addRow("Dataset ID", with_stepper(self.dataset_id)); layout.addRow("Name", self.name)
-        layout.addRow("Folder", self.folder)
+        layout.addRow("Dataset ID", with_stepper(self.dataset_id))
+        # the resulting folder name right under the name (only A-Z and 0-9 are kept), no row of its own
+        name_box = QWidget()
+        name_column = QVBoxLayout(name_box)
+        name_column.setContentsMargins(0, 0, 0, 0)
+        name_column.setSpacing(3)
+        name_column.addWidget(self.name)
+        name_column.addWidget(self.folder)
+        layout.addRow("Name", name_box)
         self.dataset_id.valueChanged.connect(self._update_folder)
         self.name.textChanged.connect(self._update_folder)
         self.description: QCheckBox | None = None
+        self.link_images: QCheckBox | None = None
+        if self._sources:  # where the images of the new round are
+            self.link_images = QCheckBox()
+            title = QWidget()  # "Link images (i)" as the row's label
+            title_row = QHBoxLayout(title)
+            title_row.setContentsMargins(0, 0, 0, 0)
+            title_row.setSpacing(5)
+            title_row.addWidget(QLabel("Link images"))
+            title_row.addWidget(InfoIcon("For a round where only the labels change: the images are not copied, the "
+                                         "new dataset.json points to them in the source dataset. Labels are always "
+                                         "copied."))
+            layout.addRow(title, self.link_images)
         if not self._sources:  # a new iteration copies the description of its source instead
             self.description = QCheckBox("Add dataset-description.md")
             self.description.setChecked(True)
@@ -68,6 +99,7 @@ class NewDatasetDialog(QDialog):
         layout.addRow(buttons)
         self._ok = buttons.button(QDialogButtonBox.StandardButton.Ok)
         self._update_folder()
+        self.name.setFocus()  # the ID is prefilled with a free one; the name is what users type
 
     def source(self) -> DatasetRecord | None:
         return self._sources[self.source_box.currentIndex()] if self.source_box is not None else None

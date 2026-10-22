@@ -28,11 +28,16 @@ def copy_workbench_folder(source: Path, destination: Path, skip: set[str]) -> No
 
 
 def trained_models(dataset_path: Path | None) -> list[Path]:
-    """Return result directories that contain one or more nnU-Net folds."""
+    """Return result directories that contain one or more nnU-Net folds: only direct children, as nnU-Net uses
+    them (a copy in a subfolder, e.g. old_runs/Trainer__Plans__3d_fullres, would look like a second model)."""
     if dataset_path is None or not dataset_path.is_dir():
         return []
     models = []
-    for path in dataset_path.rglob("*"):
+    try:
+        children = list(dataset_path.iterdir())
+    except OSError:
+        return []
+    for path in children:
         try:
             if path.is_dir() and any(is_fold_folder(child) for child in path.iterdir()):
                 models.append(path.relative_to(dataset_path))

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from qtpy.QtGui import QGuiApplication
+from qtpy.QtGui import QGuiApplication, QKeySequence, QShortcut
 from qtpy.QtWidgets import QDialog, QMainWindow, QMessageBox, QStackedWidget, QVBoxLayout, QWidget
 
 from nnworkbench.models.dataset import DatasetRecord
@@ -32,8 +32,12 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("nnWorkbench — nnU-Net workflows and nnInteractive-powered annotation")
-        # fits a 1366x768 laptop (about 728 px usable) and 1920x1080 at 150 % scaling (1280x720 minus the task bar)
-        self.setMinimumSize(1_200, 700)
+        # fits a 1366x768 laptop (about 728 px usable); smaller screens (1920x1080 at 150 % with a task bar: 688 px)
+        # get their available height, so the console bar is not under the task bar
+        screen = QGuiApplication.primaryScreen()
+        available = screen.availableGeometry() if screen else None
+        self.setMinimumSize(min(1_200, available.width()) if available else 1_200,
+                            min(700, available.height() - 40) if available else 700)
         self.resize(1600, 1000)
         self.context = AppContext(self)
         self.records: list[DatasetRecord] = []
@@ -74,12 +78,18 @@ class MainWindow(QMainWindow):
         self.overview.new_dataset_requested.connect(self._create_dataset)
         self.overview.refresh_requested.connect(self.refresh)
         self.overview.paths.set_paths(*self._saved_paths())
+        if not configuration_path().exists() and any(self._saved_paths()):  # from nnU-Net's variables: keep them
+            self._paths_changed()
         self.overview.paths.set_profiles(self._remote_profiles())
         self.overview.paths.paths_changed.connect(self._paths_changed)
         self.overview.paths.profiles_changed.connect(self._save_profiles)
         self.dataset_page.guide_requested.connect(self._open_guide)
+        self.dataset_page.rescan_requested.connect(self.refresh)
+        QShortcut(QKeySequence.StandardKey.Find, self, activated=self._find)
+        QShortcut(QKeySequence.StandardKey.Refresh, self, activated=self._refresh_shown)
         self.overview.new_iteration_requested.connect(self._create_next_iteration)
         self.context.jobs.job_finished.connect(lambda _job: self._job_finished())
+        self.context.jobs.job_started.connect(lambda _job: self.dataset_page.reload())  # e.g. the fold appears
         self.refresh()
         self.show_overview()
 
@@ -130,9 +140,26 @@ class MainWindow(QMainWindow):
         self.app_bar.show_overview()
 
     def open_dataset(self, record: DatasetRecord) -> None:
+        current = self.dataset_page.record
+        if current is not None and current.dataset_id != record.dataset_id and not self._confirm_leave():
+            return
+        self.overview.select_dataset(record.dataset_id)
         self.dataset_page.open(record)
         self.pages.setCurrentWidget(self.dataset_page)
         self.app_bar.show_dataset(record)
+
+    def _find(self) -> None:
+        """Ctrl+F: the dataset search on the overview, the dataset switcher on a dataset."""
+        if self.pages.currentWidget() is self.overview:
+            self.overview.focus_search()
+        else:
+            self._open_switcher()
+
+    def _refresh_shown(self) -> None:
+        """F5 (Ctrl+R on macOS): rescan the folders, and reload the open dataset."""
+        self.refresh()
+        if self.pages.currentWidget() is self.dataset_page:
+            self.dataset_page.reload()
 
     def _open_switcher(self) -> None:
         self.app_bar.switcher.setChecked(False)
@@ -215,8 +242,8 @@ class MainWindow(QMainWindow):
             return
         source = dialog.source()
         try:
-            created = create_next_iteration(raw, roots, source.raw_path,
-                                            dialog.dataset_id.value(), dialog.name.text())
+            created = create_next_iteration(raw, roots, source.raw_path, dialog.dataset_id.value(), dialog.name.text(),
+                                            link_images=bool(dialog.link_images and dialog.link_images.isChecked()))
         except (ValueError, OSError) as error:
             QMessageBox.warning(self, "Iteration not created", str(error))
             return
@@ -232,8 +259,20 @@ class MainWindow(QMainWindow):
         self.context.shutdown()
         super().closeEvent(event)
 
+    def _confirm_leave(self) -> bool:
+        """Unsaved edits of the open dataset: Save / Discard / Cancel. On Cancel its page is shown again."""
+        if self.dataset_page.confirm_leave():
+            return True
+        if self.dataset_page.record is not None:
+            self.pages.setCurrentWidget(self.dataset_page)
+            self.app_bar.show_dataset(self.dataset_page.record)
+        return False
+
     def _confirm_quit(self) -> bool:
-        """Ask before quitting while a job runs (keep it running or stop it) or Napari windows are open."""
+        """Ask before quitting with unsaved edits, while a job runs (keep it running or stop it) or Napari windows
+        are open."""
+        if not self._confirm_leave():
+            return False
         jobs, napari = self.context.jobs, self.context.napari_windows
         windows = (f"\n\nThe {napari} Napari window{'s' if napari != 1 else ''} opened from nnWorkbench close as "
                    "well; save your annotations first." if napari else "")

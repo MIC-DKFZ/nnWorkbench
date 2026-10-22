@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .json_output import print_json, stdout_to_stderr
-from .path_setup import configured_paths
+from .path_setup import configured_paths, note_environment_differences
 from .services.checkpoint_reduction import reduce_model_for_sharing, reduction_plan
 from .services.commands import shell_join
 from .services.dataset_scanner import discover
@@ -19,6 +19,7 @@ from .services.image_stack import stack_image_folder
 from .services.label_analysis import analyse_label_distribution, analysis_path
 
 BUILTIN_COMMANDS = (
+    "list",
     "status",
     "suggest",
     "validation",
@@ -56,31 +57,69 @@ def find_executable(name: str) -> str:
 YES_ENVIRONMENT = "NNWORKBENCH_YES"  # set by the GUI, which asks the user itself before such jobs
 
 
-def existing_training(command: Sequence[str], results_root: Path | None) -> Path | None:
-    """The fold folder an nnUNetv2_train command would start again from scratch, or None.
-
-    nnUNetv2_train DATASET CONFIGURATION FOLD [-tr TRAINER] [-p PLANS] replaces an existing fold unless --c
-    (continue) or --val (validation only) is given.
-    """
+def trained_fold(command: Sequence[str], results_root: Path | None) -> tuple[Path, argparse.Namespace] | None:
+    """The fold folder (with a log or checkpoint) an nnUNetv2_train command trains, and its arguments."""
     if not command or Path(command[0]).name != "nnUNetv2_train" or results_root is None or len(command) < 4:
         return None
-    arguments = list(command[1:])
-    if "--c" in arguments or "--val" in arguments:
+    parsed = _training_arguments(command[1:])
+    if parsed is None:
         return None
-    dataset, configuration, fold = arguments[:3]
-
-    def option(name: str, default: str) -> str:
-        return arguments[arguments.index(name) + 1] if name in arguments[:-1] else default
-
-    trainer, plans = option("-tr", "nnUNetTrainer"), option("-p", "nnUNetPlans")
+    dataset, configuration, trainer, plans = parsed.dataset, parsed.configuration, parsed.tr, parsed.p
+    fold = parsed.fold if parsed.fold == "all" or not parsed.fold.isdigit() else str(int(parsed.fold))
     folders = ([path for path in results_root.glob(f"Dataset{int(dataset):03d}_*")] if dataset.isdigit()
                else [results_root / dataset])
     for folder in folders:
         fold_folder = folder / f"{trainer}__{plans}__{configuration}" / f"fold_{fold}"
         if fold_folder.is_dir() and (any(fold_folder.glob("training_log_*.txt"))
                                      or any(fold_folder.glob("checkpoint_*.pth"))):
-            return fold_folder
+            return fold_folder, parsed
     return None
+
+
+def existing_training(command: Sequence[str], results_root: Path | None) -> Path | None:
+    """The fold folder an nnUNetv2_train command would start again from scratch, or None.
+
+    nnUNetv2_train DATASET CONFIGURATION FOLD [-tr TRAINER] [-p PLANS] replaces an existing fold unless --c
+    (continue) or --val (validation only) is given.
+    """
+    found = trained_fold(command, results_root)
+    return found[0] if found and not (found[1].c or found[1].val) else None
+
+
+def running_training(command: Sequence[str], results_root: Path | None) -> Path | None:
+    """The fold folder of an nnUNetv2_train command whose fold seems to be still training (log written lately)."""
+    from .services.workflow_status import fold_info
+
+    found = trained_fold(command, results_root)
+    return found[0] if found and fold_info(found[0]).status == "training" else None
+
+
+class _ArgumentError(Exception):
+    pass
+
+
+class _TrainingParser(argparse.ArgumentParser):
+    def error(self, message: str):
+        raise _ArgumentError(message)
+
+
+def _training_arguments(arguments: Sequence[str]) -> argparse.Namespace | None:
+    """nnUNetv2_train's arguments read as nnU-Net reads them (run_training.py): options may come before the
+    positional ones and as -tr=X; unknown options are ignored. None when they cannot be read."""
+    parser = _TrainingParser(add_help=False, allow_abbrev=False)
+    parser.add_argument("dataset")
+    parser.add_argument("configuration")
+    parser.add_argument("fold")
+    parser.add_argument("-tr", default="nnUNetTrainer")
+    parser.add_argument("-p", default="nnUNetPlans")
+    for name in ("-pretrained_weights", "-num_gpus", "-device"):
+        parser.add_argument(name)
+    parser.add_argument("--c", action="store_true")
+    parser.add_argument("--val", action="store_true")
+    try:
+        return parser.parse_known_args(list(arguments))[0]
+    except _ArgumentError:
+        return None
 
 
 def run_with_configured_paths(command: Sequence[str]) -> int:
@@ -94,7 +133,10 @@ def run_with_configured_paths(command: Sequence[str]) -> int:
     dry_run = "--dry-run" in command
     command = [part for part in command if part not in ("--yes", "--dry-run")]
     paths = configured_paths()
-    replaced = existing_training(command, Path(paths["nnUNet_results"]) if paths.get("nnUNet_results") else None)
+    note_environment_differences(paths)
+    results_root = Path(paths["nnUNet_results"]) if paths.get("nnUNet_results") else None
+    replaced = existing_training(command, results_root)
+    running = running_training(command, results_root)
     if dry_run:
         print("Would run: " + shell_join([find_executable(command[0]), *command[1:]]))
         for name, value in paths.items():
@@ -102,11 +144,17 @@ def run_with_configured_paths(command: Sequence[str]) -> int:
         if replaced is not None:
             print(f"  This starts {replaced} again from scratch and replaces its results"
                   + ("" if confirmed else " (needs --yes)") + ".")
+        if running is not None:
+            print(f"  {running} seems to be still training" + ("" if confirmed else " (needs --yes)") + ".")
         return 0
     if replaced is not None and not confirmed:
         raise ValueError(f"{replaced} already has a training. Running this command starts it again and replaces its "
                          "checkpoints and validation results. Add --c to continue it instead, or --yes to start it "
                          "again.")
+    if running is not None and not confirmed:
+        raise ValueError(f"{running} seems to be still training (its log changed lately). A second run of the same "
+                         "fold writes into the same folder. Check that the other run has ended (its job or process); "
+                         "then add --yes.")
     program = find_executable(command[0])
     if program == command[0] and shutil.which(program) is None:  # found neither on PATH nor next to Python
         raise FileNotFoundError(
@@ -114,12 +162,14 @@ def run_with_configured_paths(command: Sequence[str]) -> int:
             "program such as nnUNetv2_train. Add --help to a tool to see its options.")
     environment = os.environ.copy()
     environment.update(paths)
-    return subprocess.run([program, *command[1:]], env=environment, check=False).returncode
+    code = subprocess.run([program, *command[1:]], env=environment, check=False).returncode
+    return 128 - code if code < 0 else code  # killed by signal N (e.g. 9: out of memory): 128 + N, as shells do
 
 
 def saved_roots() -> dict[str, Path | None]:
     """The saved nnU-Net folders (None when a folder is not set)."""
     paths = configured_paths()
+    note_environment_differences(paths)
     return {key: Path(paths[f"nnUNet_{key}"]) if paths.get(f"nnUNet_{key}") else None
             for key in ("raw", "preprocessed", "results")}
 
@@ -175,17 +225,19 @@ def run_checkpoint_reduction(model_directory: Path, *, reset_trainer_name: bool 
     """
     plan = reduction_plan(model_directory, reset_trainer_name=reset_trainer_name)
     if dry_run or not yes:
-        if as_json:
+        refusal = ("Add --yes to reduce the model (work on a copy if you still need the validation results or want "
+                   "to continue training).")
+        if as_json:  # one JSON document: the plan, and without --yes the refusal in "error" (exit code 1)
             print_json({"model": str(model_directory), "dry_run": True,
-                        "actions": [{"action": action, "path": str(path)} for action, path in plan]})
-        else:
-            print(f"{'Would change' if dry_run else 'This changes'} {model_directory} in place (cannot be undone):")
-            for action, path in plan:
-                print(f"  {action}: {path}")
+                        "actions": [{"action": action, "path": str(path)} for action, path in plan],
+                        **({} if dry_run else {"error": refusal})})
+            return 0 if dry_run else 1
+        print(f"{'Would change' if dry_run else 'This changes'} {model_directory} in place (cannot be undone):")
+        for action, path in plan:
+            print(f"  {action}: {path}")
         if dry_run:
             return 0
-        raise ValueError("Add --yes to reduce the model (work on a copy if you still need the validation results "
-                         "or want to continue training).")
+        raise ValueError(refusal)
     folds = reduce_model_for_sharing(
         model_directory, reset_trainer_name=reset_trainer_name, progress=_progress(as_json),
     )
@@ -204,10 +256,11 @@ def _case_image(dataset_id: int, index: int = 1, case: str = "") -> tuple[Path, 
     dataset_directory = raw_dataset_directory(dataset_id)
     cases = image_case_ids(dataset_directory)
     if not cases:
-        raise ValueError(f"No images were found in {dataset_directory / 'imagesTr'}.")
+        raise ValueError(f"No images were found in {dataset_directory / 'imagesTr'} (or the files dataset.json "
+                         "lists).")
     if case:
         if case not in cases:
-            raise ValueError(f"No case '{case}' in {dataset_directory / 'imagesTr'} (cases: {cases[0]} ... {cases[-1]}).")
+            raise ValueError(f"No case '{case}' in {dataset_directory.name} (cases: {cases[0]} ... {cases[-1]}).")
         index = cases.index(case) + 1
     elif not 1 <= index <= len(cases):
         raise ValueError(f"Image index must be between 1 and {len(cases)}.")
@@ -351,6 +404,16 @@ def _run_builtin_command(command: Sequence[str]) -> int | None:
             options.model_directory, reset_trainer_name=options.reset_trainer_name, as_json=options.json,
             yes=options.yes, dry_run=options.dry_run,
         )
+    if name == "list":
+        parser = argparse.ArgumentParser(
+            prog=f"nnworkbench-run {name}",
+            description="List the datasets in the saved nnU-Net folders: ID, name, where they exist, ID problems "
+                        "and the annotation round (from the _iterN name).")
+        parser.add_argument("--json", action="store_true", help="Print the list as JSON, e.g. for scripts")
+        options = parser.parse_args(arguments)
+        from .cli_tools import run_list
+
+        return run_list(saved_roots(), as_json=options.json)
     if name == "status":
         parser = argparse.ArgumentParser(
             prog=f"nnworkbench-run {name}",
@@ -370,15 +433,17 @@ def _run_builtin_command(command: Sequence[str]) -> int | None:
             description="Validation results (as the Validate page in the GUI): Dice per fold and class, and the "
                         "validation cases sorted from weakest to best.")
         parser.add_argument("-d", "--dataset", type=int, required=True, help="Dataset ID")
-        parser.add_argument("--model", default="", help="Only models whose name contains this text, e.g. "
-                                                        "nnUNetTrainerBetterIgnoreSampling")
-        parser.add_argument("--fold", default="", help="Only this fold, e.g. 0 or all")
+        parser.add_argument("--model", default="", help="Only this model, or the models whose name contains this "
+                                                        "text, e.g. nnUNetTrainerBetterIgnoreSampling")
+        parser.add_argument("--fold", default="", help="Only this fold, e.g. 0 (or fold_0) or all")
         parser.add_argument("--cases", type=int, default=10,
                             help="Weakest cases to list per model in the text output (0 = all; JSON lists all)")
         parser.add_argument("--json", action="store_true", help="Print the results as JSON, e.g. for scripts")
         parser.add_argument("--open", default="", metavar="CASE",
                             help="Open this validation case in Napari: image, label and prediction")
         options = parser.parse_args(arguments)
+        if options.open and options.json:  # as the other tools that only open Napari
+            parser.error("--open opens Napari and prints no result: leave out --json")
         from .cli_tools import run_validation
 
         return run_validation(saved_roots(), options.dataset, model=options.model, fold=options.fold,
@@ -447,18 +512,24 @@ def _run_builtin_command(command: Sequence[str]) -> int | None:
         parser.add_argument("--id", type=int, default=None,
                             help="ID of the new dataset (default: the next free ID after the source)")
         parser.add_argument("--name", default=None, help="Name of the new dataset (default: <name>_iter1, _iter2, ...)")
+        parser.add_argument("--link-images", action="store_true",
+                            help="Do not copy the images: dataset.json of the new dataset lists the source's images "
+                                 "(\"dataset\" file list). Labels are always copied.")
         parser.add_argument("--json", action="store_true", help="Print the result as JSON, e.g. for scripts")
         options = parser.parse_args(arguments)
         from .cli_tools import run_new_iteration
 
-        return run_new_iteration(saved_roots(), options.dataset, options.id, options.name, as_json=options.json)
+        return run_new_iteration(saved_roots(), options.dataset, options.id, options.name,
+                                 link_images=options.link_images, as_json=options.json)
     return None
 
 
 def main() -> None:
     """Run a command after applying the persisted nnWorkbench path configuration."""
     parser = argparse.ArgumentParser(
-        description="Run nnU-Net commands or nnWorkbench dataset tools with saved paths.")
+        description="Run nnU-Net commands or nnWorkbench dataset tools with saved paths.",
+        epilog=f"nnWorkbench tools: {', '.join(BUILTIN_COMMANDS)}. Each takes --help. Any other command (e.g. "
+               "nnUNetv2_train) runs with the saved nnU-Net folders; --dry-run shows it without running.")
     parser.add_argument("command", nargs=argparse.REMAINDER, help="nnU-Net command or nnWorkbench subcommand")
     arguments = parser.parse_args()
     command = arguments.command[1:] if arguments.command[:1] == ["--"] else arguments.command
@@ -467,13 +538,16 @@ def main() -> None:
         with stdout_to_stderr():
             try:
                 raise SystemExit(_run_builtin_command(command))
-            except (RuntimeError, TypeError, ValueError, FileNotFoundError) as error:
+            except (RuntimeError, TypeError, ValueError, OSError) as error:
                 print_json({"error": str(error)})  # errors stay machine-readable too
+                raise SystemExit(1) from error
+            except Exception as error:  # e.g. a corrupt checkpoint: still JSON, not a traceback
+                print_json({"error": f"{type(error).__name__}: {error}"})
                 raise SystemExit(1) from error
     try:
         builtin_exit_code = _run_builtin_command(command)
         raise SystemExit(builtin_exit_code if builtin_exit_code is not None else run_with_configured_paths(command))
-    except (RuntimeError, TypeError, ValueError, FileNotFoundError) as error:
+    except (RuntimeError, TypeError, ValueError, OSError) as error:  # OSError: e.g. a read-only nnUNet_raw
         raise SystemExit(str(error)) from error
 
 

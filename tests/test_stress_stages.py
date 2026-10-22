@@ -136,6 +136,9 @@ class _Env:
             else:
                 self.context.store.setValue(key, value)
         self.context.shutdown()
+        # as the app on quit: results of background reads still running must not reach the closed page
+        self.context.tasks.shutdown()
+        self.context.tasks._pool.waitForDone(10_000)
         self.holder.close()
         self.holder.deleteLater()
         self.application.processEvents()
@@ -233,7 +236,7 @@ def test_t4_failing_stage_does_not_block_the_others_and_load_errors_are_shown(en
     assert env.page.pages["validate"].state is state and env.page.pages["predict"].state is state
     assert "boom" in env.page.pages["train"]._sub.text()
 
-    def unreadable(_record):
+    def unreadable(_record, _ended=None):
         raise OSError("disk gone")
 
     monkeypatch.setattr(dataset_page, "load_state", unreadable)
@@ -248,7 +251,7 @@ def test_t4_failing_stage_does_not_block_the_others_and_load_errors_are_shown(en
 
 def test_t5_unsplittable_arguments_disable_run_and_show_the_error(env: _Env) -> None:
     _raw(env.root)
-    _preprocessed(env.root)
+    _preprocessed(env.root, cases=5)  # fewer cannot be split into 5 folds (Train stays disabled)
     _model(env.root)
     source = env.root / "input"
     source.mkdir()
@@ -344,7 +347,7 @@ def test_t9_input_folder_that_cannot_be_listed_clears_the_cases(env: _Env, monke
     env.wait()
     assert predict._table.rowCount() == 1 and predict._predict.isEnabled()
 
-    def denied(_source, _target):
+    def denied(_source, _target, **_kwargs):
         raise PermissionError(13, "Permission denied", str(source))
 
     monkeypatch.setattr(predict_stage, "prediction_status", denied)

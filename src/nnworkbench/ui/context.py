@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +11,7 @@ from qtpy.QtCore import QObject, QProcess, QSettings, QUrl, Signal
 from qtpy.QtGui import QDesktopServices
 from qtpy.QtWidgets import QMessageBox
 
+from nnworkbench.services.commands import shell_join
 from nnworkbench.services.device_probe import DeviceInfo, probe_device
 
 from .jobs import JobRunner, echo, start_process_group, stop_process_group
@@ -123,11 +123,12 @@ class AppContext(QObject):
             arguments.append("--no-prefetch-next")
         return arguments
 
-    def inspect_case(self, path: Path) -> None:
-        self._napari_module([str(path), *self._prefetch_arguments()])
+    def inspect_case(self, path: Path, raw_dataset: Path | None = None) -> None:
+        """``raw_dataset``: its dataset.json may list the case files elsewhere (the "dataset" key)."""
+        self._napari_module([str(path), *self._prefetch_arguments(), *_raw_dataset_arguments(raw_dataset)])
 
-    def annotate_case(self, path: Path) -> None:
-        self._napari_module([str(path), "--annotate"])
+    def annotate_case(self, path: Path, raw_dataset: Path | None = None) -> None:
+        self._napari_module([str(path), "--annotate", *_raw_dataset_arguments(raw_dataset)])
 
     def inspect_preprocessed(self, path: Path) -> None:
         self._napari_module([str(path), "--preprocessed-case", *self._prefetch_arguments()])
@@ -152,7 +153,7 @@ class AppContext(QObject):
         process.finished.connect(lambda *_: self._forget(process))
         process.errorOccurred.connect(lambda error: self._napari_failed(process, error))
         start_process_group(process, sys.executable, command)
-        echo(f"Napari: {shlex.join([sys.executable, *command])}")
+        echo(f"Napari: {shell_join([sys.executable, *command])}")
 
     @property
     def napari_windows(self) -> int:
@@ -180,3 +181,7 @@ class AppContext(QObject):
         for process in tuple(self._napari):
             stop_process_group(process, wait_ms=2_000)
         self._napari.clear()
+
+
+def _raw_dataset_arguments(raw_dataset: Path | None) -> list[str]:
+    return ["--raw-dataset", str(raw_dataset)] if raw_dataset is not None else []

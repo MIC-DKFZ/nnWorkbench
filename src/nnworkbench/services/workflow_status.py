@@ -7,6 +7,7 @@ read, so the overview stays fast even for large datasets on network drives.
 from __future__ import annotations
 
 import math
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -18,10 +19,13 @@ from .dataset_contents import (
     model_trainer_plan_configuration,
     trained_models,
 )
-from .image_files import has_image_suffix, image_suffix, strip_image_suffix
+from .dataset_json import listed_cases
+from .image_files import color_components, has_image_suffix, image_suffix, strip_image_suffix
 
 _CHANNEL_SUFFIX = re.compile(r"_(\d{4})$")
 _EPOCH_LINE = re.compile(r"(?m)^.*?:\s*Epoch\s+(\d+)\s*$")
+UNSUPPORTED_IMAGE_SUFFIXES = (".jpg", ".jpeg")  # common, but no nnU-Net reader
+_EPOCH_TIME_LINE = re.compile(r"(?m)^.*?:\s*Epoch time:\s*([0-9.]+)\s*s\s*$")
 _PSEUDO_DICE_LINE = re.compile(r"(?m)^.*?:\s*Pseudo dice\s*\[(.*)\]\s*$")
 _NUMBER = re.compile(r"\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
 # A fold counts as "training" while its log changed recently; afterwards it is "stopped".
@@ -105,13 +109,18 @@ class CaseRow:
 
     case_id: str
     image_files: tuple[Path, ...]
-    channels_present: bool
+    channels_present: bool  # a file for every channel of dataset.json (RGB files count as three)
     label_file: Path | None
     last_edit: float | None  # modification time of the label file
 
     @property
     def has_label(self) -> bool:
         return self.label_file is not None
+
+    def extra_channels(self, required: tuple[str, ...]) -> list[str]:
+        """Channel suffixes of this case beyond channel_names (nnU-Net: "Unexpected number of modalities")."""
+        return [channel for channel in (_image_case(path)[1] for path in self.image_files)
+                if channel is not None and channel not in required]
 
 
 @dataclass(frozen=True)
@@ -121,6 +130,14 @@ class RawOverview:
     label_files: int
     channels: int
     names_valid: bool
+    unmatched_labels: tuple[str, ...] = ()  # label files without an image of that case
+    unsupported_images: tuple[str, ...] = ()  # e.g. .jpg in imagesTr, which nnU-Net cannot read
+    # the channel suffixes a case needs (_0000 … ; one RGB file covers three channel names)
+    required_suffixes: tuple[str, ...] = ("0000",)
+    channel_problem: str = ""  # colour channels of the files do not add up to channel_names
+    file_list: bool = False  # the cases come from the "dataset" file list of dataset.json, not imagesTr/labelsTr
+    missing_files: tuple[str, ...] = ()  # images listed there but not found (a missing label: missing_labels)
+    unlisted_images: tuple[str, ...] = ()  # in imagesTr but not in the file list: nnU-Net ignores them
 
     @property
     def missing_labels(self) -> int:
@@ -138,17 +155,74 @@ def _image_case(path: Path) -> tuple[str, str | None]:
     return (stem[:match.start()], match.group(1)) if match else (stem, None)
 
 
+def required_channels(channels: int, components: dict[str, int]) -> tuple[tuple[str, ...], str]:
+    """The channel suffixes each case needs for ``channels`` channel names, when the files of a suffix hold
+    ``components`` channels each (RGB: 3; read from the image header), and what does not add up ("" if all does).
+    As nnU-Net's 2D reader: a case's channels are the colour channels of its files, in suffix order."""
+    required, total, index = [], 0, 0
+    while total < channels:
+        suffix = f"{index:04d}"
+        required.append(suffix)
+        total += components.get(suffix, 1)
+        index += 1
+    odd = {suffix: count for suffix, count in components.items() if count not in (1, 3, 4)}
+    if odd:
+        suffix, count = next(iter(odd.items()))
+        return tuple(required), (f"_{suffix} images have {count} colour channels (grey + alpha?); nnU-Net reads 1 "
+                                 "(grey), 3 (RGB) or 4 (RGBA): save them as greyscale or RGB")
+    if total > channels:
+        colour = {suffix: count for suffix, count in components.items() if count > 1 and suffix in required}
+        shown = ", ".join(f"_{suffix} has {count} (RGB{'A' if count == 4 else ''})" for suffix, count in colour.items())
+        return tuple(required), (f"the images have {total} colour channels ({shown}), but dataset.json lists "
+                                 f"{channels} in channel_names: name each colour channel (e.g. R, G, B) or save the "
+                                 "images as greyscale")
+    return tuple(required), ""
+
+
+def _listed_overview(raw_path: Path, manifest: dict, listed: dict[str, tuple[tuple[Path, ...], Path]]) -> RawOverview:
+    """The cases of dataset.json's "dataset" file list (nnU-Net then ignores imagesTr/labelsTr). A case's images
+    are its channels in list order (an RGB file counts three, from the header of the first case's files)."""
+    channels = channel_count(manifest)
+    first = next(iter(listed.values()), ((), None))[0]
+    components = {f"{index:04d}": color_components(path) or 1 for index, path in enumerate(first) if _is_file(path)}
+    required, channel_problem = required_channels(channels, components)
+    rows, missing = [], []
+    image_count = label_count = 0
+    for case in sorted(listed, key=str.casefold):
+        images, label = listed[case]
+        present = tuple(path for path in images if _is_file(path))
+        missing += [str(path) for path in images if path not in present]
+        image_count += len(present)
+        label_file = label if _is_file(label) else None  # none yet: "without label", e.g. still to annotate
+        label_count += label_file is not None
+        rows.append(CaseRow(case, present, len(present) == len(images) == len(required), label_file,
+                            _modified(label_file) if label_file else None))
+    listed_files = {path for images, _label in listed.values() for path in images}
+    images_dir = raw_path / "imagesTr"
+    unlisted = sorted((path.name for path in (_entries(images_dir) if images_dir.is_dir() else ())
+                       if _is_file(path) and has_image_suffix(path) and Path(os.path.abspath(path)) not in listed_files),
+                      key=str.casefold)
+    return RawOverview(tuple(rows), image_count, label_count, channels, True, (), (), required, channel_problem,
+                       True, tuple(missing), tuple(unlisted))
+
+
 def raw_overview(raw_path: Path | None, manifest: dict | None) -> RawOverview:
-    """List imagesTr and labelsTr and match them into cases."""
+    """List imagesTr and labelsTr and match them into cases (or the "dataset" file list of dataset.json)."""
+    listed = listed_cases(raw_path, manifest) if raw_path is not None and isinstance(manifest, dict) else None
+    if listed is not None:
+        return _listed_overview(raw_path, manifest, listed)
     channels = channel_count(manifest)
     images_dir = raw_path / "imagesTr" if raw_path else None
     labels_dir = raw_path / "labelsTr" if raw_path else None
     images: dict[str, list[Path]] = {}
     names_valid = True
     image_count = 0
+    unsupported = []
     if images_dir is not None and images_dir.is_dir():
         for path in _entries(images_dir):
             if not _is_file(path) or not has_image_suffix(path):
+                if path.suffix.lower() in UNSUPPORTED_IMAGE_SUFFIXES and _is_file(path):
+                    unsupported.append(path.name)
                 continue
             image_count += 1
             case, channel = _image_case(path)
@@ -160,24 +234,38 @@ def raw_overview(raw_path: Path | None, manifest: dict | None) -> RawOverview:
         for path in _entries(labels_dir):
             if _is_file(path) and has_image_suffix(path):
                 labels[strip_image_suffix(path)] = path
+    # colour channels per suffix, from the first image of each (2D formats only; one header read per suffix)
+    components: dict[str, int] = {}
+    for case in sorted(images, key=str.casefold):
+        for path in images[case]:
+            suffix = _image_case(path)[1]
+            if suffix is not None and suffix not in components:
+                components[suffix] = color_components(path) or 1
+    required, channel_problem = required_channels(channels, components)
     rows = []
     for case in sorted(images, key=str.casefold):
         files = tuple(sorted(images[case], key=lambda item: item.name))
         found_channels = {_image_case(item)[1] for item in files}
-        expected = {f"{index:04d}" for index in range(channels)}
         label = labels.get(case)
         last_edit = _modified(label) if label else None
-        rows.append(CaseRow(case, files, expected <= found_channels, label, last_edit))
-    return RawOverview(tuple(rows), image_count, len(labels), channels, names_valid)
+        rows.append(CaseRow(case, files, set(required) <= found_channels, label, last_edit))
+    unmatched = tuple(sorted((path.name for case, path in labels.items() if case not in images), key=str.casefold))
+    return RawOverview(tuple(rows), image_count, len(labels), channels, names_valid, unmatched,
+                       tuple(sorted(unsupported, key=str.casefold)), required, channel_problem)
 
 
 def newest_label_time(raw_path: Path | None) -> float | None:
-    """Return the newest modification time in labelsTr (for the outdated rules)."""
+    """Return the newest modification time in labelsTr, or of the listed label files (for the outdated rules)."""
+    listed = listed_cases(raw_path)
     labels_dir = raw_path / "labelsTr" if raw_path else None
-    if labels_dir is None or not labels_dir.is_dir():
+    if listed is not None:
+        times = [_modified(label) for _images, label in listed.values()]
+    elif labels_dir is None or not labels_dir.is_dir():
         return None
-    times = [_modified(path) for path in _entries(labels_dir) if _is_file(path) and has_image_suffix(path)]
-    times = [value for value in times if value is not None]
+    else:
+        times = [_modified(path) for path in _entries(labels_dir) if _is_file(path) and has_image_suffix(path)]
+    # a label file from the future (clock skew) would make preprocessing outdated forever, even right after it
+    times = [value for value in times if value is not None and value <= time.time() + 60]
     return max(times) if times else None
 
 
@@ -210,8 +298,21 @@ class PlansInfo:
 def _count_preprocessed_cases(folder: Path) -> int:
     if not folder.is_dir():
         return 0
-    return sum(1 for path in _entries(folder)
-               if _is_file(path) and path.name.endswith(".b2nd") and not path.name.endswith("_seg.b2nd"))
+    # .b2nd since nnU-Net 2.6; .npz (with .npy) from older versions, which nnU-Net still trains on
+    return sum(1 for path in _entries(folder) if _is_file(path) and (
+        path.name.endswith(".b2nd") and not path.name.endswith("_seg.b2nd") or path.name.endswith(".npz")))
+
+
+def _inherited(configurations: dict, name: str) -> dict:
+    """A configuration with the values of its ``inherits_from`` parents (3d_cascade_fullres uses 3d_fullres's data),
+    as nnU-Net's plans handler resolves it."""
+    values: dict = {}
+    seen = set()
+    while isinstance(name, str) and isinstance(configurations.get(name), dict) and name not in seen:
+        seen.add(name)
+        values = {**configurations[name], **values}
+        name = configurations[name].get("inherits_from")
+    return values
 
 
 def plans_overview(preprocessed_path: Path | None, raw_path: Path | None = None) -> tuple[PlansInfo, ...]:
@@ -227,7 +328,8 @@ def plans_overview(preprocessed_path: Path | None, raw_path: Path | None = None)
         configurations = []
         times = []
         for name, values in content["configurations"].items():
-            if not isinstance(values, dict):
+            values = _inherited(content["configurations"], name)
+            if not values:
                 continue
             identifier = values.get("data_identifier") or f"{file.stem}_{name}"
             folder = preprocessed_path / str(identifier)
@@ -268,10 +370,22 @@ class FoldInfo:
     total_epochs: int | None
     pseudo_dice: float | None
     dice: float | None  # foreground mean from validation/summary.json
+    log_time: float | None = None  # last change of the training log
 
     @property
     def finished(self) -> bool:
         return self.status in {"done", "reduced"}
+
+    def log_note(self, now: float | None = None) -> str:
+        """How sure "training" or "stopped" is: both are read from the fold folder (the training may run on another
+        computer), from how long ago the log changed. "" for finished folds or without a log."""
+        if self.finished or self.log_time is None:
+            return ""
+        age = (time.time() if now is None else now) - self.log_time
+        if self.status == "training":
+            return f"log updated {format_age(age)} ago: probably still training"
+        return (f"no log update for {format_age(age)}: stopped, unless it runs somewhere that has not written the "
+                "log yet" if age >= 0 else "log time in the future (clock difference?): status unknown")
 
     @property
     def has_validation(self) -> bool:
@@ -337,8 +451,31 @@ def _integer(text: object) -> int | None:
     return int(text)
 
 
-def fold_info(fold_path: Path, now: float | None = None) -> FoldInfo:
-    """Read status, epoch and Dice of one fold from its files."""
+def format_age(seconds: float) -> str:
+    """A rough duration: "40 s", "3 min", "2 h", "5 days"."""
+    seconds = abs(seconds)
+    if seconds < 90:
+        return f"{seconds:.0f} s"
+    if seconds < 90 * 60:
+        return f"{seconds / 60:.0f} min"
+    if seconds < 48 * 3600:
+        return f"{seconds / 3600:.0f} h"
+    return f"{seconds / 86400:.0f} days"
+
+
+def _running_window(log: str) -> float:
+    """How long a training may stay silent: 15 minutes, or two epochs when epochs are slower (CPU, Apple GPU)."""
+    times = _EPOCH_TIME_LINE.findall(log)
+    try:
+        epoch = float(times[-1]) if times else 0.0
+    except ValueError:
+        epoch = 0.0
+    return max(RUNNING_LOG_AGE_SECONDS, 2 * epoch if epoch < 7 * 24 * 3600 else 0)
+
+
+def fold_info(fold_path: Path, now: float | None = None, ended: float | None = None) -> FoldInfo:
+    """Read status, epoch and Dice of one fold from its files. ``ended``: when a job of this GUI that trained the
+    fold ended; a log not written after that is no training (e.g. it failed at start)."""
     now = time.time() if now is None else now
     name = fold_path.name.removeprefix("fold_")
     final = _is_file(fold_path / "checkpoint_final.pth")
@@ -358,16 +495,18 @@ def fold_info(fold_path: Path, now: float | None = None) -> FoldInfo:
     total = int(epochs_value) if finite_number(epochs_value) is not None else _integer(epochs_value)
     if final:
         status = "done" if log is not None or _is_file(fold_path / "checkpoint_best.pth") else "reduced"
-    elif log_time is not None and now - log_time < RUNNING_LOG_AGE_SECONDS:
-        status = "training"
+    elif log_time is not None and abs(now - log_time) < _running_window(content) and not (
+            ended is not None and log_time <= ended + 5):
+        status = "training"  # a log far in the future (clock skew, copied files) is not a running training
     else:
         status = "stopped"
     dice = summary_foreground_dice(json_object(fold_path / "validation" / "summary.json"))
-    return FoldInfo(name, fold_path, status, epoch, total, pseudo, dice)
+    return FoldInfo(name, fold_path, status, epoch, total, pseudo, dice, log_time)
 
 
-def models_overview(results_path: Path | None) -> tuple[ModelInfo, ...]:
-    """Describe every trained model folder of a results dataset with its folds."""
+def models_overview(results_path: Path | None, ended: dict[Path, float] | None = None) -> tuple[ModelInfo, ...]:
+    """Describe every trained model folder of a results dataset with its folds (``ended``: fold folder → when a
+    GUI job training it ended, see fold_info)."""
     if results_path is None or not results_path.is_dir():
         return ()
     models = []
@@ -376,7 +515,7 @@ def models_overview(results_path: Path | None) -> tuple[ModelInfo, ...]:
         parts = model_trainer_plan_configuration(path)
         if parts is None:
             continue
-        folds = tuple(fold_info(fold) for fold in model_folds(path))
+        folds = tuple(fold_info(fold, ended=(ended or {}).get(fold)) for fold in model_folds(path))
         models.append(ModelInfo(*parts, path, folds))
     return tuple(models)
 
@@ -485,19 +624,25 @@ def geometries_match(first: Geometry | None, second: Geometry | None, tolerance:
 class PredictionCase(tuple):
     """An input case for prediction: ``(case ID, ready, predicted)`` (equal to that plain tuple), plus the channel
     suffixes found (``"0000"``, …; ``None`` for a file without one), the channels of dataset.json that have no
-    file, and whether a file has no channel suffix. nnU-Net needs one file per channel, each with its suffix."""
+    file, whether a file has no channel suffix, and the files whose ending is not file_ending. nnU-Net needs one
+    file per channel, each with its suffix, and lists only files ending exactly with file_ending."""
 
     found: frozenset
     missing: tuple[str, ...]
     unsuffixed: bool
+    wrong_ending: tuple[str, ...]
 
-    def __new__(cls, case_id: str, found, predicted: bool, channels: int = 1):
+    def __new__(cls, case_id: str, found, predicted: bool, channels: int | tuple[str, ...] = 1, wrong_ending=()):
+        """``channels``: the number of channels (one file each) or the suffixes needed (RawOverview.required_suffixes,
+        where an RGB file covers three channels)."""
         found = frozenset(found)
-        missing = tuple(suffix for suffix in (f"{index:04d}" for index in range(max(1, channels)))
-                        if suffix not in found)
+        needed = (channels if isinstance(channels, tuple)
+                  else tuple(f"{index:04d}" for index in range(max(1, channels))))
+        missing = tuple(suffix for suffix in needed if suffix not in found)
         unsuffixed = None in found
-        case = super().__new__(cls, (case_id, not missing and not unsuffixed, predicted))
-        case.found, case.missing, case.unsuffixed = found, missing, unsuffixed
+        wrong_ending = tuple(wrong_ending)
+        case = super().__new__(cls, (case_id, not missing and not unsuffixed and not wrong_ending, predicted))
+        case.found, case.missing, case.unsuffixed, case.wrong_ending = found, missing, unsuffixed, wrong_ending
         return case
 
     @property
@@ -512,23 +657,29 @@ class PredictionCase(tuple):
     def predicted(self) -> bool:
         return self[2]
 
-    def for_channels(self, channels: int) -> PredictionCase:
+    def for_channels(self, channels: int | tuple[str, ...]) -> PredictionCase:
         """The same case checked against the channel count of dataset.json."""
-        return PredictionCase(self[0], self.found, self[2], channels)
+        return PredictionCase(self[0], self.found, self[2], channels, self.wrong_ending)
 
 
-def prediction_status(input_dir: Path | None, output_dir: Path | None, channels: int = 1) -> list[PredictionCase]:
+def prediction_status(input_dir: Path | None, output_dir: Path | None, channels: int = 1,
+                      file_ending: str | None = None) -> list[PredictionCase]:
     """List input cases as ``(case ID, ready, prediction exists)``: ready when every channel of dataset.json
-    (``channels``) has its file (``case_0000``, ``case_0001``, …) and no file of the case lacks the suffix."""
+    (``channels``) has its file (``case_0000``, ``case_0001``, …), no file of the case lacks the suffix and every
+    file ends with ``file_ending`` (nnU-Net skips others silently, e.g. ``.TIF`` in a ``.tif`` dataset)."""
     if input_dir is None or not input_dir.is_dir():
         return []
     cases: dict[str, set[str | None]] = {}
+    wrong: dict[str, list[str]] = {}
     for path in input_dir.iterdir():  # an unreadable input folder raises: the stage shows the error
         if _is_file(path) and has_image_suffix(path):
             case, channel = _image_case(path)
             cases.setdefault(case, set()).add(channel)
+            if file_ending and not path.name.endswith(file_ending):
+                wrong.setdefault(case, []).append(path.name)
     predicted = set()
     if output_dir is not None and output_dir.is_dir():
         predicted = {strip_image_suffix(path) for path in _entries(output_dir)
                      if _is_file(path) and image_suffix(path)}
-    return [PredictionCase(case, cases[case], case in predicted, channels) for case in sorted(cases, key=str.casefold)]
+    return [PredictionCase(case, cases[case], case in predicted, channels, wrong.get(case, ()))
+            for case in sorted(cases, key=str.casefold)]

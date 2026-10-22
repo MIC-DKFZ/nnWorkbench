@@ -30,7 +30,7 @@ from qtpy.QtWidgets import (
 )
 
 from nnworkbench.models.dataset import DatasetRecord
-from nnworkbench.path_setup import set_paths_command
+from nnworkbench.path_setup import environment_conflicts, set_paths_command, typed_path
 from nnworkbench.services.dataset_contents import json_object, model_folds, trained_models
 from nnworkbench.services.dataset_json import manifest_source
 from nnworkbench.services.dataset_scanner import id_badge
@@ -71,10 +71,11 @@ _PROFILES_HEIGHT = 84  # path profiles shown before the list scrolls (two), so t
 
 
 def _expanded(text: str) -> Path:
-    path = Path(text)
+    """The folder typed or pasted (quotes, file: URL, ~, $VAR), absolute: nnU-Net runs from another folder."""
+    path = Path(typed_path(text))
     try:
-        return path.expanduser()
-    except RuntimeError:  # "~nosuchuser/...": used as typed, so it is simply not found
+        return path.absolute()
+    except OSError:  # the working folder was deleted
         return path
 
 
@@ -103,6 +104,32 @@ def _field_text(text: str) -> str:
         except (OSError, ValueError):
             pass
     return stripped
+
+
+_FOLDER_NAMES = ("nnUNet_raw", "nnUNet_preprocessed", "nnUNet_results")
+
+
+def _layout_problem(texts: list[str]) -> tuple[str, str, str] | None:
+    """Badge text, colour and note when the three found folders cannot work: the same folder or one inside another
+    (preprocessing then writes into the raw dataset and fails), or a parent folder of nnUNet_raw & co. chosen."""
+    try:
+        paths = [_expanded(text).resolve() for text in texts]
+    except (OSError, RuntimeError, ValueError):
+        return None
+    for index, first in enumerate(paths):
+        for second in paths[index + 1:]:
+            if first == second or first in second.parents or second in first.parents:
+                return ("folders overlap", "red", ("nnUNet_raw, nnUNet_preprocessed and nnUNet_results must be "
+                                                   "three different folders, none inside another: choose them "
+                                                   "again with Browse…"))
+    for path, expected in zip(paths, _FOLDER_NAMES):
+        try:
+            inside = path.name != expected and (path / expected).is_dir()
+        except OSError:
+            inside = False
+        if inside:
+            return "check folders", "orange", f"{path} contains a folder {expected}: did you mean {path / expected}?"
+    return None
 
 
 def _short(value: object, limit: int) -> str:
@@ -176,6 +203,9 @@ class PathsCard(Card):
         title.addWidget(label("nnU-Net folders", name="h3"))
         self._status = badge("", "green")
         title.addWidget(self._status)
+        self._variables = badge("differs from nnU-Net variables", "orange")  # hover: which path is used
+        self._variables.hide()
+        title.addWidget(self._variables)
         self._note = label("shared with the command line (nnworkbench-set-paths)", muted=True, size=12)
         title.addWidget(self._note)
         title.addStretch()
@@ -288,9 +318,25 @@ class PathsCard(Card):
         elif unset:
             set_badge(self._status, f"{unset} not set", "orange")
             self._note.setText("Please set the paths: choose each folder with Browse… (empty folders are fine)")
+        elif problem := _layout_problem([_field_text(self._fields[key].text()) for key in _KEYS]):
+            set_badge(self._status, *problem[:2])
+            self._note.setText(problem[2])
         else:
             set_badge(self._status, "✓ all found", "green")
             self._note.setText("shared with the command line (nnworkbench-set-paths)")
+        self._update_variables()
+
+    def _update_variables(self) -> None:
+        """Orange badge when nnU-Net's folder variables (nnUNet_raw, …) point elsewhere; nnWorkbench uses its own."""
+        conflicts = environment_conflicts({f"nnUNet_{key}": str(path) for key, path
+                                           in zip(_KEYS, self.local_paths()) if path}) if self._active == "Local" else []
+        self._variables.setVisible(bool(conflicts))
+        if conflicts and self._status.text() == "✓ all found":  # room for the badge; its hover text says the same
+            self._note.setText("")
+        self._variables.setToolTip("\n\n".join(
+            f"{name}\n  used (nnWorkbench): {used or 'not set'}\n  variable (not used): {value}"
+            for name, value, used in conflicts) + "\n\nnnWorkbench uses its own folders, also for the nnU-Net "
+            "commands it runs.")
 
     def _edited(self) -> None:
         texts = self._texts()
@@ -734,6 +780,14 @@ class OverviewPage(QWidget):
             title = self._table.horizontalHeaderItem(column).text()
             header.resizeSection(column, max(width + 28, titles.horizontalAdvance(title) + 32))
 
+    def select_dataset(self, dataset_id: int) -> None:
+        """Select the dataset that was opened, so the overview (and ＋ New iteration) starts from it."""
+        self._filter(selected=dataset_id)
+
+    def focus_search(self) -> None:
+        self._search.setFocus()
+        self._search.selectAll()
+
     def _filter(self, *_args, selected: int | None = None) -> None:
         """Hide the rows that do not match the search; keep the selection when its row is still shown."""
         needle = self._search.text().strip().casefold()
@@ -742,7 +796,7 @@ class OverviewPage(QWidget):
         select_row = current_row = -1
         for row in range(self._table.rowCount()):
             record: DatasetRecord = self._table.item(row, 0).data(Qt.ItemDataRole.UserRole)
-            hidden = bool(needle) and needle not in record.name.casefold() and needle not in f"{record.dataset_id:03d}"
+            hidden = not record.matches(needle)
             if self._table.isRowHidden(row) != hidden:
                 self._table.setRowHidden(row, hidden)
             if not hidden:

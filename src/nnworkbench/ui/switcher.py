@@ -153,7 +153,7 @@ class DatasetSwitcher(QFrame):
         for index in range(self._list.count()):
             item = self._list.item(index)
             record: DatasetRecord = item.data(Qt.ItemDataRole.UserRole)
-            visible = not needle or needle in record.name.casefold() or needle in f"{record.dataset_id:03d}"
+            visible = record.matches(needle)
             item.setHidden(not visible)
             if visible and first_visible is None:
                 first_visible = item

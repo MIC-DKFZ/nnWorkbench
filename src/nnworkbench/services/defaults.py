@@ -31,6 +31,17 @@ def default_plans(available: Iterable[str]) -> str:
     return DEFAULT_PLANS if DEFAULT_PLANS in names else (names[0] if names else "")
 
 
+def preprocessing_configuration(manifest: object, planned: Iterable[str] = ()) -> str:
+    """2d for 2D images, otherwise the default. nnU-Net plans no 3d_fullres for 2D images and then skips it
+    ("Configuration 3d_fullres not found") without an error. 2D: .png/.bmp, or plans (``planned``: the configuration
+    names of the existing plans files) without 3d_fullres but with 2d (e.g. 2D .tif)."""
+    ending = manifest.get("file_ending") if isinstance(manifest, dict) else None
+    planned = set(planned)
+    if isinstance(ending, str) and ending.lower() in (".png", ".bmp") or "2d" in planned and DEFAULT_CONFIGURATION not in planned:
+        return "2d"
+    return DEFAULT_CONFIGURATION
+
+
 def default_configuration(available: Iterable[str]) -> str:
     """3d_fullres when available, otherwise the first available configuration ("" if none)."""
     names = list(available)

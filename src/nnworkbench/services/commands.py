@@ -1,27 +1,52 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
-import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
 # Commands are kept as POSIX-quoted strings inside nnWorkbench (created with shlex.join, so Windows paths survive).
-# What the user sees or copies uses the quoting of the platform's shell.
+# What the user sees or copies uses one quoting that bash/zsh and PowerShell (5.1 and 7) read the same way:
+# single quotes, one command per line. The Windows command prompt (cmd) is not supported.
 WINDOWS = os.name == "nt"
+_PLAIN = re.compile(r"[A-Za-z0-9_./=:-]+")  # needs no quotes in either shell (PowerShell: no , @ $ ( ) { } ; &)
+_SINGLE_QUOTES = "'‘’‚‛"  # PowerShell also ends a single-quoted string at the typographic ones
 
 
 def split_arguments(text: str) -> list[str]:
-    """Split additional arguments typed by the user; on Windows backslashes in paths are kept."""
+    """Split additional arguments typed by the user: '…' and "…" both quote, as in bash and PowerShell; on Windows
+    backslashes are kept (paths), elsewhere they escape as in a POSIX shell. Raises ValueError (unclosed quote)."""
     if WINDOWS:
-        return [part[1:-1] if len(part) > 1 and part[0] == part[-1] == '"' else part
-                for part in shlex.split(text, posix=False)]
+        lexer = shlex.shlex(text, posix=True)
+        lexer.whitespace_split = True
+        lexer.escape = ""  # C:\data stays C:\data
+        lexer.commenters = ""
+        return list(lexer)
     return shlex.split(text)
 
 
+def shell_quote(argument: str) -> str:
+    """One argument for bash/zsh and PowerShell: as it is when plain, else in single quotes. A value with a single
+    quote has no form both read alike: it gets the quoting of the platform's shell."""
+    if _PLAIN.fullmatch(argument):
+        return argument
+    if not any(quote in argument for quote in _SINGLE_QUOTES):
+        return f"'{argument}'"
+    if WINDOWS:  # PowerShell doubles a single quote inside single quotes
+        return "'" + "".join(character * 2 if character in _SINGLE_QUOTES else character
+                             for character in argument) + "'"
+    return shlex.quote(argument)
+
+
 def shell_join(arguments: Sequence[str]) -> str:
-    """Quote for the platform's shell: cmd/PowerShell on Windows, a POSIX shell elsewhere."""
-    return subprocess.list2cmdline(list(arguments)) if WINDOWS else shlex.join(arguments)
+    """A command line for bash/zsh and PowerShell (see shell_quote)."""
+    return " ".join(shell_quote(argument) for argument in arguments)
+
+
+def join_commands(commands: Sequence[str]) -> str:
+    """Several commands to paste at once: one per line (``&&`` does not exist in Windows PowerShell 5.1)."""
+    return "\n".join(commands)
 
 
 def preprocessing_command(dataset_id: int, configuration: str | Sequence[str], planner: str,

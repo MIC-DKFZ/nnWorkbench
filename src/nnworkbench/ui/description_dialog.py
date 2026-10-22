@@ -35,6 +35,7 @@ class DescriptionDialog(QDialog):
     def __init__(self, path: Path, parent=None) -> None:
         super().__init__(parent)
         self._path = path
+        self._loaded = ""  # the text when editing started
         self.setWindowTitle(f"{path.parent.name} · {path.name}")
         self.resize(900, 820)
         layout = QVBoxLayout(self)
@@ -86,6 +87,7 @@ class DescriptionDialog(QDialog):
         except OSError as error:
             QMessageBox.warning(self, "Description not read", f"{self._path.name} could not be read: {error}")
             return
+        self._loaded = text  # unsaved changes are compared with this (the file may change on disk meanwhile)
         self._editor.blockSignals(True)
         self._editor.setPlainText(text)
         self._editor.blockSignals(False)
@@ -109,6 +111,16 @@ class DescriptionDialog(QDialog):
 
     def _save_edit(self) -> None:
         try:
+            changed = read_description(self._path) != self._loaded
+        except OSError:
+            changed = False  # gone or unreadable: writing tells
+        if changed and QMessageBox.question(
+                self, "Replace changes?", f"{self._path.name} was changed by another program since you started "
+                "editing. Replace those changes with your text?",
+                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel) != QMessageBox.StandardButton.Save:
+            return
+        try:
             self._path.write_text(self._editor.toPlainText(), encoding="utf-8")
         except OSError as error:  # the text stays in the editor
             QMessageBox.warning(self, "Not saved", f"{self._path.name} could not be written: {error}")
@@ -118,10 +130,7 @@ class DescriptionDialog(QDialog):
     def _has_changes(self) -> bool:
         if self._views.currentWidget() is not self._editor:
             return False
-        try:
-            return self._editor.toPlainText() != read_description(self._path)
-        except OSError:
-            return True  # the file is gone or unreadable: the text exists only in the editor
+        return self._editor.toPlainText() != self._loaded
 
     # ------------------------------------------------------------ images and folder
 

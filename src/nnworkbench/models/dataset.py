@@ -20,3 +20,8 @@ class DatasetRecord:
     @property
     def directory_name(self) -> str:
         return f"Dataset{self.dataset_id:03d}_{self.name}"
+
+    def matches(self, search: str) -> bool:
+        """Search by name, ID or folder name ("Liver CT", "8", "Dataset008_Liver_CT"); empty matches all."""
+        needle = search.strip().casefold()
+        return not needle or any(text in self.directory_name.casefold() for text in (needle, needle.replace(" ", "_")))

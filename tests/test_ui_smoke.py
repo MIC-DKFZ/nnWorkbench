@@ -175,8 +175,11 @@ def test_train_validate_predict_pages(tmp_path: Path) -> None:
         train._prefill(model, fold_0, continue_training=False)
         assert "is finished" in train._overwrite_warning()
         train._prefill(model, fold_2, continue_training=False)
-        assert "already has a training" in train._overwrite_warning()
+        assert fold_2.status == "training"  # its log was just written: a second run asks, also with Continue
+        assert "still training" in train._overwrite_warning()
         train._continue.setChecked(True)
+        assert "still training" in train._overwrite_warning()
+        train._prefill(model, fold_0, continue_training=True)
         assert train._overwrite_warning() == ""
         train._run_dialog.close()
         # ▶ Next fold… trains the first fold the model does not have yet (0, 1, 2 and all exist)
@@ -186,7 +189,7 @@ def test_train_validate_predict_pages(tmp_path: Path) -> None:
         assert train._overwrite_warning() == ""
         # several folds: one command per fold, run one after another in one job
         train._fold_choice.set_selected(["3", "4"])
-        assert train._command.command().count("nnUNetv2_train") == 2 and " && " in train._command.command()
+        assert train._command.command().count("nnUNetv2_train") == 2 and "\n" in train._command.command()
         assert train._start.text() == "▶ Train 2 folds"
         train._fold_choice.set_selected(["0", "3"])
         assert "Fold 0 of this model is finished" in train._overwrite_warning()
@@ -469,8 +472,12 @@ def test_start_screen_marks_unset_paths_orange_and_missing_paths_red(tmp_path: P
         assert [card._marks[key].objectName() for key in ("raw", "preprocessed", "results")] == [
             "statusYes", "statusUnset", "statusNo"]
         assert card._status.text() == "1 not found · 1 not set" and card._status.property("tone") == "red"
-        card.set_paths(str(tmp_path), str(tmp_path), str(tmp_path))
+        for name in ("raw", "preprocessed", "results"):
+            (tmp_path / name).mkdir()
+        card.set_paths(*(str(tmp_path / name) for name in ("raw", "preprocessed", "results")))
         assert card._status.property("tone") == "green"
+        card.set_paths(str(tmp_path), str(tmp_path / "preprocessed"), str(tmp_path / "results"))
+        assert card._status.text() == "folders overlap" and card._status.property("tone") == "red"
     finally:
         card.close()
         application.processEvents()

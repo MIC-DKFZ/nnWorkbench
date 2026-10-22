@@ -15,6 +15,7 @@ from qtpy.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLineEdit,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QStackedWidget,
@@ -22,6 +23,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from nnworkbench.services.dataset_contents import json_object
 from nnworkbench.services.dataset_json import (
     definition_errors,
     file_ending_error,
@@ -31,6 +33,9 @@ from nnworkbench.services.dataset_json import (
 )
 
 from .widgets import badge, button, label, scroll, set_badge
+
+_CHANGED_ON_DISK = ("<span style='color:#c2413b'>dataset.json was changed by another program since you started "
+                    "editing. Save again to replace those changes with this form, or Cancel to see them.</span>")
 
 _STRUCTURED = ("channel_names", "labels")
 # Keys nnWorkbench always shows; their names are fixed. Every other key is a custom entry.
@@ -200,11 +205,16 @@ class DatasetJsonPanel(QFrame):
         layout.addWidget(self._note)
         self._editors: dict[str, object] = {}
         self._cases: int | None = None
+        self._edit_base: dict | None = None  # dataset.json when editing started
+        self._edit_start: dict = {}  # the form's values when editing started
+        self._overwrite_confirmed = False
         self._set_mode(False)
 
     def set_manifest(self, directory: Path | None, manifest: dict | None, editable: bool, note: str = "",
                      cases: int | None = None) -> None:
-        """``cases`` is the number of training cases in imagesTr; numTraining is checked against it."""
+        """``cases`` is the number of training cases in imagesTr; numTraining is checked against it. While the
+        same dataset.json is being edited (a reload after a job or Refresh), the form and its edits stay."""
+        editing = self._stack.currentIndex() == 1 and directory == self._directory
         self._directory, self._manifest, self._editable, self._cases = directory, manifest, editable, cases
         try:
             text = json.dumps(manifest, indent=2, ensure_ascii=False) if manifest is not None else "No dataset.json found."
@@ -224,6 +234,10 @@ class DatasetJsonPanel(QFrame):
         else:
             set_badge(self._badge, "✓ valid", "green")
         self._default_note = note
+        if editing:
+            if manifest != self._edit_base:
+                self._note.setText(_CHANGED_ON_DISK)
+            return
         self._note.setText(note)
         self._set_mode(False)
 
@@ -236,6 +250,10 @@ class DatasetJsonPanel(QFrame):
         self.setStyleSheet("QFrame#card { border: 1px solid #1f5fbf; }" if editing else "")
 
     def _start_edit(self) -> None:
+        if self._directory is not None:  # the file as it is now: it may have changed since it was loaded
+            self._manifest = json_object(self._directory / "dataset.json") or self._manifest
+        self._edit_base = self._manifest
+        self._overwrite_confirmed = False
         manifest = dict(self._manifest or {})
         for key in _STANDARD:
             manifest.setdefault(key, {} if key in _STRUCTURED else "")
@@ -287,7 +305,13 @@ class DatasetJsonPanel(QFrame):
         grid.addLayout(self._custom_layout, row, 0, 1, 2)
         row += 1
         for key, value in manifest.items():
-            if key not in _STANDARD:
+            if key == "dataset" and isinstance(value, dict):  # the file list: kept as it is (may be thousands)
+                listed = label(f'"dataset": file list with {len(value)} case{"s" if len(value) != 1 else ""} '
+                               "(nnU-Net reads these files instead of imagesTr/labelsTr). Kept as it is; change it "
+                               "in a text editor.", muted=True, wrap=True, size=12)
+                grid.addWidget(listed, row, 0, 1, 2)
+                row += 1
+            elif key not in _STANDARD:
                 self._add_custom(key, value)
         add = QPushButton("＋ add entry")
         add.setObjectName("link")
@@ -311,6 +335,7 @@ class DatasetJsonPanel(QFrame):
                            + (" Region-based labels: a label can be a list of IDs, e.g. [1, 2, 3]."
                               if has_regions(manifest) else ""))
         self._set_mode(True)
+        self._edit_start = self._collect()  # unsaved changes are compared with this
 
     def _add_custom(self, key: str, value: object) -> None:
         row = QWidget()
@@ -356,11 +381,14 @@ class DatasetJsonPanel(QFrame):
                 except (json.JSONDecodeError, RecursionError):
                     result[key] = text
             else:
-                result[key] = editor.text()
+                result[key] = editor.text().strip()  # pasted ".nii.gz " or a trailing newline
         for _row, key_field, value_field in self._custom:
             key, text = key_field.text().strip(), value_field.text().strip()
             if key:
                 result[key] = _custom_value(text, was_number=bool(value_field.property("number")))
+        listed = (self._edit_base or {}).get("dataset")
+        if isinstance(listed, dict):  # not in the form (see _start_edit)
+            result["dataset"] = listed
         return result
 
     def _save_edit(self) -> None:
@@ -393,14 +421,53 @@ class DatasetJsonPanel(QFrame):
         if problems:
             self._note.setText("<span style='color:#c2413b'>Not saved: " + " ".join(problems) + "</span>")
             return
+        if not self._confirm_label_change(manifest):
+            return
+        if json_object(self._directory / "dataset.json") != self._edit_base and not self._overwrite_confirmed:
+            self._overwrite_confirmed = True  # a second Save replaces it
+            self._note.setText(_CHANGED_ON_DISK)
+            return
         try:
             write_manifest(self._directory, manifest)
         except (OSError, ValueError) as error:
             self._note.setText(f"<span style='color:#c2413b'>Could not save: {error}</span>")
             return
         self._manifest = manifest
+        self._set_mode(False)
         self.set_manifest(self._directory, manifest, self._editable, self._default_note, self._cases)
         self.saved.emit()
+
+    def _confirm_label_change(self, manifest: dict) -> bool:
+        """Label IDs or the ignore label changed while labelsTr has files: those keep their numbers (as Push to
+        dataset.json in the description asks)."""
+        before = (self._edit_base or {}).get("labels")
+        labels_dir = self._directory / "labelsTr"
+        try:
+            has_labels = labels_dir.is_dir() and any(labels_dir.iterdir())
+        except OSError:
+            has_labels = False
+        if manifest.get("labels") == before or not has_labels:
+            return True
+        message = ("labelsTr already contains label files. They keep their numbers: if IDs change, the existing "
+                   "labels change their meaning.")
+        if "ignore" in manifest.get("labels", {}) and "ignore" not in (before if isinstance(before, dict) else {}):
+            message += ("\n\nWith a new ignore label, the existing label files contain no ignore voxels: everything "
+                        "not painted in them still counts as background (dense). Paint the ignore value where "
+                        "nothing is annotated, or start a new iteration.")
+        return QMessageBox.question(self, "Change the labels?", message + "\n\nSave dataset.json?",
+                                    QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Cancel,
+                                    QMessageBox.StandardButton.Cancel) == QMessageBox.StandardButton.Save
+
+    def has_unsaved_changes(self) -> bool:
+        return self._stack.currentIndex() == 1 and self._collect() != self._edit_start
+
+    def save(self) -> bool:
+        """Save the open editor (False: not saved, it stays open with the reason in its note)."""
+        self._save_edit()
+        return self._stack.currentIndex() == 0
+
+    def discard(self) -> None:
+        self._cancel_edit()
 
     def _cancel_edit(self) -> None:
         self._note.setText(self._default_note)

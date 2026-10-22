@@ -10,6 +10,7 @@ from qtpy.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
+    QMessageBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -60,7 +61,8 @@ def _howto() -> HowToCard:
         "Labels go to <b>labelsTr</b> with the same case name, without the channel suffix.",
         ("<b>dataset.json</b> describes channels, labels and the file ending. An optional <b>ignore</b> label marks "
         "voxels that are not annotated; it must have the highest label ID."),
-        f"{icon_html('search')} inspects a case in Napari; {icon_html('edit')} annotates it (saved to <b>labelsTr</b>).",
+        (f"{icon_html('search')} inspects a case in Napari; {icon_html('edit')} annotates it (saved to <b>labelsTr</b>; "
+         "shown when <b>Annotation Workflow</b> is on in the top bar)."),
     ], [], "Setup · Create a dataset")
 
 
@@ -316,6 +318,26 @@ class DataStage(StagePage):
 
     # ------------------------------------------------------------ state
 
+    def confirm_leave(self) -> bool:
+        """Before another dataset opens or nnWorkbench quits: Save / Discard / Cancel for each editor with unsaved
+        changes. False: stay (Cancel, or saving failed)."""
+        for name, editor in (("the description", self._description), ("dataset.json", self._json)):
+            if not editor.has_unsaved_changes():
+                continue
+            answer = QMessageBox.question(
+                self, "Unsaved changes", f"Save the changes to {name} of {self.state.record.directory_name}?"
+                if self.state else f"Save the changes to {name}?",
+                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard
+                | QMessageBox.StandardButton.Cancel, QMessageBox.StandardButton.Save)
+            if answer == QMessageBox.StandardButton.Save:
+                if not editor.save():
+                    return False
+            elif answer == QMessageBox.StandardButton.Discard:
+                editor.discard()
+            else:
+                return False
+        return True
+
     def set_state(self, state: DatasetState) -> None:
         super().set_state(state)
         record = state.record
@@ -457,8 +479,16 @@ class DataStage(StagePage):
             items.append(badge("dataset.json invalid", "red", " ".join(other)))
         if not raw.cases and state.raw_path is not None:
             items.append(badge("no images in imagesTr yet", "red", "Add images (and labels) to imagesTr and labelsTr."))
+        if not items and (problems := state.data_problems()):  # e.g. file endings, colour channels, file list
+            items.append(badge(f"must be fixed · {len(problems)} problem{'s' if len(problems) != 1 else ''}", "red",
+                               " · ".join(problems)))
         if not items and raw.cases:
             items.append(badge("✓ ready for preprocessing", "green"))
+        if state.inherits_from:
+            items.append(badge(f"from {state.inherits_from}" + (" · images linked" if raw.file_list else ""), "gray",
+                               f"A later round of {state.inherits_from} (inherits_from in dataset.json)"
+                               + (". Its images are listed in dataset.json (\"dataset\"), not copied: nnU-Net "
+                                  "reads only the listed files." if raw.file_list else ".")))
         if state.analysis and state.analysis_outdated:  # not a problem for preprocessing, only for the statistics
             changed = state.analysis_outdated
             items.append(badge(f"statistics outdated · {changed} label{'s' if changed != 1 else ''} changed", "orange",
@@ -492,12 +522,12 @@ class DataStage(StagePage):
     def inspect(self, row: CaseRow) -> None:
         target = row.image_files[0] if row.image_files else row.label_file
         if target is not None:
-            self.context.inspect_case(target)
+            self.context.inspect_case(target, self.state.raw_path if self.state else None)
 
     def annotate(self, row: CaseRow) -> None:
         image = _first_channel(row.image_files)
         if image is not None:
-            self.context.annotate_case(image)
+            self.context.annotate_case(image, self.state.raw_path if self.state else None)
 
     def _select_row(self, row: int) -> None:
         if self.right.currentWidget() is self._case_panel:

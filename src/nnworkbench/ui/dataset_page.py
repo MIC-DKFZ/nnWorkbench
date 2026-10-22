@@ -24,6 +24,7 @@ STAGES = (("data", "Data"), ("preprocess", "Preprocess"), ("train", "Train"), ("
 
 class DatasetPage(QWidget):
     guide_requested = Signal(str, str)
+    rescan_requested = Signal()  # ⟳ Refresh on a stage: the main window looks for renamed or removed folders first
 
     def __init__(self, context: AppContext, parent=None) -> None:
         super().__init__(parent)
@@ -64,10 +65,14 @@ class DatasetPage(QWidget):
             self._stack.addWidget(page)
             page.navigate.connect(self.show_stage)
             page.guide_requested.connect(self.guide_requested.emit)
-            page.reload_requested.connect(self.reload)
+            page.reload_requested.connect(self._refresh)
         layout.addWidget(self._stack, 1)
         self._current = "data"
         self.show_stage("data")
+
+    def confirm_leave(self) -> bool:
+        """Unsaved edits on any stage: ask (Save / Discard / Cancel). False: stay on this dataset."""
+        return all(page.confirm_leave() for page in self.pages.values())
 
     def open(self, record: DatasetRecord) -> None:
         if self.record is None or record.dataset_id != self.record.dataset_id:
@@ -82,11 +87,16 @@ class DatasetPage(QWidget):
         self.record = record
         self.reload()
 
+    def _refresh(self) -> None:
+        self.rescan_requested.emit()  # may update self.record (e.g. the folder was renamed)
+        self.reload()
+
     def reload(self) -> None:
         if self.record is None:
             return
         record = self.record
-        self._context.tasks.run("dataset-state", lambda: load_state(record), self._apply_state,
+        ended = self._context.jobs.ended_folds(record.results_path.parent if record.results_path else None)
+        self._context.tasks.run("dataset-state", lambda: load_state(record, ended), self._apply_state,
                                 lambda error: self._load_failed(record, error))
 
     def _load_failed(self, record: DatasetRecord, error: str) -> None:

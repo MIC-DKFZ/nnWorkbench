@@ -177,7 +177,7 @@ def test_search_and_sort_with_1000_datasets_are_fast(config: Path) -> None:
         overview.set_records(_many())
         application.processEvents()
         assert table.rowCount() == 1000 and table.cellWidget(0, 2) is None  # pills painted, no widget per row
-        for text, shown in (("D", 858), ("Da", 858), ("long", 142), ("999", 1), ("", 1000)):
+        for text, shown in (("D", 1000), ("Dataset_", 858), ("long", 142), ("999", 1), ("", 1000)):
             start = time.perf_counter()
             overview._search.setText(text)
             application.processEvents()

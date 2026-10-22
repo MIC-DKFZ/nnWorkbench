@@ -15,7 +15,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from nnworkbench.services.commands import training_command
+from nnworkbench.services.commands import split_arguments, training_command
 from nnworkbench.services.defaults import (
     DENSE_TRAINER,
     SPARSE_TRAINER,
@@ -190,13 +190,18 @@ class TrainStage(StagePage):
             dice = f"{fold.dice:.3f} (trained on these cases)"
         else:
             dice = f"{fold.dice:.3f}"
-        rows = (("Status", badge(text, tone)), ("Epoch", epoch), ("Dice", dice),
+        status = badge(text, tone)
+        note = fold.log_note()
+        status.setToolTip(note)
+        rows = (("Status", status), *((("Last log", label(note, muted=True, wrap=True)),) if note else ()),
+                ("Epoch", epoch), ("Dice", dice),
                 ("Pseudo Dice", f"{fold.pseudo_dice:.3f}" if fold.pseudo_dice is not None else "—"),
                 ("Folder", label(fold.path.name, mono=True)))
         for name, value in rows:
             self._details_body.addLayout(detail_row(name, value))
         if fold.status == "stopped":
-            self._details_body.addWidget(tip("Stopped before it finished. ▶ Continue… resumes it.", "orange"))
+            self._details_body.addWidget(tip("Stopped before it finished. ▶ Continue… resumes it (check first that it "
+                                             "does not still run elsewhere, e.g. on a cluster).", "orange"))
         if fold.name == "all" and fold.dice is not None:
             self._details_body.addWidget(label(FOLD_ALL_NOTE, muted=True, wrap=True, size=12))
         actions = QHBoxLayout()
@@ -450,7 +455,9 @@ class TrainStage(StagePage):
         for row, fold in enumerate(model.folds):
             self._folds.setItem(row, 0, table_item(fold.name, bold=True, data=row))
             text, tone = FOLD_STATUS[fold.status]
-            self._folds.setCellWidget(row, 1, cell_widget(badge(text, tone)))
+            status = badge(text, tone)
+            status.setToolTip(fold.log_note())  # how sure: read from the folder, the training may run elsewhere
+            self._folds.setCellWidget(row, 1, cell_widget(status))
             epoch = "—" if fold.epoch is None else (
                 f"{fold.epoch + (1 if fold.finished else 0)} / {fold.total_epochs}" if fold.total_epochs
                 else str(fold.epoch))
@@ -543,6 +550,19 @@ class TrainStage(StagePage):
                                     else "default for dense labels") if default else "")
         self._trainer_hint.setVisible(default)
 
+    def _too_few_cases(self) -> str:
+        """nnU-Net splits the cases into 5 folds (unless splits_final.json exists): fewer cases fail in sklearn."""
+        plans = next((item for item in self.state.plans if item.name == self._plans.currentText()), None)
+        config = next((item for item in plans.configurations if item.name == self._configuration.currentText()),
+                      None) if plans else None
+        cases = config.preprocessed_cases if config else 0
+        preprocessed = self.state.record.preprocessed_path
+        if not cases or cases >= 5 or self._fold_choice.selected() == ["all"] or (
+                preprocessed is not None and (preprocessed / "splits_final.json").is_file()):
+            return ""
+        return (f"Only {cases} preprocessed case{'s' if cases != 1 else ''}: the 5-fold cross-validation needs at "
+                "least 5. Annotate more images (then preprocess again), or train fold all.")
+
     def update_actions(self) -> None:
         if self.state is None or not getattr(self, "_run_dialog", None) or not self._run_dialog.visible:
             return  # nothing to show while the run dialog is closed
@@ -552,6 +572,8 @@ class TrainStage(StagePage):
         folds = len(self._fold_choice.selected())
         if not reason and not folds:
             reason = "Select at least one fold."
+        if not reason:
+            reason = self._too_few_cases()
         self._start.setText(f"▶ Train {folds} folds" if folds > 1 else "▶ Train")
         self._start.setEnabled(not reason)
         self._start.setToolTip(reason)
@@ -568,7 +590,7 @@ class TrainStage(StagePage):
             warning = self._overwrite_warning()
             if warning:
                 answer = QMessageBox.question(
-                    self._run_dialog.dialog, "Replace existing results?", warning,
+                    self._run_dialog.dialog, "Train this fold?", warning,
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
                     QMessageBox.StandardButton.Cancel)
                 if answer != QMessageBox.StandardButton.Yes:
@@ -579,11 +601,21 @@ class TrainStage(StagePage):
                 self._run_dialog.close()
 
     def _overwrite_warning(self) -> str:
-        """Text for the confirmation when the run would start an existing fold from scratch, else ""."""
-        if self.state is None or self._continue.isChecked():
+        """Text for the confirmation when the run would start an existing fold from scratch, or a second training
+        of a fold that is still training, else ""."""
+        if self.state is None:
             return ""
         existing = self._existing_folds()
-        if not existing:
+        running = [fold.name for fold in existing if fold.status == "training"]
+        if running:  # e.g. kept running after quitting, or started in a terminal
+            return (f"Fold {', '.join(running)} of this model seems to be still training (its log changed in the last "
+                    "minutes). A second training of the same fold writes into the same folder. Start anyway?")
+        try:
+            # --c (continue) or --val (only validate) typed as additional arguments replace nothing either
+            extra = set(split_arguments(self._arguments.text()))
+        except ValueError:
+            extra = set()
+        if not existing or self._continue.isChecked() or extra & {"--c", "--val"}:
             return ""
         if len(existing) == 1:
             fold = existing[0]

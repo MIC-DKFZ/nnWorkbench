@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .dataset_contents import workbench_folder
-from .dataset_json import read_manifest
+from .dataset_json import listed_cases, read_manifest
 from .image_files import has_image_suffix, strip_image_suffix
 
 ANALYSIS_FILENAME = "class_distribution.json"
@@ -29,7 +29,11 @@ def analysis_path(dataset_directory: Path) -> Path:
 
 
 def label_files(dataset_directory: Path) -> list[Path]:
-    """Return training label images, in a stable order."""
+    """Return training label images, in a stable order (the listed ones for a "dataset" file list in dataset.json)."""
+    listed = listed_cases(dataset_directory)
+    if listed is not None:
+        return sorted((label for _images, label in listed.values() if label.is_file()),
+                      key=lambda path: path.name.casefold())
     labels_directory = dataset_directory / "labelsTr"
     if not labels_directory.is_dir():
         return []
@@ -44,6 +48,10 @@ def _case_id(path: Path) -> str:
 
 
 def _image_case_ids(dataset_directory: Path) -> set[str]:
+    """Cases with an image, named as their label files are (label_validity compares the label's case name)."""
+    listed = listed_cases(dataset_directory)
+    if listed is not None:
+        return {_case_id(label) for images, label in listed.values() if any(image.is_file() for image in images)}
     images_directory = dataset_directory / "imagesTr"
     if not images_directory.is_dir():
         return set()

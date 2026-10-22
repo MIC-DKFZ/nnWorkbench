@@ -16,6 +16,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
+from nnworkbench.path_setup import typed_path
 from nnworkbench.services.commands import prediction_command
 from nnworkbench.services.defaults import PREDICTION_PROCESSES, prediction_folds
 from nnworkbench.services.device_probe import (
@@ -90,6 +91,7 @@ class PredictStage(StagePage):
         self._models: list[ModelInfo] = []
         self._selected: ModelInfo | None = None
         self._input_cases: int | None = None  # cases in the input folder; None while it is listed
+        self._listed_source: Path | None = None  # the input folder of the last completed listing
         self._input_error = ""  # why the input folder cannot be listed
         self._not_ready = ""  # why cases of the input folder cannot be predicted (missing channels, no suffix)
         models_card = Card()
@@ -223,6 +225,7 @@ class PredictStage(StagePage):
     def set_state(self, state: DatasetState) -> None:
         previous_record = self.state.record if self.state else None
         super().set_state(state)
+        self._listed_source = None  # channels and file ending may differ now: the input is checked again
         if previous_record is None:  # the last input/output folders (one pair in total, kept across sessions)
             self._input.setText(str(self.context.store.value("predict/input", "") or ""))
             self._output.setText(str(self.context.store.value("predict/output", "") or ""))
@@ -295,14 +298,19 @@ class PredictStage(StagePage):
         self.context.store.setValue("predict/input", self._input.text().strip())
         self.context.store.setValue("predict/output", self._output.text().strip())
         source, target = _folder(self._input), _folder(self._output)
-        self._input_cases, self._input_error, self._not_ready = None, "", ""
-        channels = self.state.raw.channels if self.state else 1
+        if source != self._listed_source or self._input_error:
+            # a new input folder: Predict waits for its listing. Only the output changed: the cases and their
+            # problems stay, so ▶ Predict stays enabled (the listing only updates the "already predicted" marks)
+            self._input_cases, self._input_error, self._not_ready = None, "", ""
+        channels = self.state.raw.required_suffixes if self.state else 1  # an RGB file covers three channels
+        ending = self.state.manifest.get("file_ending") if self.state and isinstance(self.state.manifest, dict) else None
+        ending = ending if isinstance(ending, str) and ending.startswith(".") else None
 
         def listing() -> list:
             if source is not None and not source.is_dir():
                 raise NotADirectoryError(f"{source} does not exist or is not a folder")
             # every channel of dataset.json needs its file (case_0000, case_0001, …), as nnU-Net expects
-            return [case.for_channels(channels) for case in prediction_status(source, target)]
+            return [case.for_channels(channels) for case in prediction_status(source, target, file_ending=ending)]
 
         self.context.tasks.run("predict-status", listing, self._fill_images, self._listing_failed)
         self._update_command()
@@ -310,6 +318,7 @@ class PredictStage(StagePage):
     def _listing_failed(self, error: str) -> None:
         """The input folder is missing or cannot be read: no cases from an earlier folder stay, Predict is off."""
         self._fill_images([])
+        self._listed_source = None
         self._input_error = error.split(": ", 1)[-1]  # without the exception type
         self._images_note.setText(f"Cannot list the input folder · {self._input_error}")
         self.update_actions()
@@ -317,11 +326,14 @@ class PredictStage(StagePage):
     def _fill_images(self, rows: object) -> None:
         rows = rows if isinstance(rows, list) else []
         self._input_cases, self._input_error = len(rows), ""
+        self._listed_source = _folder(self._input)
         self._table.setVisible(bool(rows))
         self._images_empty.setVisible(not rows)
         predicted = sum(1 for _case, _channels, done in rows if done)
         not_ready = [case for case in rows if not case[1]]
-        self._not_ready = _not_ready_reason(not_ready, self.state.raw.channels if self.state else 1)
+        ending = self.state.manifest.get("file_ending") if self.state and isinstance(self.state.manifest, dict) else ""
+        self._not_ready = _not_ready_reason(not_ready, self.state.raw.required_suffixes if self.state else ("0000",),
+                                            str(ending))
         self._images_note.setText(f"{len(rows)} cases" + (f" · {len(not_ready)} not ready" if not_ready else "")
                                   + f" · {predicted} already in the output folder" if rows else "")
         self._continue_hint.setText(
@@ -385,6 +397,8 @@ class PredictStage(StagePage):
             reason = "Choose an input folder."
         if not reason and target is None:
             reason = "Choose an output folder."
+        if not reason and not (source.is_absolute() and target.is_absolute()):  # would be in the GUI's start folder
+            reason = "Use the full path of the input and output folder (Browse… gives it)."
         if not reason and self._input_error:
             reason = f"Cannot list the input folder · {self._input_error}"
         if not reason and self._input_cases is None:
@@ -410,6 +424,9 @@ class PredictStage(StagePage):
 
 def _case_problem(case) -> str:
     """Why one input case cannot be predicted (hover text of its ✗)."""
+    if getattr(case, "wrong_ending", ()):
+        return (f"{case.wrong_ending[0]} does not end with the dataset's file ending (dataset.json file_ending): "
+                "nnU-Net skips it. Rename or convert it.")
     if getattr(case, "unsuffixed", False):
         return f"A file without channel suffix: rename it to {case[0]}_0000 (and so on for more channels)."
     if getattr(case, "missing", ()):
@@ -417,14 +434,19 @@ def _case_problem(case) -> str:
     return "Not ready."
 
 
-def _not_ready_reason(cases: list, channels: int) -> str:
-    """Why Predict is disabled when input cases lack channels or the channel suffix, or ""."""
+def _not_ready_reason(cases: list, channels: tuple[str, ...], file_ending: str = "") -> str:
+    """Why Predict is disabled when input cases lack channels or the channel suffix or end differently, or ""."""
     if not cases:
         return ""
+    endings = [name for case in cases for name in getattr(case, "wrong_ending", ())]
+    if endings:
+        return (f"Cannot predict: {len(endings)} file{'s' if len(endings) != 1 else ''} (e.g. {endings[0]}) "
+                f"{'do' if len(endings) != 1 else 'does'} not end with the dataset's file ending \"{file_ending}\" "
+                "(also upper/lower case); nnU-Net would skip them. Rename or convert them.")
     unsuffixed_ids = {case[0] for case in cases if getattr(case, "unsuffixed", False)}
     missing = [case for case in cases if getattr(case, "missing", ()) and case[0] not in unsuffixed_ids]
     unsuffixed = [case for case in cases if getattr(case, "unsuffixed", False)]
-    expected = "_0000" if channels == 1 else f"_0000 to _{channels - 1:04d}"
+    expected = f"_{channels[0]}" if len(channels) == 1 else f"_{channels[0]} to _{channels[-1]}"
     parts = []
     if missing:
         parts.append(f"{len(missing)} case{'s' if len(missing) != 1 else ''} without a file for every channel of "
@@ -438,14 +460,10 @@ def _not_ready_reason(cases: list, channels: int) -> str:
 
 
 def _folder(field: QLineEdit) -> Path | None:
-    """The folder typed in a field, with ``~`` expanded (nnU-Net gets the path quoted, so no shell expands it)."""
-    text = field.text().strip()
-    if not text:
-        return None
-    try:
-        return Path(text).expanduser()
-    except RuntimeError:  # ~user that does not exist: used as typed
-        return Path(text)
+    """The folder typed or pasted in a field: quotes, file: URL, ``~`` and ``$VAR`` resolved (nnU-Net gets the
+    path quoted, so no shell expands it)."""
+    text = typed_path(field.text()).strip()
+    return Path(text) if text else None
 
 
 def _same_folder(first: Path | None, second: Path | None) -> bool:

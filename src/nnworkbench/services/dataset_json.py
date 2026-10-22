@@ -13,6 +13,12 @@ def manifest_source(raw_directory: Path | None, preprocessed_directory: Path | N
                             ("results", results_directory)):
         if directory and (directory / "dataset.json").is_file():
             return kind, directory
+    # only results (raw and preprocessed deleted or on another computer): nnU-Net keeps a copy in every model folder
+    from .dataset_contents import trained_models
+
+    for model in trained_models(results_directory):
+        if (results_directory / model / "dataset.json").is_file():
+            return "results", results_directory / model
     return None
 
 
@@ -83,11 +89,59 @@ def definition_errors(manifest: dict) -> tuple[str, ...]:
     return tuple(errors)
 
 
+def listed_cases(dataset_directory: Path | None, manifest: object = None) -> dict[str, tuple[tuple[Path, ...], Path]] | None:
+    """The training cases of a dataset.json with a "dataset" file list, or None without one (imagesTr/labelsTr).
+
+    nnU-Net then reads the cases from this list and ignores imagesTr/labelsTr: per case
+    ``{"images": [...], "label": "..."}``, paths relative to the raw dataset folder or absolute, ``$VARS`` expanded
+    (nnunetv2.utilities.utils.get_filenames_of_train_images_and_targets). ``manifest`` is read from the folder when
+    not given. Malformed entries are skipped."""
+    if manifest is None and dataset_directory is not None:
+        from .dataset_contents import json_object
+
+        manifest = json_object(dataset_directory / "dataset.json")
+    listing = manifest.get("dataset") if isinstance(manifest, dict) else None
+    if not isinstance(listing, dict) or dataset_directory is None:
+        return None
+
+    def resolved(text: str) -> Path:
+        expanded = os.path.expandvars(text)
+        return Path(expanded if os.path.isabs(expanded) else os.path.abspath(dataset_directory / expanded))
+
+    cases = {}
+    for case, entry in listing.items():
+        if not isinstance(case, str) or not isinstance(entry, dict):
+            continue
+        images, label = entry.get("images"), entry.get("label")
+        if not isinstance(images, list) or not all(isinstance(image, str) for image in images) or \
+                not isinstance(label, str):
+            continue
+        cases[case] = (tuple(resolved(image) for image in images), resolved(label))
+    return cases
+
+
 def file_ending_error(manifest: dict) -> str | None:
     ending = manifest.get("file_ending")
-    if not isinstance(ending, str) or not ending.startswith(".") or len(ending) < 2:
+    if not isinstance(ending, str) or not ending.startswith(".") or len(ending) < 2 or ending != "".join(ending.split()):
         return 'file_ending is missing or invalid; it must be the image file ending, e.g. ".nii.gz".'
     return None
+
+
+def file_ending_mismatch(manifest: dict, image_names: list[str], label_names: list[str] = ()) -> str | None:
+    """nnU-Net lists imagesTr and labelsTr by file_ending (case-sensitive): other files are not found (images) or
+    make the label check fail. ``None`` when every file ends with it."""
+    ending = manifest.get("file_ending")
+    if file_ending_error(manifest):
+        return None
+    parts = []
+    for kind, names in (("image", image_names), ("label file", label_names)):
+        other = [name for name in names if not name.endswith(ending)]
+        if other:
+            parts.append(f"{len(other)} {kind}{'s' if len(other) != 1 else ''} (e.g. {other[0]})")
+    if not parts:
+        return None
+    return (f"{' and '.join(parts)} do not end with file_ending \"{ending}\": nnU-Net does not find them. Convert "
+            "or rename them, or make file_ending match the files exactly (also upper/lower case).")
 
 
 def read_manifest(dataset_directory: Path) -> dict:

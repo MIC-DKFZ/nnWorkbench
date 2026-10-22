@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -55,5 +56,6 @@ def test_next_iteration_copies_images_labels_and_manifest(tmp_path: Path):
     assert created.name == "Dataset204_Project_iter2"
     assert (created / "imagesTr" / "case_001_0000.nii.gz").is_file()
     assert (created / "labelsTr" / "case_001.nii.gz").is_file()
-    assert (created / "dataset.json").read_text(encoding="utf-8") == '{"labels": {"background": 0}}'
+    assert json.loads((created / "dataset.json").read_text(encoding="utf-8")) == {
+        "labels": {"background": 0}, "inherits_from": "Dataset203_Project_iter1"}  # the source is named
     assert not (created / "predTr").exists()

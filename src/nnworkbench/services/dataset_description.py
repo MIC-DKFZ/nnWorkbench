@@ -610,6 +610,8 @@ def add_image(dataset_directory: Path, image: Path) -> str:
 def add_image_next_to(description: Path, image: Path) -> str:
     """Copy an image into description_images/ next to the Markdown file ``description`` (see add_image)."""
     folder = description.parent / IMAGES_FOLDER
+    if not description.parent.parent.is_dir():  # creating it would leave a second dataset folder with this ID
+        raise FileNotFoundError(f"{description.parent.parent} no longer exists (moved or renamed?)")
     folder.mkdir(parents=True, exist_ok=True)
     name = re.sub(r"[^\w.-]+", "_", image.name)  # no spaces: they would break the Markdown link
     target = folder / name
