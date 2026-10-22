@@ -26,10 +26,12 @@ from ..label_statistics_dialog import LabelStatisticsView
 from ..widgets import (
     Bar,
     Card,
+    ElidedLabel,
     HowToCard,
     IconButtonsDelegate,
     ToggleGroup,
     badge,
+    breakable,
     button,
     clear_layout,
     empty_state,
@@ -41,9 +43,11 @@ from ..widgets import (
     make_table,
     mark_item,
     polish,
+    scroll,
     section_label,
     separator,
     table_item,
+    tip,
 )
 from .common import StagePage, label_mode_badge
 
@@ -58,6 +62,21 @@ def _howto() -> HowToCard:
         "voxels that are not annotated; it must have the highest label ID."),
         f"{icon_html('search')} inspects a case in Napari; {icon_html('edit')} annotates it (saved to <b>labelsTr</b>).",
     ], [], "Setup · Create a dataset")
+
+
+def _elided(text: str, *, mono: bool = False, bold: bool = False, size: int | None = None,
+            mode=Qt.TextElideMode.ElideRight) -> ElidedLabel:
+    """A one-line label that ends in "…" when it does not fit (full text on hover)."""
+    widget = ElidedLabel(text, mode=mode)
+    if mono:
+        widget.setProperty("mono", True)
+    if bold or size:
+        font = widget.font()
+        if size:
+            font.setPixelSize(size)
+        font.setBold(bold)
+        widget.setFont(font)
+    return widget
 
 
 class CaseStatisticsPanel(QFrame):
@@ -75,7 +94,7 @@ class CaseStatisticsPanel(QFrame):
         head.addWidget(icon_label("chart", 16))
         names = QVBoxLayout()
         names.setSpacing(0)
-        self._case = label("", mono=True, bold=True, selectable=True)
+        self._case = _elided("", mono=True, bold=True)
         self._position = label("", muted=True, size=11)
         names.addWidget(self._case)
         names.addWidget(self._position)
@@ -84,10 +103,15 @@ class CaseStatisticsPanel(QFrame):
         head.addWidget(button("›", ghost=True, small=True, clicked=lambda: stage.step_case(1)))
         head.addWidget(button("✕", ghost=True, small=True, clicked=stage.close_case))
         layout.addLayout(head)
+        # files, geometry and classes scroll (many channels or classes); the head and the actions stay in view
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 4, 0)
         self._content = QVBoxLayout()
         self._content.setSpacing(8)
-        layout.addLayout(self._content)
-        layout.addStretch()
+        body_layout.addLayout(self._content)
+        body_layout.addStretch()
+        layout.addWidget(scroll(body), 1)
         actions = QHBoxLayout()
         self._inspect = button("Open in Napari", small=True, icon="search",
                                clicked=lambda: self._row is not None and stage.inspect(self._row))
@@ -108,7 +132,8 @@ class CaseStatisticsPanel(QFrame):
         self._content.addWidget(section_label("Files"))
         for path in (*row.image_files, *([row.label_file] if row.label_file else [])):
             line = QHBoxLayout()
-            line.addWidget(label(f"{path.parent.name}/{path.name}", mono=True, size=12, selectable=True), 1)
+            line.addWidget(_elided(f"{path.parent.name}/{path.name}", mono=True, size=12,
+                                   mode=Qt.TextElideMode.ElideMiddle), 1)
             try:
                 stat = path.stat()
                 line.addWidget(label(f"{format_size(stat.st_size)} · {format_time(stat.st_mtime)}", muted=True, size=12))
@@ -179,15 +204,23 @@ class CaseStatisticsPanel(QFrame):
             return
         names = state.names
         voxels = {int(key): int(value) for key, value in entry.get("voxels", {}).items()}
-        present = {key: value for key, value in voxels.items() if value > 0}
         classes = [class_id for class_id in names if names[class_id].casefold() != "ignore"]
+        # IDs that dataset.json does not define are counted apart and flagged
+        undefined = {key: value for key, value in voxels.items() if value > 0 and key not in names}
+        present = {key: value for key, value in voxels.items() if value > 0 and key in names}
         head.addWidget(label(f"{len(present)} of {len(classes)}", muted=True, size=11))
+        if undefined:
+            listed = ", ".join(f"{key} ({value:,} voxel{'s' if value != 1 else ''})"
+                               for key, value in sorted(undefined.items()))
+            self._content.addWidget(tip(f"! Undefined label IDs: {listed}. dataset.json does not define them; "
+                                        "nnU-Net fails on them.", "orange"))
         top = max(present.values(), default=1)
         # one row per class; a label with hundreds of values (e.g. an image saved as label) shows the largest only
         shown = sorted(sorted(present, key=lambda class_id: -present[class_id])[:MAX_CASE_CLASSES])
         for class_id in shown:
             line = QHBoxLayout()
-            name = label(names.get(class_id, str(class_id)), size=12)
+            name = _elided(names.get(class_id, str(class_id)), size=12)
+            name.setToolTip(f"{class_id}: {names.get(class_id, str(class_id))} · {present[class_id]:,} voxels")
             name.setFixedWidth(128)
             line.addWidget(name)
             line.addWidget(Bar(present[class_id] / top), 1)
@@ -196,12 +229,16 @@ class CaseStatisticsPanel(QFrame):
             self._content.addLayout(line)
         if len(present) > len(shown):
             self._content.addWidget(label(f"and {len(present) - len(shown):,} more with fewer voxels (all in "
-                                          "Statistics, Per-image details)", muted=True, wrap=True, size=11))
+                                          "Statistics, Per image)", muted=True, wrap=True, size=11))
         missing = [names[class_id] for class_id in classes if class_id not in present]
         if missing:
             more = f" and {len(missing) - MAX_CASE_CLASSES:,} more" if len(missing) > MAX_CASE_CLASSES else ""
-            self._content.addWidget(label("Missing: " + ", ".join(missing[:MAX_CASE_CLASSES]) + more, muted=True,
-                                          wrap=True, size=11))
+            # long names are shortened and may break after "_", so the list wraps inside the panel
+            shown_names = [name if len(name) <= 24 else breakable(name if len(name) <= 40 else name[:39] + "…")
+                           for name in missing[:MAX_CASE_CLASSES]]
+            text = label("Missing: " + ", ".join(shown_names) + more, muted=True, wrap=True, size=11)
+            text.setToolTip("Missing: " + ", ".join(missing[:MAX_CASE_CLASSES]) + more)
+            self._content.addWidget(text)
 
 
 class DataStage(StagePage):
@@ -223,9 +260,8 @@ class DataStage(StagePage):
         # Files / Statistics card
         files = Card()
         head = files.add_header()
-        self._path = label("", mono=True)
-        head.addWidget(self._path)
-        head.addStretch()
+        self._path = _elided("", mono=True, mode=Qt.TextElideMode.ElideMiddle)
+        head.addWidget(self._path, 1)
         self._toggle = ToggleGroup(["Files", "Statistics", "Description"], icons=["file", "chart", "edit"])
         self._toggle.set_tooltip(1, "Statistics of the whole dataset (run Compute statistics first); "
                                     "the chart button in a row shows one case")
@@ -264,6 +300,8 @@ class DataStage(StagePage):
         self._stats_layout = QVBoxLayout(self._stats_holder)
         self._stats_layout.setContentsMargins(0, 0, 0, 0)
         self._views.addWidget(self._stats_holder)
+        self._stats_state: DatasetState | None = None  # built when the Statistics view is shown (large datasets)
+        self._views.currentChanged.connect(lambda index: index == 1 and self._build_statistics())
         self._description = DescriptionPanel()
         self._views.addWidget(self._description)
         self._description.dataset_json_changed.connect(self.reload_requested.emit)  # dataset.json panel and checks
@@ -369,6 +407,14 @@ class DataStage(StagePage):
 
     def _fill_statistics(self, state: DatasetState) -> None:
         clear_layout(self._stats_layout)
+        self._stats_state = state
+        if self._views.currentWidget() is self._stats_holder:
+            self._build_statistics()
+
+    def _build_statistics(self) -> None:
+        state, self._stats_state = self._stats_state, None
+        if state is None:
+            return  # built already
         if state.analysis is None:
             band = QFrame()
             band.setObjectName("cardBand")

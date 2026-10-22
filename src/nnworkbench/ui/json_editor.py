@@ -98,6 +98,9 @@ class _PairEditor(QWidget):
         key_field, value_field = QLineEdit(key), QLineEdit(value)
         for field in (key_field, value_field):
             field.setProperty("mono", True)
+            field.setCursorPosition(0)  # long names show their start, not their end
+            field.setToolTip(field.text())
+            field.textChanged.connect(field.setToolTip)
         if self._value_is_id:  # labels: "name": id, or a list of IDs for a region
             value_field.setFixedWidth(120 if value.startswith("[") else 56)
             value_field.setAlignment(Qt.AlignmentFlag.AlignRight)
@@ -258,6 +261,7 @@ class DatasetJsonPanel(QFrame):
                 field = QLineEdit(json.dumps(value, ensure_ascii=False) if not isinstance(value, str) else value)
                 field.setProperty("mono", True)
                 field.setProperty("json", not isinstance(value, str))
+                field.setCursorPosition(0)
                 grid.addWidget(key_label, row, 0)
                 if key == "numTraining" and self._cases and value != self._cases:
                     cell = QWidget()
@@ -320,6 +324,7 @@ class DatasetJsonPanel(QFrame):
         value_field.setPlaceholderText("value")
         for field in (key_field, value_field):
             field.setProperty("mono", True)
+            field.setCursorPosition(0)
         key_field.setFixedWidth(130)
         layout.addWidget(key_field)
         layout.addWidget(label(":", muted=True))

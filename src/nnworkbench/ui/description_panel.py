@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from qtpy.QtCore import Qt, QUrl, Signal
+from qtpy.QtCore import QEvent, QSize, Qt, QTimer, QUrl, Signal
 from qtpy.QtGui import QDesktopServices, QPixmap
 from qtpy.QtWidgets import (
     QFileDialog,
@@ -17,6 +17,7 @@ from qtpy.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -63,6 +64,7 @@ from .workflow_guide import GuideBrowser
 
 IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.gif *.svg *.bmp *.webp)"
 THUMBNAIL_HEIGHT = 72
+TYPING_DELAY = 150  # ms after the last keystroke in a table before sections and dataset.json checks follow
 
 
 class _FieldEditor(QWidget):
@@ -154,6 +156,11 @@ class _TableEditor(QWidget):
         self._tokens = 0
         self.origins: dict[int, str] = {}  # row token -> class key the row had when loaded (texts move along)
         self.confirm_remove: Callable[[int], bool] | None = None
+        # typing emits changed once it pauses: with hundreds of classes every keystroke would re-check the form
+        self._typing = QTimer(self)
+        self._typing.setSingleShot(True)
+        self._typing.setInterval(TYPING_DELAY)
+        self._typing.timeout.connect(self.changed.emit)
         buttons = QHBoxLayout()
         self._kind = kind
         actions = [(f"＋ add {kind}", lambda: self._add_row(self._next_id(), ""))]
@@ -207,7 +214,7 @@ class _TableEditor(QWidget):
             self.origins[self._tokens] = origin
         remove.clicked.connect(lambda _checked=False: self._remove(entry))
         for field in (identifier, title):
-            field.textChanged.connect(lambda _text: self.changed.emit())
+            field.textChanged.connect(lambda _text: self._typing.start())
         self._rows.append(entry)
         self._rows_layout.addWidget(row)
         self.changed.emit()
@@ -234,6 +241,55 @@ class _TableEditor(QWidget):
         return [(value, name) for _token, value, name in self.rows()]
 
 
+class _TitleButton(QPushButton):
+    """A section title that ends in "…" when the form is narrow (full title on hover), so the form never needs to
+    scroll sideways."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__()
+        self.setObjectName(name)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self._full, self._hint, self._overhead = "", QSize(), 0
+
+    def set_title(self, text: str) -> None:
+        if text == self._full and self._hint.isValid():
+            return
+        self._full = text
+        self.setToolTip(f"{text}\nFold in or out" if text else "Fold in or out")
+        self._measure()
+
+    def _measure(self) -> None:
+        """Size with the full title in the current font (the stylesheet sets it once the button is shown)."""
+        super().setText(self._full)
+        self._hint = super().sizeHint()
+        self._overhead = self._hint.width() - self.fontMetrics().horizontalAdvance(self._full)
+        self._elide()
+        self.updateGeometry()
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange):
+            self._measure()
+
+    def sizeHint(self) -> QSize:
+        return self._hint if self._hint.isValid() else super().sizeHint()
+
+    def minimumSizeHint(self) -> QSize:
+        hint = self.sizeHint()
+        return QSize(min(hint.width(), 80), hint.height())
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._elide()
+
+    def _elide(self) -> None:
+        if self.width() >= self._hint.width():  # fits (elidedText can shorten a text of exactly its width)
+            super().setText(self._full)
+            return
+        super().setText(self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideRight,
+                                                      max(20, self.width() - self._overhead)))
+
+
 class _CollapsibleCard(QFrame):
     """A form section: a title that folds the section in and out (folded, a short summary shows instead)."""
 
@@ -245,10 +301,9 @@ class _CollapsibleCard(QFrame):
         outer.setContentsMargins(16, 12, 16, 12) if name == "formSection" else outer.setContentsMargins(14, 10, 14, 10)
         outer.setSpacing(6)
         head = QHBoxLayout()
-        self._toggle = QPushButton(title)
-        self._toggle.setObjectName(name)
+        self._toggle = _TitleButton(name)
+        self._toggle.set_title(title)
         self._toggle.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._toggle.setToolTip("Fold in or out")
         self._toggle.clicked.connect(lambda _checked=False: self.set_collapsed(not self.collapsed))
         head.addWidget(self._toggle)
         head.addStretch()
@@ -270,7 +325,7 @@ class _CollapsibleCard(QFrame):
         return self._body.isHidden()
 
     def set_title(self, title: str) -> None:
-        self._toggle.setText(title)
+        self._toggle.set_title(title)
 
     def set_collapsed(self, collapsed: bool) -> None:
         self._body.setVisible(not collapsed)
@@ -291,20 +346,42 @@ def _answered(editors) -> str:
 
 
 class _ClassSection(_CollapsibleCard):
-    """The form fields of one class; its title follows the class table."""
+    """The form fields of one class; its title follows the class table. The text boxes are created when the
+    section is first opened (a dataset can have hundreds of classes, and the form opens folded)."""
 
     def __init__(self, answers: dict[str, Answer], dataset_directory: Path) -> None:
-        super().__init__("", name="formClass", summary=lambda: _answered(list(self.editors.values())))
-        self.editors = {field.key: _FieldEditor(field, answers.get(field.key, Answer()), dataset_directory)
-                        for field in CLASS_FIELDS}
-        for editor in self.editors.values():
-            self.column.addWidget(editor)
+        super().__init__("", name="formClass", summary=self._answered)
+        self._answers, self._directory = answers, dataset_directory
+        self._editors: dict[str, _FieldEditor] | None = None
+
+    @property
+    def editors(self) -> dict[str, _FieldEditor]:
+        return self._build()
+
+    def _build(self) -> dict[str, _FieldEditor]:
+        if self._editors is None:
+            self._editors = {field.key: _FieldEditor(field, self._answers.get(field.key, Answer()), self._directory)
+                             for field in CLASS_FIELDS}
+            for editor in self._editors.values():
+                self.column.addWidget(editor)
+        return self._editors
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        if not collapsed and hasattr(self, "_editors"):  # not while the base class sets up the card
+            self._build()
+        super().set_collapsed(collapsed)
+
+    def _answered(self) -> str:
+        filled = sum(answer != Answer() for answer in self.answers().values())
+        return f"{filled} of {len(CLASS_FIELDS)} answered"
 
     def set_class(self, value: int, name: str) -> None:
         self.set_title(f"Class {value if value >= 0 else '?'}: {name or '(class name)'}")
 
     def answers(self) -> dict[str, Answer]:
-        return {key: editor.answer() for key, editor in self.editors.items()}
+        if self._editors is None:
+            return {field.key: self._answers.get(field.key, Answer()) for field in CLASS_FIELDS}
+        return {key: editor.answer() for key, editor in self._editors.items()}
 
     def has_text(self) -> bool:
         return any(answer != Answer() for answer in self.answers().values())
@@ -325,6 +402,7 @@ class DescriptionPanel(QWidget):
         self._class_sections: dict[int, _ClassSection] = {}  # row token -> section
         self._class_answers: dict[str, dict[str, Answer]] = {}  # texts by class key, for rows created later
         self._class_column: QVBoxLayout | None = None
+        self._class_order: list[int] = []  # row tokens in the order of the class sections
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -381,6 +459,7 @@ class DescriptionPanel(QWidget):
         self._form_scroll = QScrollArea()
         self._form_scroll.setWidgetResizable(True)
         self._form_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._form_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # the form fits
         self._stack.addWidget(self._form_scroll)
         layout.addWidget(self._stack, 1)
         self._show(None)
@@ -623,7 +702,7 @@ class DescriptionPanel(QWidget):
             if key.startswith("class:"):
                 class_name, _separator, field = key.rpartition(":")
                 self._class_answers.setdefault(class_name, {})[field] = answer
-        self._class_sections = {}
+        self._class_sections, self._class_order = {}, []
         classes = description_classes(text)
         self._class_table = _TableEditor(classes if classes is not None else dataset_classes(self._directory))
         self._class_table.confirm_remove = self._confirm_remove
@@ -654,7 +733,7 @@ class DescriptionPanel(QWidget):
 
     def _classes_summary(self) -> str:
         sections = [section for section in self._class_sections.values() if not section.isHidden()]
-        described = sum(section.editors["description"].answer() != Answer() for section in sections)
+        described = sum(section.answers()["description"] != Answer() for section in sections)
         return f"{len(sections)} classes, {described} described"
 
     def _set_all_collapsed(self, collapsed: bool) -> None:
@@ -672,17 +751,25 @@ class DescriptionPanel(QWidget):
             section = self._class_sections.pop(token)
             self._class_column.removeWidget(section)
             section.deleteLater()
-        for token, value, name in sorted(rows, key=lambda row: row[1]):
-            section = self._class_sections.get(token)
-            if section is None:
+        ordered = sorted(rows, key=lambda row: row[1])
+        for token, _value, _name in ordered:
+            if token not in self._class_sections:
                 origin = self._class_table.origins.get(token)
                 section = _ClassSection(self._class_answers.get(origin, {}) if origin else {}, self._directory)
                 section.set_collapsed(collapsed)
                 self._class_sections[token] = section
+        order = [token for token, _value, _name in ordered]
+        if order != self._class_order:  # only a changed ID or a new row moves sections (slow with many classes)
+            for token in order:
+                self._class_column.removeWidget(self._class_sections[token])
+                self._class_column.addWidget(self._class_sections[token])
+            self._class_order = order
+        for token, value, name in ordered:
+            section = self._class_sections[token]
             section.set_class(value, name)
-            section.setVisible(name.strip().casefold() != "ignore")
-            self._class_column.removeWidget(section)
-            self._class_column.addWidget(section)
+            visible = name.strip().casefold() != "ignore"
+            if section.isHidden() == visible:
+                section.setVisible(visible)
 
     def _confirm_remove(self, token: int) -> bool:
         section = self._class_sections.get(token)
@@ -761,7 +848,7 @@ class DescriptionPanel(QWidget):
         self._close_form()
 
     def _close_form(self) -> None:
-        self._class_table, self._class_column, self._class_sections = None, None, {}
+        self._class_table, self._class_column, self._class_sections, self._class_order = None, None, {}, []
         self._channel_table, self._cards = None, []
         self._show(None)
 

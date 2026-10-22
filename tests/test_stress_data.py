@@ -476,7 +476,7 @@ def test_d10_statistics_view_with_an_unreadable_file() -> None:
         {"image": "b.nii.gz", "voxels": {}, "shape": [], "spacing": [], "validity": ["Unreadable label file: x"]}]}
     view = LabelStatisticsView(analysis, annotation_workflow_enabled=True, parent=parent)
     try:
-        assert view.image_table.item(1, 4).text() == "—"  # no labeled share for an unreadable file
+        assert view.image_table.model().index(1, 4).data() == "—"  # no labeled share for an unreadable file
     finally:
         parent.close()
     assert application is not None

@@ -44,13 +44,23 @@ def default_output_path(input_directory: Path | str, scale_factor: int = 1) -> P
 
 
 @contextmanager
-def _suppress_native_output(enabled: bool) -> Iterator[None]:
+def suppress_native_output(enabled: bool) -> Iterator[None]:
     """Temporarily silence MITK/ITK messages emitted directly by native code."""
     if not enabled:
         yield
         return
+    try:
+        saved_stdout = os.dup(1)
+    except OSError:  # no standard output (e.g. a windowed process): nothing to silence
+        yield
+        return
+    try:
+        saved_stderr = os.dup(2)
+    except OSError:
+        os.close(saved_stdout)
+        yield
+        return
     with open(os.devnull, "wb") as null:
-        saved_stdout, saved_stderr = os.dup(1), os.dup(2)
         try:
             os.dup2(null.fileno(), 1); os.dup2(null.fileno(), 2)
             yield
@@ -72,7 +82,7 @@ def _read_image_slice(path: Path):
 def _load_stack(files: Sequence[Path], workers: int, quiet: bool):
     import numpy as np
 
-    with _suppress_native_output(quiet):
+    with suppress_native_output(quiet):
         first = _read_image_slice(files[0])
         volume = np.empty((len(files), *first.shape), dtype=first.dtype)
         volume[0] = first

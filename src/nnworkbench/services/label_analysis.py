@@ -76,8 +76,11 @@ def _analyse_file(filename: str) -> dict:
     import mitk
     import numpy as np
 
+    from .image_stack import suppress_native_output
+
     try:
-        image = mitk.Image(filename)
+        with suppress_native_output(True):  # MITK logs ~10 lines per file, which would bury the progress lines
+            image = mitk.Image(filename)
         array = np.asarray(image)
         values, counts = np.unique(array, return_counts=True)
         voxels: Counter = Counter()

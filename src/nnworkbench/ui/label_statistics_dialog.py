@@ -3,71 +3,149 @@ from __future__ import annotations
 from collections.abc import Sequence
 from math import ceil, floor, prod
 
-from qtpy.QtCore import QPointF, Qt
+from qtpy.QtCore import QAbstractTableModel, QEvent, QModelIndex, QPointF, QRect, QSize, Qt
 from qtpy.QtGui import QColor, QFontMetrics, QPainter, QPen, QPolygonF
 from qtpy.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QTableWidget,
-    QTableWidgetItem,
+    QScrollArea,
+    QTableView,
     QTabWidget,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
 
+from . import style
+from .widgets import badge
+
+UNDEFINED = "undefined · not in dataset.json"
+
+
+def undefined_ids(analysis: dict) -> set[int]:
+    """Label IDs found in the label files that dataset.json does not define (shown apart from its classes)."""
+    found = analysis.get("undefined_label_ids", {})
+    return {int(value) for values in found.values() for value in values} if isinstance(found, dict) else set()
+
+
+def _class_name(item: dict, undefined: set[int]) -> str:
+    return UNDEFINED if int(item.get("id", -1)) in undefined else str(item.get("name", ""))
+
 
 class _ClassChart(QWidget):
-    """Small dependency-free bar chart for either cached class metric."""
+    """Horizontal bars, one row per class (ID, name, bar, value), so hundreds of classes stay readable; the widget
+    is as tall as its rows and sits in a scroll area. Only the rows in view are painted; hovering a row shows it in
+    full."""
 
-    def __init__(self, classes: Sequence[dict], parent=None) -> None:
+    ROW = 24
+    TOP = 30
+
+    def __init__(self, classes: Sequence[dict], undefined: set[int] | None = None, images: int = 0,
+                 parent=None) -> None:
         super().__init__(parent)
         self._all_classes = classes
+        self._undefined = undefined or set()
+        self._images = images
         self._metric = "voxels"
         self._ignore_background = False
-        self.setMinimumHeight(210)
+        self._classes: list[dict] = []
+        self._refresh()
 
     def set_metric(self, metric: str) -> None:
         self._metric = metric
-        self.update()
+        self._refresh()
 
     def set_ignore_background(self, ignore: bool) -> None:
         self._ignore_background = ignore
+        self._refresh()
+
+    def _refresh(self) -> None:
+        self._classes = [item for item in self._all_classes
+                         if not self._ignore_background or int(item.get("id", -1)) != 0]
+        self.setMinimumHeight(self.TOP + max(1, len(self._classes)) * self.ROW + 10)
         self.update()
 
+    def sizeHint(self) -> QSize:
+        return QSize(480, self.minimumHeight())
+
+    def _row_at(self, y: int) -> int:
+        row = (y - self.TOP) // self.ROW if y >= self.TOP else -1
+        return row if 0 <= row < len(self._classes) else -1
+
+    def event(self, event) -> bool:
+        if event.type() == QEvent.Type.ToolTip:
+            row = self._row_at(event.pos().y())
+            if row < 0:
+                QToolTip.hideText()
+                event.ignore()
+                return True
+            item = self._classes[row]
+            class_id = int(item.get("id", -1))
+            name = str(item.get("name", ""))
+            note = "\nThis ID is not defined in dataset.json." if class_id in self._undefined else ""
+            QToolTip.showText(event.globalPos(), f"{class_id}: {name}\n{int(item.get('voxels', 0)):,} voxels · in "
+                              f"{int(item.get('images', 0)):,} of {self._images:,} images{note}", self)
+            return True
+        return super().event(event)
+
     def paintEvent(self, event) -> None:
-        painter = QPainter(self); painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.fillRect(self.rect(), QColor("#f8fafc"))
-        classes = [item for item in self._all_classes
-                   if not self._ignore_background or int(item.get("id", -1)) != 0]
-        if not classes:
-            painter.setPen(QColor("#64748b")); painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No class data")
-            return
-        margin_left, margin_right, margin_top, margin_bottom = 64, 18, 24, 42
-        plot = self.rect().adjusted(margin_left, margin_top, -margin_right, -margin_bottom)
-        maximum = max(int(item.get(self._metric, 0)) for item in classes) or 1
-        painter.setPen(QColor("#cbd5e1")); painter.drawLine(plot.bottomLeft(), plot.bottomRight())
-        painter.drawLine(plot.bottomLeft(), plot.topLeft())
-        painter.save()
-        painter.translate(14, plot.center().y()); painter.rotate(-90)
-        axis_label = "Voxels" if self._metric == "voxels" else "Number of cases"
-        painter.setPen(QColor("#64748b"))
-        painter.drawText(-plot.height() // 2, -8, plot.height(), 16,
-                         Qt.AlignmentFlag.AlignCenter, axis_label)
-        painter.restore()
-        bar_width = max(8, (plot.width() - 8 * (len(classes) - 1)) // max(1, len(classes)))
-        step = plot.width() / max(1, len(classes))
+        painter = QPainter(self)
+        painter.fillRect(event.rect(), QColor("#f8fafc"))
         metrics = QFontMetrics(painter.font())
-        for index, item in enumerate(classes):
-            value = int(item.get(self._metric, 0)); height = int(plot.height() * value / maximum)
-            x = int(plot.left() + index * step + (step - bar_width) / 2)
-            bar = plot.adjusted(x - plot.left(), plot.height() - height, x + bar_width - plot.right(), 0)
-            painter.fillRect(bar, QColor("#2f6fca"))
-            painter.setPen(QColor("#334155"))
-            label = f"{item.get('id')}: {item.get('name')}"
-            painter.drawText(x, plot.bottom() + 17, int(step), 18, Qt.AlignmentFlag.AlignLeft, metrics.elidedText(label, Qt.TextElideMode.ElideRight, int(step)))
-        painter.setPen(QColor("#64748b")); painter.drawText(4, plot.top() + 5, f"{maximum:,}")
+        if not self._classes:
+            painter.setPen(QColor(style.MUTED))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "No class data")
+            return
+        maximum = max(int(item.get(self._metric, 0)) for item in self._classes) or 1
+        width = self.width()
+        id_width = metrics.horizontalAdvance(str(max(int(item.get("id", 0)) for item in self._classes))) + 16
+        name_width = max(90, min(280, int(width * 0.32)))
+        value_width = metrics.horizontalAdvance(f"{maximum:,}") + 18
+        left = 12 + id_width + name_width
+        plot = max(40, width - left - value_width - 12)
+        painter.setPen(QColor(style.MUTED))
+        caption = "Voxels per class" if self._metric == "voxels" else "Images containing the class"
+        painter.drawText(QRect(12, 6, width - 24, 18), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                         metrics.elidedText(f"{caption} · {len(self._classes):,} classes · hover a row for details",
+                                            Qt.TextElideMode.ElideRight, width - 24))
+        first = max(0, (event.rect().top() - self.TOP) // self.ROW)
+        last = min(len(self._classes), (event.rect().bottom() - self.TOP) // self.ROW + 1)
+        for row in range(first, last):
+            item = self._classes[row]
+            class_id = int(item.get("id", -1))
+            value = int(item.get(self._metric, 0))
+            y = self.TOP + row * self.ROW
+            undefined = class_id in self._undefined
+            if row % 2:
+                painter.fillRect(0, y, width, self.ROW, QColor("#f1f4f8"))
+            text_rect = QRect(12, y, id_width - 8, self.ROW)
+            painter.setPen(QColor(style.MUTED))
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, str(class_id))
+            painter.setPen(QColor(style.ORANGE if undefined else "#334155"))
+            name = _class_name(item, self._undefined)
+            painter.drawText(QRect(12 + id_width, y, name_width - 8, self.ROW),
+                             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                             metrics.elidedText(name, Qt.TextElideMode.ElideRight, name_width - 8))
+            length = int(plot * value / maximum)
+            if value > 0:
+                painter.fillRect(left, y + 6, max(2, length), self.ROW - 12,
+                                 QColor(style.ORANGE if undefined else "#2f6fca"))
+            painter.setPen(QColor(style.MUTED))
+            painter.drawText(QRect(left + plot + 6, y, value_width, self.ROW),
+                             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, f"{value:,}")
+
+
+def _chart_area(chart: QWidget) -> QScrollArea:
+    area = QScrollArea()
+    area.setWidgetResizable(True)
+    area.setFrameShape(QFrame.Shape.NoFrame)
+    area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    area.setWidget(chart)
+    return area
 
 
 class _AxisScatterChart(QWidget):
@@ -164,13 +242,146 @@ class _AxisScatterChart(QWidget):
                          Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter, label)
 
 
-def _style_table(table: QTableWidget) -> None:
-    """Match the other tables: left-aligned headers, no grid, row selection."""
-    table.horizontalHeader().setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-    table.horizontalHeader().setHighlightSections(False)
-    table.verticalHeader().setDefaultSectionSize(32)
+_TABLE_STYLE = f"""
+QTableView {{
+    background: {style.PANEL}; border: 0; gridline-color: transparent; outline: 0;
+    selection-background-color: {style.BLUE_SOFT}; selection-color: {style.TEXT};
+}}
+QTableView::item {{ border-bottom: 1px solid #f0f3f7; padding: 0 8px; }}
+QTableView::item:selected {{ background: {style.BLUE_SOFT}; color: {style.TEXT}; }}
+"""
+
+
+def _table_view(model: QAbstractTableModel) -> QTableView:
+    """A read-only view like the other tables (left-aligned headers, no grid, row selection) with fixed row
+    heights and column widths: nothing is measured per cell, so thousands of rows and columns open at once."""
+    table = QTableView()
+    table.setModel(model)
+    model.setParent(table)
+    table.setStyleSheet(_TABLE_STYLE)
+    header = table.horizontalHeader()
+    header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+    header.setHighlightSections(False)
+    header.setTextElideMode(Qt.TextElideMode.ElideRight)
+    header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+    vertical = table.verticalHeader()
+    vertical.hide()
+    vertical.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+    vertical.setDefaultSectionSize(32)
     table.setShowGrid(False)
-    table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+    table.setWordWrap(False)
+    table.setTextElideMode(Qt.TextElideMode.ElideRight)
+    table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+    table.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+    return table
+
+
+class _ClassModel(QAbstractTableModel):
+    """Class summary: ID, name, images containing the class and total voxels."""
+
+    HEADERS = ("ID", "Class", "Images", "Voxels")
+    TIPS = ("Label ID in dataset.json", "Class name in dataset.json", "Images containing the class",
+            "Total voxels of the class in all label files")
+
+    def __init__(self, classes: Sequence[dict], undefined: set[int]) -> None:
+        super().__init__()
+        self._classes, self._undefined = classes, undefined
+
+    def rowCount(self, parent: QModelIndex | None = None) -> int:
+        return 0 if parent is not None and parent.isValid() else len(self._classes)
+
+    def columnCount(self, parent: QModelIndex | None = None) -> int:
+        return 0 if parent is not None and parent.isValid() else len(self.HEADERS)
+
+    def headerData(self, section: int, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
+            return self.HEADERS[section]
+        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.ToolTipRole:
+            return self.TIPS[section]
+        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.TextAlignmentRole and section != 1:
+            return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)  # above the numbers
+        return None
+
+    def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid():
+            return None
+        item = self._classes[index.row()]
+        class_id, column = int(item.get("id", -1)), index.column()
+        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole):
+            if column == 0:
+                return str(class_id)
+            if column == 1:
+                name = _class_name(item, self._undefined)
+                if role == Qt.ItemDataRole.ToolTipRole and class_id in self._undefined:
+                    return f"Label ID {class_id} occurs in the label files but is not defined in dataset.json."
+                return name
+            return f"{int(item.get('images' if column == 2 else 'voxels', 0)):,}"
+        if role == Qt.ItemDataRole.ForegroundRole and class_id in self._undefined:
+            return QColor(style.ORANGE)
+        if role == Qt.ItemDataRole.TextAlignmentRole and column != 1:
+            return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        return None
+
+
+class _ImageModel(QAbstractTableModel):
+    """Per-image details: case, validity, dimensions, spacing, (labeled share,) then the voxels of every class.
+    Cells are formatted when they are painted, so a 5000 x 500 table costs nothing up front."""
+
+    def __init__(self, per_image: Sequence[dict], classes: Sequence[dict], headers: list[str],
+                 labeled_data: bool, undefined: set[int]) -> None:
+        super().__init__()
+        self._per_image, self._labeled_data = per_image, labeled_data
+        self._class_ids = [str(item.get("id", "")) for item in classes]
+        self._headers = headers
+        self._class_headers = [f"{item.get('id')}: {_class_name(item, undefined)}" for item in classes]
+        self._first_class = len(headers)
+
+    def rowCount(self, parent: QModelIndex | None = None) -> int:
+        return 0 if parent is not None and parent.isValid() else len(self._per_image)
+
+    def columnCount(self, parent: QModelIndex | None = None) -> int:
+        return 0 if parent is not None and parent.isValid() else self._first_class + len(self._class_ids)
+
+    def headerData(self, section: int, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if (orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.TextAlignmentRole
+                and section >= self._first_class):
+            return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        if orientation != Qt.Orientation.Horizontal or role not in (Qt.ItemDataRole.DisplayRole,
+                                                                     Qt.ItemDataRole.ToolTipRole):
+            return None
+        if section < self._first_class:
+            return self._headers[section]
+        return self._class_headers[section - self._first_class]
+
+    def _text(self, image: dict, column: int) -> str:
+        if column == 0:
+            return image["image"]
+        if column == 1:
+            findings = image["validity"]
+            return "; ".join(str(finding) for finding in findings) if findings else "Valid"
+        if column == 2:
+            return ", ".join(str(value) for value in image["shape"])
+        if column == 3:
+            return ", ".join(f"{float(value):.4f}" for value in image["spacing"])
+        if column == 4 and self._labeled_data:
+            percentage = _labeled_data_percentage(image["shape"], image["voxels"])
+            return f"{percentage:.2f}%" if percentage is not None else "—"
+        return f"{int(image['voxels'].get(self._class_ids[column - self._first_class], 0)):,}"
+
+    def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid():
+            return None
+        image, column = self._per_image[index.row()], index.column()
+        if role == Qt.ItemDataRole.DisplayRole:
+            return self._text(image, column)
+        if role == Qt.ItemDataRole.ToolTipRole and column < 2:
+            return ("\n".join(str(finding) for finding in image["validity"]) or "Valid") if column else image["image"]
+        if role == Qt.ItemDataRole.ForegroundRole and column == 1:
+            return QColor("#a74400" if image["validity"] else "#315f1f")
+        if role == Qt.ItemDataRole.TextAlignmentRole and column >= self._first_class:
+            return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        return None
 
 
 class LabelStatisticsView(QWidget):
@@ -184,84 +395,63 @@ class LabelStatisticsView(QWidget):
         self._classes = classes
         per_image = analysis["per_image"]
         self._show_labeled_data = annotation_workflow_enabled
-        shapes = [tuple(item["shape"]) for item in per_image]
-        spacings = [tuple(round(float(value), 8) for value in item["spacing"]) for item in per_image]
-        axis_count = max((len(value) for value in (*shapes, *spacings)), default=0)
+        undefined = undefined_ids(analysis)
+        axis_count = max((len(item[key]) for item in per_image for key in ("shape", "spacing")), default=0)
         axes = ", ".join(_AxisScatterChart._AXIS_NAMES[:axis_count])
         dimensions_header = f"Dimensions ({axes})" if axes else "Dimensions"
         spacing_header = f"Voxel spacing ({axes}; mm)" if axes else "Voxel spacing (mm)"
-        summary_parts = [f"{len(per_image)} label files", f"{len(classes)} classes"]
-        summary_parts.append(f"{axis_count}D")
-        summary = QLabel("Statistics · " + " · ".join(summary_parts))
+        # dataset.json's classes only; IDs found in the labels but not defined there are flagged next to it
+        defined = sum(int(item.get("id", -1)) not in undefined for item in classes)
+        summary_parts = [f"{len(per_image)} label files", f"{defined} classes", f"{axis_count}D"]
+        summary = QLabel(" · ".join(summary_parts))
         summary.setObjectName("analysisSummary")
         summary.setProperty("muted", True)
+        summary.setWordWrap(True)  # wraps instead of being cut beside the badges in narrow windows
         controls = QHBoxLayout(); controls.setContentsMargins(16, 8, 16, 4); controls.setSpacing(10)
-        controls.addWidget(summary)
+        controls.addWidget(summary, 1)
         self.header_row = controls  # pages can add status badges next to the summary
-        controls.addStretch()
+        if undefined:
+            listed = ", ".join(str(value) for value in sorted(undefined))
+            plural = "s" if len(undefined) != 1 else ""
+            self.undefined_badge = badge(
+                f"! undefined ID{plural}: {listed}" if len(undefined) <= 3 else f"! {len(undefined)} undefined IDs",
+                "orange",
+                f"The label files contain the values {listed}, which dataset.json does not define. nnU-Net "
+                "fails on them: relabel those voxels or add the classes to dataset.json (the Per image tab "
+                "lists the files).")
+            controls.addWidget(self.undefined_badge)
         background = QCheckBox("Hide background")
         controls.addWidget(background); layout.addLayout(controls)
         views = QTabWidget(); layout.addWidget(views, 1)
-        table = QTableWidget(len(classes), 3); self.class_table = table
-        _style_table(table)
-        table.setHorizontalHeaderLabels(("Class", "Images containing class", "Total voxels"))
-        table.verticalHeader().hide(); table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        for row, item in enumerate(classes):
-            table.setItem(row, 0, QTableWidgetItem(f"{item.get('id')}: {item.get('name')}"))
-            table.setItem(row, 1, QTableWidgetItem(f"{int(item.get('images', 0)):,}"))
-            table.setItem(row, 2, QTableWidgetItem(f"{int(item.get('voxels', 0)):,}"))
-        views.addTab(table, "Class summary")
-        class_column = 5 if self._show_labeled_data else 4
-        image_table = QTableWidget(len(per_image), len(classes) + class_column)
-        _style_table(image_table)
-        self.image_table = image_table
-        image_table.setTextElideMode(Qt.TextElideMode.ElideNone); image_table.setWordWrap(True)
+        # in a narrow window the tabs shorten their titles (full title on hover) instead of scrolling
+        views.tabBar().setUsesScrollButtons(False)
+        views.tabBar().setElideMode(Qt.TextElideMode.ElideRight)
+        views.tabBar().setStyleSheet("QTabBar::tab { padding: 7px 9px; }")
+        table = _table_view(_ClassModel(classes, undefined)); self.class_table = table
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        for column, width in ((0, 56), (2, 90), (3, 120)):
+            header.resizeSection(column, width)
+        tabs = [(table, "Classes", "Class summary: images and voxels per class")]
         image_headers = ["Case", "Label validity", dimensions_header, spacing_header]
         if self._show_labeled_data:
             image_headers.append("Labeled data")
-        image_table.setHorizontalHeaderLabels((
-            *image_headers,
-            *(f"{item.get('id')}: {item.get('name')}" for item in classes),
-        ))
-        image_table.verticalHeader().hide(); image_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        image_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        for column in range(1, len(classes) + class_column):
-            image_table.horizontalHeader().setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
-        for row, image in enumerate(per_image):
-            counts = image["voxels"]
-            filename = image["image"]
-            image_item = QTableWidgetItem(filename); image_item.setToolTip(filename)
-            image_table.setItem(row, 0, image_item)
-            findings = image["validity"]
-            validity, colour = (
-                ("\n".join(str(finding) for finding in findings), QColor("#a74400"))
-                if findings else ("Valid", QColor("#315f1f"))
-            )
-            validity_item = QTableWidgetItem(validity)
-            validity_item.setForeground(colour)
-            image_table.setItem(row, 1, validity_item)
-            shape = image["shape"]
-            spacing = image["spacing"]
-            image_table.setItem(row, 2, QTableWidgetItem(", ".join(str(value) for value in shape)))
-            image_table.setItem(row, 3, QTableWidgetItem(", ".join(f"{float(value):.4f}" for value in spacing)))
-            if self._show_labeled_data:
-                percentage = _labeled_data_percentage(shape, counts)
-                percentage_text = f"{percentage:.2f}%" if percentage is not None else "—"
-                image_table.setItem(row, 4, QTableWidgetItem(percentage_text))
-            for column, class_item in enumerate(classes, start=class_column):
-                class_id = str(class_item.get("id", ""))
-                image_table.setItem(row, column, QTableWidgetItem(f"{int(counts.get(class_id, 0)):,}"))
-        image_table.resizeRowsToContents()
-        views.addTab(image_table, "Per-image details")
-        self.voxel_chart = _ClassChart(classes); self.voxel_chart.set_metric("voxels")
-        self.image_chart = _ClassChart(classes); self.image_chart.set_metric("images")
-        views.addTab(self.voxel_chart, "Class voxel count")
-        views.addTab(self.image_chart, "Class coverage")
-        views.addTab(_AxisScatterChart(per_image, "shape"), "Image shape")
-        views.addTab(_AxisScatterChart(per_image, "spacing"), "Image spacing")
+        image_table = _table_view(_ImageModel(per_image, classes, image_headers, self._show_labeled_data,
+                                              undefined))
+        self.image_table = image_table
+        header = image_table.horizontalHeader()
+        header.setDefaultSectionSize(120)
+        for column, width in enumerate((200, 200, 150, 190, 110)[:len(image_headers)]):
+            header.resizeSection(column, width)
+        tabs.append((image_table, "Per image", "Per-image details: validity, dimensions, spacing and class voxels"))
+        self.voxel_chart = _ClassChart(classes, undefined, len(per_image)); self.voxel_chart.set_metric("voxels")
+        self.image_chart = _ClassChart(classes, undefined, len(per_image)); self.image_chart.set_metric("images")
+        tabs += [(_chart_area(self.voxel_chart), "Voxels", "Class voxel count: total voxels per class"),
+                 (_chart_area(self.image_chart), "Coverage", "Class coverage: number of images containing each class"),
+                 (_AxisScatterChart(per_image, "shape"), "Shape", "Image shape along X, Y and Z of every label file"),
+                 (_AxisScatterChart(per_image, "spacing"), "Spacing", "Voxel spacing along X, Y and Z")]
+        for widget, title, tooltip in tabs:  # short titles: all tabs fit next to the dataset.json panel
+            views.setTabToolTip(views.addTab(widget, title), tooltip)
         background.toggled.connect(self._set_ignore_background)
 
     def _set_ignore_background(self, ignore: bool) -> None:

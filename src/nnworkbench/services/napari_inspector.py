@@ -14,13 +14,17 @@ from pathlib import Path
 from qtpy.QtCore import QObject, QSize, Qt, QTimer, Signal
 from qtpy.QtGui import QColor, QKeySequence, QPainter, QShortcut
 from qtpy.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -405,6 +409,37 @@ def annotation_label_summary(image_path: Path) -> tuple[tuple[int, str], ...]:
     return tuple(sorted(translated, key=lambda entry: (entry[0], entry[1].casefold())))
 
 
+LEGEND_ROWS = 10  # rows of the annotation legend shown at once; more classes scroll
+
+
+def annotation_legend(labels: tuple[tuple[int, str], ...], parent=None) -> QTableWidget:
+    """The annotation IDs as a two-column table that scrolls beyond ``LEGEND_ROWS`` rows (a dataset can have
+    hundreds of classes, and the dock must keep the save buttons visible)."""
+    table = QTableWidget(len(labels), 2, parent)
+    table.setHorizontalHeaderLabels(("ID", "Label"))
+    table.verticalHeader().hide()
+    table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+    table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+    table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    table.setWordWrap(False)
+    table.setShowGrid(False)
+    for row, (label_id, name) in enumerate(labels):
+        identifier = QTableWidgetItem(str(label_id))
+        identifier.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        title = QTableWidgetItem(name)
+        title.setToolTip(f"{label_id}: {name}")
+        table.setItem(row, 0, identifier)
+        table.setItem(row, 1, title)
+    header = table.horizontalHeader()
+    header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+    header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+    row_height = table.verticalHeader().defaultSectionSize()
+    shown = max(1, min(len(labels), LEGEND_ROWS))
+    table.setFixedHeight(header.sizeHint().height() + shown * row_height + 2 * table.frameWidth())
+    table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+    return table
+
+
 class AnnotationSaveWidget(QWidget):
     """Napari dock widget that saves the current nnInteractive semantic map."""
 
@@ -418,13 +453,11 @@ class AnnotationSaveWidget(QWidget):
         self._layer_info = QLabel()
         layout.addWidget(self._layer_info)
         labels = annotation_label_summary(image_path)
-        self._label_summary = QLabel()
-        self._label_summary.setWordWrap(True)
-        self._label_summary.setText(
-            "<b>Annotation IDs: </b>&nbsp;" + " · ".join(f"{label_id}: {escape(name)}" for label_id, name in labels)
-            if labels else "<b>Annotation IDs: </b> unavailable"
-        )
+        self._label_summary = QLabel("<b>Annotation IDs</b>" if labels else "<b>Annotation IDs: </b> unavailable")
         layout.addWidget(self._label_summary)
+        self._label_list = annotation_legend(labels)
+        self._label_list.setVisible(bool(labels))
+        layout.addWidget(self._label_list)
         note = ("<i>Sparse labels: 0 is ignore (not annotated); all other label IDs are shifted by +1. "
                 "Saving writes labelsTr with the original IDs.</i>" if _dataset_ignore_id(image_path) is not None
                 else "<i>Dense labels: 0 is background. Saving writes labelsTr.</i>")
@@ -436,6 +469,7 @@ class AnnotationSaveWidget(QWidget):
         save.clicked.connect(self._save); layout.addWidget(save)
         close = QPushButton("Close Napari (Ctrl+C)")
         close.clicked.connect(self._viewer.close); layout.addWidget(close)
+        layout.addStretch()  # a tall dock keeps the rows together at the top
         self._close_shortcut = QShortcut(QKeySequence("Ctrl+C"), self)
         self._close_shortcut.setContext(Qt.ApplicationShortcut)
         self._close_shortcut.activated.connect(self._viewer.close)
