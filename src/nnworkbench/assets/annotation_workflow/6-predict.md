@@ -4,7 +4,7 @@
 
 ## Run the Prediction
 
-To predict new images, or to pre-label images for the next annotation round, place the images in an input folder using the same file format and naming convention as the training images, including channel postfixes such as `_0000`. Then run:
+To predict new images, or to pre-label images for the next iteration, place the images in an input folder using the same file format and naming convention as the training images, including channel suffixes such as `_0000`. Then run:
 
 ```bash
 nnworkbench-run nnUNetv2_predict -i INPUT_FOLDER -o OUTPUT_FOLDER \

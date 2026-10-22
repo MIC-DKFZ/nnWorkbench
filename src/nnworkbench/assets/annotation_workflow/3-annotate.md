@@ -57,9 +57,9 @@ Napari and MITK support both nnInteractive and scribble annotations using the br
 
 ### Annotation IDs
 
-The IDs you paint with depend on whether your labels are sparse or dense, i.e. whether `dataset.json` has an `ignore` class (see [Dense or Sparse Labeling](2-define.md#dense-or-sparse-labeling)). nnWorkbench shows the right IDs in the **nnWorkbench — Annotation saving** panel either way.
+The IDs you paint with depend on whether your labels are sparse or dense, i.e. whether `dataset.json` has an `ignore` label (see [Dense or Sparse Labels](2-define.md#dense-or-sparse-labels)). nnWorkbench shows the right IDs in the **nnWorkbench — Annotation saving** panel either way.
 
-**Sparse labels (with Ignore):** Every voxel you have not labeled must stay recognizable as unlabeled. The ID 0 is the most convenient choice for this: it is displayed as transparent, so unlabeled areas stay clear and you keep a good overview of what you have already annotated. Therefore, while annotating, Ignore gets the annotation ID 0 and all class IDs from [2. Define](2-define.md) are shifted up by one. This applies to both annotation methods, nnInteractive and scribbles.
+**Sparse labels (with an ignore label):** Every voxel you have not labeled must stay recognizable as unlabeled. The ID 0 is the most convenient choice for this: it is displayed as transparent, so unlabeled areas stay clear and you keep a good overview of what you have already annotated. Therefore, while annotating, Ignore gets the annotation ID 0 and all class IDs from [2. Define](2-define.md) are shifted up by one. This applies to both annotation methods, nnInteractive and scribbles.
 
 | Class | Original ID (`dataset.json`, `labelsTr`) | Annotation ID (while annotating) |
 | --- | --- | --- |
@@ -70,7 +70,7 @@ The IDs you paint with depend on whether your labels are sparse or dense, i.e. w
 
 *(IDs for the Dataset042 example.)*
 
-**Dense labels (no Ignore):** No Ignore class is needed and nothing is shifted: you paint with the IDs from `dataset.json`, and a new annotation starts as Background (ID 0), so every voxel you do not paint is background. Use this when you label every object of an image, e.g. a single organ segmented with nnInteractive.
+**Dense labels (no ignore label):** No ignore label is needed and nothing is shifted: you paint with the IDs from `dataset.json`, and a new annotation starts as Background (ID 0), so every voxel you do not paint is background. Use this when you label every object of an image, e.g. a single organ segmented with nnInteractive.
 
 With sparse labels, the annotation IDs must be converted back to the original IDs before training. nnWorkbench does this mapping for you: it shows the annotation IDs in the **nnWorkbench — Annotation saving** panel while you annotate, and writes the original IDs to `labelsTr` when you save.
 
@@ -142,7 +142,7 @@ Stop when you are satisfied with the results. When additional annotations produc
 If annotation time is limited, it can be useful to work with smaller annotation batches and retrain more often. This gives you more frequent feedback and helps you focus new annotations on the cases where the model still struggles. If compute time is more limited, it may be better to collect a larger set of annotations before retraining and therefore use fewer iterations.
 
 **Can I use other annotation methods or software?**
-Yes. Other annotation methods and software can also be used, and for some types of data or structures they may even be more suitable. However, use them carefully and make sure they do not introduce systematic biases, for example by favoring certain object sizes, shapes, or easier cases. The annotations should remain representative, consistent, and follow the same class definitions and labeling rules throughout the dataset. Use the same annotation method for all annotations of one class: different methods produce different boundaries (e.g. a nnInteractive mask vs. hand-drawn scribbles), and mixing them within a class makes its labels inconsistent. Save such labels directly in `labelsTr`, with the same filename as the image but without the `_0000` postfix, and with the original label IDs from `dataset.json` (for sparse labels, Ignore for every unlabeled voxel).
+Yes. Other annotation methods and software can also be used, and for some types of data or structures they may even be more suitable. However, use them carefully and make sure they do not introduce systematic biases, for example by favoring certain object sizes, shapes, or easier cases. The annotations should remain representative, consistent, and follow the same class definitions and labeling rules throughout the dataset. Use the same annotation method for all annotations of one class: different methods produce different boundaries (e.g. a nnInteractive mask vs. hand-drawn scribbles), and mixing them within a class makes its labels inconsistent. Save such labels directly in `labelsTr`, with the same filename as the image but without the `_0000` channel suffix, and with the original label IDs from `dataset.json` (for sparse labels, Ignore for every unlabeled voxel).
 
 **Reference:** Isensee, F.\*, Rokuss, M.\*, Krämer, L.\*, Dinkelacker, S., Ravindran, A., Stritzke, F., Hamm, B., Wald, T., Langenberg, M., Ulrich, C., Deissler, J., Floca, R., & Maier-Hein, K. (2025). nnInteractive: Redefining 3D Promptable Segmentation. (\*: equal contribution)
 

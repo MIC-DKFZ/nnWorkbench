@@ -9,7 +9,7 @@ to the final model. Humans start better with the [README](README.md) and the
 
 ```bash
 nnworkbench-set-paths --raw R --preprocessed P --results S          # once per computer
-nnworkbench-run list --json                                           # which datasets exist (IDs, rounds)
+nnworkbench-run list --json                                           # which datasets exist (IDs, iterations)
 nnworkbench-run create-dataset -d 42 --name Cells --labels background,cell --ignore --channels fluorescence --add-description
 nnworkbench-run status -d 42 --json                                   # where are we, what is missing, which device
 nnworkbench-run annotate -d 42 --case cells_001                       # human annotates in Napari (pencil)
@@ -18,7 +18,7 @@ nnworkbench-run nnUNetv2_plan_and_preprocess -d 42 -c 3d_fullres -pl nnUNetPlann
 nnworkbench-run nnUNetv2_train 42 3d_fullres 0 -tr nnUNetTrainerBetterIgnoreSampling -p nnUNetResEncUNetLPlans
 nnworkbench-run validation -d 42 --json                               # Dice per fold / class, weakest cases first
 nnworkbench-run validation -d 42 --open cells_017                     # human looks at a case in Napari
-nnworkbench-run new-iteration -d 42 --json                            # next annotation round
+nnworkbench-run new-iteration -d 42 --json                            # next iteration
 nnworkbench-run nnUNetv2_predict -i IN -o OUT -d 42 -c 3d_fullres -tr TRAINER -p PLANS
 nnworkbench-run inspect-predictions OUT --images IN                   # human checks predictions
 ```
@@ -29,7 +29,7 @@ All `nnworkbench-run` tools take `--help`. Plain nnU-Net commands work behind `n
 
 | Agent | Human |
 | --- | --- |
-| Asks the questions, sets folders, creates datasets, checks and fixes data, preprocesses, trains, follows training, summarises validation results, starts the next round, predicts | Knows the images and the task, annotates in Napari, looks at predictions, decides when the model is good enough |
+| Asks the questions, sets folders, creates datasets, checks and fixes data, preprocesses, trains, follows training, summarises validation results, starts the next iteration, predicts | Knows the images and the task, annotates in Napari, looks at predictions, decides when the model is good enough |
 
 The agent prepares every human step so that it takes one command and a short instruction ("annotate these five
 images", "look at these three cases"), and continues as soon as the human is done.
@@ -75,7 +75,7 @@ Find out early, from how they write or by asking "Have you trained a segmentatio
 2. **Folders:** `nnworkbench-get-paths`. If not set, ask where the data should live (step 2 below). Without saved
    folders, nnWorkbench uses nnU-Net's `nnUNet_raw`/`nnUNet_preprocessed`/`nnUNet_results` variables when they are
    set; saved folders win over them (`environment_differs` in `get-paths --json` and a note on stderr say when
-   they differ). `nnworkbench-run list --json` lists the datasets (free IDs, annotation rounds).
+   they differ). `nnworkbench-run list --json` lists the datasets (free IDs, iterations).
 3. **Project notes:** read `nnworkbench/project-notes.md` in the dataset folder (`nnUNet_raw/DatasetXXX_Name/`) if it
    exists.
 4. **State:** `nnworkbench-run status -d <ID> --json`, then pick the next step: the first row that matches, from
@@ -93,15 +93,15 @@ Find out early, from how they write or by asking "Have you trained a segmentatio
 | Fewer than 5 finished folds and the user wants a reliable model | Next fold: `suggest --step train` (step 5) |
 | Finished folds, `stages.validate.state == "ok"` | Validation summary and human check (step 6) |
 | Human says "good enough" | Predict (step 8) |
-| Human says "not yet" | Next round (step 7) |
+| Human says "not yet" | Next iteration (step 7) |
 
 ## Project notes
 
 Keep the decisions where the next session finds them: `nnUNet_raw/DatasetXXX_Name/nnworkbench/project-notes.md`.
 The `nnworkbench/` folder of a raw dataset holds everything nnWorkbench adds (description, its images, these notes,
 the statistics `class_distribution.json`); nnU-Net ignores it, so put nothing of yours next to `imagesTr`. Write the
-interview answers, the chosen planner and trainer, which folds run where (and job IDs on a cluster), and per round
-what was annotated and the validation result. `new-iteration` copies the folder into the next round (without the
+interview answers, the chosen planner and trainer, which folds run where (and job IDs on a cluster), and per iteration
+what was annotated and the validation result. `new-iteration` copies the folder into the next iteration (without the
 statistics, which belong to the old labels).
 
 **Handovers are part of the notes.** Whenever you hand work to the human, write what you asked for, e.g.
@@ -132,7 +132,7 @@ Ask one or two questions at a time. Each answer below says what it decides.
      nnU-Net Workflow only; preprocess, train, validate and predict as usual. `annotate` and **Push to
      dataset.json** in the description refuse them; do not rewrite such a `dataset.json` by hand.
    - **Yes, but only for parts of the images** → sparse labels; the unlabelled parts must be marked with the
-     ignore class number (step 2).
+     ignore label's number (step 2).
    - **No** → *Annotation Workflow*: the human annotates in nnWorkbench. Ask question 4.
 4. **"When you outline, do you want to mark everything in an image, or only some examples in each image?"**
    - *Only some examples* (typical: many small objects such as cells, fibres) → **sparse labels**: unmarked areas
@@ -173,7 +173,7 @@ answers in their words, ask about class boundaries and unclear cases ("Where exa
 dividing cells?", "What counts as background?"), and suggest example images (open a case with `inspect --case`; the
 user saves a screenshot, you link it). In the GUI the user views and edits it on the Data page under **Description**
 (**Edit** opens a form with one foldable card per section, folded at first; the class sections follow the class
-table as it is edited, a renamed class keeps its text). `new-iteration` copies it into the next round; record changes
+table as it is edited, a renamed class keeps its text). `new-iteration` copies it into the next iteration; record changes
 under Notes.
 
 When you edit the file yourself, keep its invisible markers: each answer sits between `<!-- field: KEY -->` and
@@ -213,7 +213,7 @@ nnworkbench-run create-dataset -d 42 --name CellSegmentation --labels background
 - **A `dataset.json` with a `"dataset"` file list** (per case `{"images": [...], "label": "..."}`, relative to the
   dataset folder or absolute, `$VARS` expanded): nnU-Net and nnWorkbench then use these files and ignore
   imagesTr/labelsTr; `status`, statistics, `annotate`/`inspect` and preprocessing work as usual (annotations are
-  saved to the listed label file). `new-iteration` copies the files into imagesTr/labelsTr of the new round
+  saved to the listed label file). `new-iteration` copies the files into imagesTr/labelsTr of the new iteration
   (`case_0000…`, without the list).
 
 - Pick an unused dataset ID (`create-dataset` refuses used ones). `--ignore` only for sparse labels. nnU-Net
@@ -234,7 +234,7 @@ nnworkbench-run create-dataset -d 42 --name CellSegmentation --labels background
 
 ## 3. Annotate (human, Annotation Workflow)
 
-Choose 5–10 different images for the first round (different brightness, density, sessions; include a difficult
+Choose 5–10 different images for the first iteration (different brightness, density, sessions; include a difficult
 one), then open them one after another:
 
 ```bash
@@ -314,7 +314,7 @@ nnworkbench-run nnUNetv2_train 42 3d_fullres 0 -tr nnUNetTrainerBetterIgnoreSamp
 - **Fewer than 5 cases:** folds `0`–`4` need at least 5 cases (nnU-Net splits them in 5); train fold `all`, or
   annotate more first.
 - **Training a fold again** (e.g. after more annotations in the same dataset): `nnUNetv2_train` refuses when the
-  fold already has results; after the user agreed, add `--yes`. Prefer a new round (`new-iteration`) to keep the
+  fold already has results; after the user agreed, add `--yes`. Prefer a new iteration (`new-iteration`) to keep the
   old model for comparison.
 - **Out of GPU memory:** preprocess with a smaller planner and train with its plans.
 
@@ -336,10 +336,10 @@ nnworkbench-run validation -d 42 --open cells_017
 > are cells missed, merged, or is debris marked as a cell?
 
 There is no universal Dice threshold. Good enough means: the user is satisfied with what they see, the weak cases
-are understood, and another round brought only small improvements. Typical errors and what to annotate next are in
+are understood, and another iteration brought only small improvements. Typical errors and what to annotate next are in
 [5. Validate → Typical Errors](src/nnworkbench/assets/annotation_workflow/5-validate.md#typical-errors-and-next-steps).
 
-## 7. Next annotation round (Annotation Workflow)
+## 7. Next iteration (Annotation Workflow)
 
 ```bash
 nnworkbench-run new-iteration -d 43 --json
@@ -348,17 +348,17 @@ nnworkbench-run new-iteration -d 43 --json
 `--link-images` does not copy the images: the new `dataset.json` lists the source's images (`"dataset"` file list,
 relative paths; the labels are copied, they change). Use it for large datasets; nnU-Net then reads only the
 listed files, so new images must be added to the list too (`status` reports images in imagesTr outside it). Every
-new round names its source in `dataset.json` (`"inherits_from": "Dataset042_…"`; also in `status` and `list`).
+new iteration names its source in `dataset.json` (`"inherits_from": "Dataset042_…"`; also in `status` and `list`).
 
-`-d` is the latest round (the `dataset_id` of the last `new-iteration`, noted in the project notes), not the first
-dataset: the name continues from the source (`Cells_iter1` → `Cells_iter2`); a second round from the same source
+`-d` is the latest iteration (the `dataset_id` of the last `new-iteration`, noted in the project notes), not the first
+dataset: the name continues from the source (`Cells_iter1` → `Cells_iter2`); a second iteration from the same source
 is a branch and gets the same name under a new ID (`Cells_iter1` twice is fine, the ID tells them apart).
 
 Copies images, labels and `dataset.json` into a new dataset (e.g. `Dataset043_CellSegmentation_iter1`); the previous
-round and its model stay unchanged for comparison; it also copies the `nnworkbench/` folder (description and project
+iteration and its model stay unchanged for comparison; it also copies the `nnworkbench/` folder (description and project
 notes). The human annotates more there
 (step 3), focused on the weak cases and classes, and may add new images of underrepresented types (then update
-`numTraining`). Then steps 4–6 for the new dataset, and compare `validation` of both rounds.
+`numTraining`). Then steps 4–6 for the new dataset, and compare `validation` of both iterations.
 
 ## 8. Predict, inspect and share
 
@@ -384,7 +384,7 @@ nnworkbench-run inspect-predictions OUT --images IN
 
 ## Output reference
 
-- **`status --json`:** `dataset`, `inherits_from` (the source round, or `null`), `images_listed` (cases from the
+- **`status --json`:** `dataset`, `inherits_from` (the source iteration, or `null`), `images_listed` (cases from the
   `"dataset"` file list of dataset.json), `folders` (`raw`, `preprocessed`, `results`; `null` when absent), `cases`,
   `labeled_cases`, `unlabeled_cases[]` (case names), `channels`, `labels` (`sparse`/`dense`), `ignore_label`,
   `problems[]`, `device` (`kind` = `cuda`/`mps`/`cpu`/`unknown`, `summary`, `gpus[]` with `name` and `memory_gb`
@@ -411,8 +411,8 @@ nnworkbench-run inspect-predictions OUT --images IN
   `per_image[]`, `undefined_label_ids`, `unreadable_files[]`. **`stack-images --json`:** `input`, `output`, `file_type`, `scale_factor`,
   `spacing`. **`reduce-checkpoints --json`:** `model`, `folds[]`, `trainer_name_reset`.
 - **`list --json`:** `datasets[]` with `id`, `name`, `folder`, `raw`/`preprocessed`/`results` (present), `id_problem`,
-  `base_name` and `iteration` (from the `_iterN` name; a second round from the same source has the same name, the
-  higher ID is the newer one), `inherits_from` (the source round, from dataset.json).
+  `base_name` and `iteration` (from the `_iterN` name; a second iteration from the same source has the same name, the
+  higher ID is the newer one), `inherits_from` (the source iteration, from dataset.json).
 - **`nnworkbench-get-paths --json`:** `config`, `paths` (`nnUNet_raw`, `nnUNet_preprocessed`, `nnUNet_results`,
   `nnUNet_extTrainer`), `environment_differs[]` (nnU-Net variables that point elsewhere); `nnworkbench-set-paths … --json`: `saved`, `paths`, `missing[]` (folders that do not exist).
 - Every JSON object starts with `"schema_version": 1`; the number increases only when a field is renamed or removed

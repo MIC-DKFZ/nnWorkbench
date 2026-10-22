@@ -833,7 +833,7 @@ class OverviewPage(QWidget):
         self._iteration.setEnabled(available)
         self._iteration.setToolTip(
             "Annotation Workflow: copies the images, labels and dataset.json of a dataset (the selected one by "
-            "default) into a new dataset for the next annotation round" if available
+            "default) into a new dataset for the next iteration" if available
             else "No dataset in nnUNet_raw yet, so no iteration can be created.")
 
     def _new_iteration(self) -> None:

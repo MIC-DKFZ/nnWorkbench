@@ -30,7 +30,7 @@ dataset, open **Description** on the **Data** page (next to Files and Statistics
 There, **Edit** opens a form with one card per section (click a title to fold it in or out), and **Add image…** for
 example images, e.g. a representative and a difficult one. Section 1 has a channel table (`_0000`, `_0001`, … and their
 names); like the class table, it is compared with `dataset.json` and can be imported from or pushed to it. **Save** writes the file; experienced users can use **Edit as text**. On the
-command line: `nnworkbench-run describe -d 42`. Each new annotation round gets a copy.
+command line: `nnworkbench-run describe -d 42`. Each new iteration gets a copy.
 
 ## Example Description
 

@@ -72,7 +72,7 @@ def next_free_dataset_id(start: int, all_roots: list[Path | None]) -> int:
     return candidate
 
 
-INHERITS_FROM = "inherits_from"  # dataset.json key of a new round: the folder name of the dataset it came from
+INHERITS_FROM = "inherits_from"  # dataset.json key of a new iteration: the folder name of the dataset it came from
 
 
 def create_next_iteration(raw_root: Path | None, all_roots: list[Path | None], source: Path,
@@ -83,7 +83,7 @@ def create_next_iteration(raw_root: Path | None, all_roots: list[Path | None], s
     Copy (default): the images go into imagesTr; a source whose dataset.json lists its files ("dataset" key) gets
     them copied into imagesTr/labelsTr, named as nnU-Net expects (case_0000…, case), and a dataset.json without the
     list. ``link_images``: the images stay where they are and dataset.json lists them (relative paths, so moving
-    nnUNet_raw as a whole keeps them working); the labels are copied into labelsTr, they change in the new round."""
+    nnUNet_raw as a whole keeps them working); the labels are copied into labelsTr, they change in the new iteration."""
     if raw_root is None or not raw_root.is_dir():
         raise ValueError("Choose an existing nnUNet_raw directory before creating an iteration")
     listed = listed_cases(source)
@@ -114,7 +114,7 @@ def create_next_iteration(raw_root: Path | None, all_roots: list[Path | None], s
         manifest = json.loads((destination / "dataset.json").read_text(encoding="utf-8"))
         manifest[INHERITS_FROM] = source.name
         _write_manifest(destination, manifest)
-        # description, its images and the notes stay with every round; the statistics belong to the old labels
+        # description, its images and the notes stay with every iteration; the statistics belong to the old labels
         copy_workbench_folder(source, destination, skip={ANALYSIS_FILENAME})
     except Exception:
         shutil.rmtree(destination, ignore_errors=True)
@@ -124,7 +124,7 @@ def create_next_iteration(raw_root: Path | None, all_roots: list[Path | None], s
 
 def _copy_listed(source: Path, destination: Path, listed: dict[str, tuple[tuple[Path, ...], Path]]) -> None:
     """Copy the files of a "dataset" file list into imagesTr/labelsTr (missing ones are skipped) and write
-    dataset.json without the list, so nnU-Net reads the folders of the new round."""
+    dataset.json without the list, so nnU-Net reads the folders of the new iteration."""
     manifest = json.loads((source / "dataset.json").read_text(encoding="utf-8"))
     ending = manifest.get("file_ending") if isinstance(manifest.get("file_ending"), str) else ""
     (destination / "imagesTr").mkdir()
@@ -140,7 +140,7 @@ def _copy_listed(source: Path, destination: Path, listed: dict[str, tuple[tuple[
 
 
 def _link_images(source: Path, destination: Path) -> None:
-    """The new round lists the source's images in dataset.json ("dataset") instead of copying them; its labels are
+    """The new iteration lists the source's images in dataset.json ("dataset") instead of copying them; its labels are
     copies in its own labelsTr (cases without a label list the file Save annotation will write)."""
     from .workflow_status import raw_overview
 

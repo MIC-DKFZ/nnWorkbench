@@ -24,7 +24,7 @@ Training uses the images in `imagesTr` and the labels in `labelsTr` (see [Setup]
 
 ### 1. Check the Filenames
 
-Images end in a channel postfix, labels do not. Most images have one channel (`_0000`); further channels are stored as separate files (`_0001`, …) and listed in `channel_names` in `dataset.json`.
+Images end in a channel suffix, labels do not. Most images have one channel (`_0000`); further channels are stored as separate files (`_0001`, …) and listed in `channel_names` in `dataset.json`.
 
 ```text
 imagesTr:  cells_001_0000.nii.gz  (+ cells_001_0001.nii.gz, … for more channels)
@@ -72,7 +72,7 @@ nnU-Net offers different model configurations:
 
 ### 5. Train the Model
 
-The `nnworkbench-run` prefix uses the folder paths saved in [Setup](setup.md#set-the-folder-paths) and makes the bundled trainers available to nnU-Net.
+The `nnworkbench-run` prefix uses the nnU-Net folders saved in [Setup](setup.md#set-the-nnu-net-folders) and makes the bundled trainers available to nnU-Net.
 
 ```bash
 nnworkbench-run nnUNetv2_train DATASET_ID CONFIGURATION FOLD -tr TRAINER -p PLANS

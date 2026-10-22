@@ -2,20 +2,20 @@
 
 ***Define your task precisely and resolve all ambiguities.***
 
-## Dense or Sparse Labeling
+## Dense or Sparse Labels
 
 Decide first how completely you want to label your images:
 
-- **Dense labeling:** Every pixel or voxel of an image is assigned a class. This gives the model complete information, but it is very time-consuming, especially for large 3D volumes.
-- **Sparse labeling:** Only parts of each image are labeled, for example with scribbles or a few objects segmented with nnInteractive. Everything else stays unlabeled (Ignore), and the model learns only from the labeled voxels.
+- **Dense labels:** Every pixel or voxel of an image is assigned a class. This gives the model complete information, but it is very time-consuming, especially for large 3D volumes.
+- **Sparse labels:** Only parts of each image are labeled, for example with scribbles or a few objects segmented with nnInteractive. Everything else stays unlabeled (Ignore), and the model learns only from the labeled voxels.
 
-Sparse labeling is the default in this workflow. It needs much less effort per image, so you can spread your annotations over many different images and cover more of the variability in your data. Dense labeling only makes sense if each image contains very few objects, for example a single liver in an abdominal CT, and these can be labeled quickly, e.g. in 2D or with nnInteractive. It is also an option if complete labels already exist.
+Sparse labels are the default in this workflow. It needs much less effort per image, so you can spread your annotations over many different images and cover more of the variability in your data. Dense labels only make sense if each image contains very few objects, for example a single liver in an abdominal CT, and these can be labeled quickly, e.g. in 2D or with nnInteractive. It is also an option if complete labels already exist.
 
-**How nnWorkbench tells them apart:** only by the `ignore` class in `dataset.json`.
+**How nnWorkbench tells them apart:** only by the `ignore` label in `dataset.json`.
 
 | | Sparse labels | Dense labels |
 | --- | --- | --- |
-| `ignore` class in `dataset.json` | **yes**, with the highest ID | **no** |
+| `ignore` label in `dataset.json` | **yes**, with the highest ID | **no** |
 | Unlabeled voxels | Ignore: not used for training | not allowed: every voxel needs a class |
 | A new, empty annotation starts as | Ignore (nothing labeled yet) | Background |
 | Annotation IDs while annotating | shifted by one (see [Annotation IDs](3-annotate.md#annotation-ids)) | the same as in `dataset.json` |
@@ -37,7 +37,7 @@ Define all classes required for the segmentation task and assign each class a un
 
 > **Note:** Background is a class and must be explicitly defined and labeled.
 
-> **Note:** For sparse labeling, Ignore is required and must have the highest ID. It refers to all voxels that are not labeled and for which we provide no information to the model. For dense labeling, leave Ignore out: nnWorkbench then treats the labels as dense, starts an empty annotation as background and preselects nnU-Net's default trainer.
+> **Note:** For sparse labels, the `ignore` label is required and must have the highest ID. It refers to all voxels that are not labeled and for which we provide no information to the model. For dense labels, leave the `ignore` label out: nnWorkbench then treats the labels as dense, starts an empty annotation as background and preselects nnU-Net's default trainer.
 
 These are the IDs stored in [`dataset.json`](setup.md#create-datasetjson). With sparse labels, they are shifted by one while annotating so that unlabeled voxels (Ignore) can be 0; see [Annotation IDs](3-annotate.md#annotation-ids).
 

@@ -19,9 +19,9 @@ This guide explains how to train and apply nnU-Net segmentation models with nnWo
 
 ✅ required · 🟡 optional · ❌ not used
 
-In the Annotation Workflow, stages 3 to 5 form a loop: based on the validation results, either return to Stage 3 for another annotation round or continue to Stage 6.
+In the Annotation Workflow, stages 3 to 5 form a loop: based on the validation results, either return to Stage 3 for another iteration or continue to Stage 6. An iteration is one pass of annotating, training and validating; each starts as a new dataset with **＋ New iteration**.
 
-**In nnWorkbench:** The stages map to the pages of a dataset: Setup to the overview and the **Data** page, 3. Annotate to the pencil button (**Annotate**) on the **Data** page, 4. Train to the **Preprocess** and **Train** pages, 5. Validate to **Validate** and 6. Predict to **Predict**. 1. Describe and 2. Define happen outside the app. The icon on each page tab shows its state: green ✓ done, orange ring ready to run (or running), orange ! outdated, red ! must be fixed; hover over a tab for the reason. **More in the guide ›** at the bottom of each page opens the matching section of this guide.
+**In nnWorkbench:** The stages map to the pages of a dataset: Setup to the overview and the **Data** page, 3. Annotate to the pencil button (**Annotate**) on the **Data** page, 4. Train to the **Preprocess** and **Train** pages, 5. Validate to **Validate** and 6. Predict to **Predict**. 1. Describe and 2. Define happen outside the app. The icon on each page tab shows its state: green ✓ done, orange ring ready to run (or running), orange ! outdated, red ! must be fixed; hover over a tab for the reason. **More in the guide · …** at the bottom of each page opens the matching section of this guide.
 
 ## What You Need
 
@@ -37,11 +37,11 @@ In the Annotation Workflow, stages 3 to 5 form a loop: based on the validation r
 
 ### nnU-Net Workflow
 
-**Labels.** A semantic segmentation mask for each training image: an image of the same size in which every pixel or voxel holds its class ID, numbered continuously from 0. Each mask is named like its image, without the channel postfix (`_0000`).
+**Labels.** A semantic segmentation mask for each training image: an image of the same size in which every pixel or voxel holds its class ID, numbered continuously from 0. Each mask is named like its image, without the channel suffix (`_0000`).
 
 ### Annotation Workflow
 
-**Time for annotating.** You create the labels yourself, usually in several annotate–train–validate rounds. Knowledge of the structures in your images is essential.
+**Time for annotating.** You create the labels yourself, usually in several iterations of annotating, training and validating. Knowledge of the structures in your images is essential.
 
 **nnInteractive (optional).** nnInteractive is not required, but highly recommended: it greatly reduces the annotation effort. It only works on 3D images; for 2D images, you annotate with scribbles. It needs a GPU with about 10 GB of memory, locally or on a remote machine.
 

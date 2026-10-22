@@ -64,7 +64,7 @@ class DatasetState:
 
     @property
     def inherits_from(self) -> str:
-        """The dataset this one is a later round of (New iteration writes it into dataset.json), or ""."""
+        """The dataset this one is a later iteration of (New iteration writes it into dataset.json), or ""."""
         value = self.manifest.get("inherits_from") if isinstance(self.manifest, dict) else None
         return value if isinstance(value, str) else ""
 

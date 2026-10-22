@@ -79,7 +79,7 @@ FORMER_QUESTIONS = (
     "How is it annotated: nnInteractive or brush, and what to watch out for?",
     "How much do objects of a class differ in size, shape, appearance, orientation, position and context?",
     "How often does each class occur, and in how many images? Are some classes rare?",
-    "Open questions, decisions made while annotating, and what changed between annotation rounds.",
+    "Open questions, decisions made while annotating, and what changed between iterations.",
     "What do you want to find or measure, and why?",
 )
 # a whole answer that is one italic question is a placeholder, also of a template version not listed above

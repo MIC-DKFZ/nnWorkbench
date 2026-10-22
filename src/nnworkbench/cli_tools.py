@@ -86,7 +86,7 @@ def run_create_dataset(roots: dict[str, Path | None], dataset_id: int, name: str
 
 def run_new_iteration(roots: dict[str, Path | None], source_id: int, dataset_id: int | None = None,
                       name: str | None = None, *, link_images: bool = False, as_json: bool = False) -> int:
-    """Copy imagesTr, labelsTr and dataset.json of a dataset into the next round (as New iteration in the GUI);
+    """Copy imagesTr, labelsTr and dataset.json of a dataset into the next iteration (as ＋ New iteration in the GUI);
     ``link_images`` lists the source's images in dataset.json instead of copying them."""
     records = scan_datasets(roots.get("raw"), roots.get("preprocessed"), roots.get("results"))
     source = next((record for record in records if record.dataset_id == source_id and record.raw_path), None)
@@ -105,7 +105,7 @@ def run_new_iteration(roots: dict[str, Path | None], source_id: int, dataset_id:
 
 
 def dataset_list(roots: dict[str, Path | None]) -> dict:
-    """Every dataset of the saved folders, for picking a free ID or the latest annotation round."""
+    """Every dataset of the saved folders, for picking a free ID or the latest iteration."""
     from .services.dataset_scanner import id_badge
 
     datasets = []
@@ -119,7 +119,7 @@ def dataset_list(roots: dict[str, Path | None]) -> dict:
             "raw": record.raw_path is not None, "preprocessed": record.preprocessed_path is not None,
             "results": record.results_path is not None,
             "id_problem": badge[0] if badge else None,
-            # annotation rounds: Cells, Cells_iter1, Cells_iter2 (a branch from the same source has the same name;
+            # iterations: Cells, Cells_iter1, Cells_iter2 (a branch from the same source has the same name;
             # the higher ID is the newer one)
             "base_name": match["base"] if match else record.name,
             "iteration": int(match["number"]) if match else 0,

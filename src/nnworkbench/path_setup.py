@@ -143,7 +143,7 @@ def set_paths_command(raw: str, preprocessed: str, results: str) -> str:
 
 def set_paths_main() -> None:
     """Save the supplied nnU-Net directories."""
-    parser = argparse.ArgumentParser(description="Save nnWorkbench's nnU-Net directory paths.")
+    parser = argparse.ArgumentParser(description="Save the nnU-Net folders for nnWorkbench.")
     parser.add_argument("--raw", required=True, help="Path to nnUNet_raw")
     parser.add_argument("--preprocessed", required=True, help="Path to nnUNet_preprocessed")
     parser.add_argument("--results", required=True, help="Path to nnUNet_results")
@@ -164,7 +164,7 @@ def set_paths_main() -> None:
 
 def get_paths_main() -> None:
     """Print paths saved by :func:`set_paths_main`."""
-    parser = argparse.ArgumentParser(description="Show nnWorkbench's saved nnU-Net directory paths.")
+    parser = argparse.ArgumentParser(description="Show the nnU-Net folders saved for nnWorkbench.")
     parser.add_argument("--json", action="store_true", help="Print the paths as JSON, e.g. for scripts")
     arguments = parser.parse_args()
     try:

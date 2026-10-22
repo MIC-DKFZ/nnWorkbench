@@ -408,7 +408,7 @@ def _run_builtin_command(command: Sequence[str]) -> int | None:
         parser = argparse.ArgumentParser(
             prog=f"nnworkbench-run {name}",
             description="List the datasets in the saved nnU-Net folders: ID, name, where they exist, ID problems "
-                        "and the annotation round (from the _iterN name).")
+                        "and the iteration (from the _iterN name).")
         parser.add_argument("--json", action="store_true", help="Print the list as JSON, e.g. for scripts")
         options = parser.parse_args(arguments)
         from .cli_tools import run_list
@@ -506,7 +506,7 @@ def _run_builtin_command(command: Sequence[str]) -> int | None:
     if name == "new-iteration":
         parser = argparse.ArgumentParser(
             prog=f"nnworkbench-run {name}",
-            description="Start the next annotation round (as New iteration in the GUI): copy imagesTr, labelsTr "
+            description="Start the next iteration (as ＋ New iteration in the GUI): copy imagesTr, labelsTr "
                         "and dataset.json of a dataset into a new dataset.")
         parser.add_argument("-d", "--dataset", type=int, required=True, help="Source dataset ID")
         parser.add_argument("--id", type=int, default=None,

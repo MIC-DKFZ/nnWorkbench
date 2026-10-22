@@ -2,13 +2,13 @@
 
 ***Organize your data for a smooth and structured workflow.***
 
-We use the standard nnU-Net folder structure to stay compatible with the existing nnU-Net workflow. This keeps the overall workflow simple, avoids redundant conversions or file movements, and helps to keep the project clear and reproducible. We need three main storage folders:
+We use the standard nnU-Net folder structure to stay compatible with the existing nnU-Net workflow. This keeps the overall workflow simple, avoids redundant conversions or file movements, and helps to keep the project clear and reproducible. We need three nnU-Net folders:
 
 - **`nnUNet_raw/`**: This folder contains the original datasets in the format expected by nnU-Net: images and labels.
 - **`nnUNet_preprocessed/`**: This folder is filled automatically when running nnU-Net planning and preprocessing and is used during model training. You don't have to do anything here manually.
 - **`nnUNet_results/`**: This folder stores trained models and training outputs.
 
-## Set the Folder Paths
+## Set the nnU-Net Folders
 
 nnWorkbench needs to know where these three folders are. You only have to set them once; they are remembered.
 
@@ -22,7 +22,7 @@ nnworkbench-set-paths --raw /path/to/nnUNet_raw \
 
 Check the saved paths with `nnworkbench-get-paths`. The GUI and the command line share these settings, so setting them in one place is enough on the same computer.
 
-**In nnWorkbench:** On the overview (the start screen), click **Browse…** next to `nnUNet_raw`, `nnUNet_preprocessed` and `nnUNet_results` and select each folder.
+**In nnWorkbench:** On the overview (the first page; **← All datasets** from a dataset), click **Browse…** next to `nnUNet_raw`, `nnUNet_preprocessed` and `nnUNet_results` and select each folder.
 
 To train on a remote machine or cluster, see [Work with a Remote Machine](#work-with-a-remote-machine-optional).
 
@@ -32,7 +32,7 @@ To train on a remote machine or cluster, see [Work with a Remote Machine](#work-
 
 If your computer has no suitable GPU, you can keep working in nnWorkbench on your computer (annotating, validating, inspecting) and run the GPU-heavy commands, training and prediction, on a remote machine or cluster.
 
-**Set up the remote machine once:** Install the core installation of nnWorkbench there, without the GUI (see *Remote machines and clusters* in the nnWorkbench README) and save the remote folder paths:
+**Set up the remote machine once:** Install the core installation of nnWorkbench there, without the GUI (see *Remote machines and clusters* in the nnWorkbench README) and save the remote nnU-Net folders:
 
 ```bash
 nnworkbench-set-paths --raw /remote/path/to/nnUNet_raw \
@@ -79,7 +79,7 @@ nnUNet_raw/
 
 **nnU-Net Workflow:** Copy your labels directly into `labelsTr`.
 
-> **Note:** In the end, `imagesTr` and `labelsTr` must contain the same cases. Each image and its label must have the same filename. Images need a `_0000` postfix: it is the channel number (see [4. Train](4-train.md#1-check-the-filenames)).
+> **Note:** In the end, `imagesTr` and `labelsTr` must contain the same cases. Each image and its label must have the same filename. Images need a `_0000` channel suffix: it is the channel number (see [4. Train](4-train.md#1-check-the-filenames)).
 
 > **Note:** Put only images with labels, or images you are going to annotate, into `imagesTr`. An image without label file makes the counts no longer match. Keep all other images in a separate folder, e.g. `imagesTs`, to predict them later in [6. Predict](6-predict.md).
 
@@ -110,11 +110,11 @@ The `dataset.json` file describes the channels, the classes and the file format;
 ```
 
 - **`labels`:** Class IDs start at 0 for the background and are numbered continuously.
-  - **Annotation Workflow:** Use the classes from [2. Define](2-define.md). For sparse labels, add an `ignore` class with the highest ID; without it, the labels are dense (see [Dense or Sparse Labeling](2-define.md#dense-or-sparse-labeling)).
+  - **Annotation Workflow:** Use the classes from [2. Define](2-define.md). For sparse labels, add the `ignore` label (exactly this key, lower case) with the highest ID; without it, the labels are dense (see [Dense or Sparse Labels](2-define.md#dense-or-sparse-labels)).
   - **nnU-Net Workflow:** Use the IDs in your label files. Add `ignore` only if some voxels are not labeled.
 - **`numTraining`:** The number of training cases, i.e. images in `imagesTr`.
 
-**In nnWorkbench:** **＋ New dataset** creates a `dataset.json` template. Fill it in with **Edit** on the **Data** page: the keys are fixed, and you can change the values, rename and renumber labels and channels, and add or remove them. **＋ add ignore** adds the `ignore` label with the next highest ID for sparse labels. Saving checks for missing names, non-continuous IDs and an `ignore` label that is not the highest ID; if `numTraining` does not match `imagesTr`, **Set to …** corrects it.
+**In nnWorkbench:** **＋ New dataset** creates a `dataset.json` template. Fill it in with **Edit** on the **Data** page: the keys are fixed, and you can change the values, rename and renumber classes (the `labels` entry; **＋ add label**) and channels, and add or remove them. **＋ add ignore** adds the `ignore` label with the next highest ID for sparse labels. Saving checks for missing names, non-continuous IDs and an `ignore` label that is not the highest ID; if `numTraining` does not match `imagesTr`, **Set to …** corrects it.
 
 ## Prepare Your Images (Optional)
 

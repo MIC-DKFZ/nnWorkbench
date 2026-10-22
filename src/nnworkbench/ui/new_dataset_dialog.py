@@ -77,14 +77,14 @@ class NewDatasetDialog(QDialog):
         self.name.textChanged.connect(self._update_folder)
         self.description: QCheckBox | None = None
         self.link_images: QCheckBox | None = None
-        if self._sources:  # where the images of the new round are
+        if self._sources:  # where the images of the new iteration are
             self.link_images = QCheckBox()
             title = QWidget()  # "Link images (i)" as the row's label
             title_row = QHBoxLayout(title)
             title_row.setContentsMargins(0, 0, 0, 0)
             title_row.setSpacing(5)
             title_row.addWidget(QLabel("Link images"))
-            title_row.addWidget(InfoIcon("For a round where only the labels change: the images are not copied, the "
+            title_row.addWidget(InfoIcon("For an iteration where only the labels change: the images are not copied, the "
                                          "new dataset.json points to them in the source dataset. Labels are always "
                                          "copied."))
             layout.addRow(title, self.link_images)

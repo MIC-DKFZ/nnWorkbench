@@ -50,7 +50,7 @@ Once the results are satisfying, continue to [6. Predict](6-predict.md). Otherwi
 
 ## Annotation Workflow
 
-With sparse annotations, the validation needs some additional checks, and improving the training data means another annotation round.
+With sparse annotations, the validation needs some additional checks, and improving the training data means another iteration.
 
 ### Check the Unlabeled Regions
 
@@ -74,13 +74,13 @@ With sparse annotations, the metrics in `summary.json` are only computed on the 
 | **False detections:** artifacts, debris or noise are predicted as a class. | Add background annotations on these structures. |
 | **Errors in specific images:** e.g. only in noisy or blurry images or in one imaging session. | Annotate more in these images to cover their variability. |
 
-Based on these results, either return to [3. Annotate](3-annotate.md) for another annotation round or, once the results are satisfying, continue to [6. Predict](6-predict.md).
+Based on these results, either return to [3. Annotate](3-annotate.md) for another iteration or, once the results are satisfying, continue to [6. Predict](6-predict.md).
 
-### Start the Next Annotation Round
+### Start the Next Iteration
 
-Create a new dataset for each round. The previous dataset and its trained model stay unchanged, so you can compare the rounds later.
+Create a new dataset for each iteration. The previous dataset and its trained model stay unchanged, so you can compare the iterations later.
 
-1. **Create a new dataset** with a new, unused dataset ID, e.g. `Dataset043_CellSegmentation_iter1`, and copy `imagesTr`, `labelsTr` and `dataset.json` from the previous round into it.
+1. **Create a new dataset** with a new, unused dataset ID, e.g. `Dataset043_CellSegmentation_iter1`, and copy `imagesTr`, `labelsTr` and `dataset.json` from the previous iteration into it.
 2. **Improve the training data** based on the validation outcome (see [Typical Errors and Next Steps](#typical-errors-and-next-steps)):
    - Add annotations to existing images where the model makes errors.
    - Add new images to `imagesTr` and annotate them if the errors occur in image types that are underrepresented, e.g. noisy images or one imaging session.

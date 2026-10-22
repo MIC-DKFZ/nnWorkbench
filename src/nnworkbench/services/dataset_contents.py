@@ -20,7 +20,7 @@ def workbench_folder(dataset_directory: Path) -> Path:
 
 
 def copy_workbench_folder(source: Path, destination: Path, skip: set[str]) -> None:
-    """Copy the nnWorkbench folder into a new annotation round, without the files named in ``skip`` (statistics
+    """Copy the nnWorkbench folder into a new iteration, without the files named in ``skip`` (statistics
     that no longer match the new labels)."""
     if workbench_folder(source).is_dir():
         shutil.copytree(workbench_folder(source), workbench_folder(destination), dirs_exist_ok=True,

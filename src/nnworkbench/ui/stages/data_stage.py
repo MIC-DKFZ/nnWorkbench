@@ -486,7 +486,7 @@ class DataStage(StagePage):
             items.append(badge("✓ ready for preprocessing", "green"))
         if state.inherits_from:
             items.append(badge(f"from {state.inherits_from}" + (" · images linked" if raw.file_list else ""), "gray",
-                               f"A later round of {state.inherits_from} (inherits_from in dataset.json)"
+                               f"A later iteration of {state.inherits_from} (inherits_from in dataset.json)"
                                + (". Its images are listed in dataset.json (\"dataset\"), not copied: nnU-Net "
                                   "reads only the listed files." if raw.file_list else ".")))
         if state.analysis and state.analysis_outdated:  # not a problem for preprocessing, only for the statistics
