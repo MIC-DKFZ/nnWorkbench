@@ -204,7 +204,7 @@ class CaseStatisticsPanel(QFrame):
             return
         names = state.names
         voxels = {int(key): int(value) for key, value in entry.get("voxels", {}).items()}
-        classes = [class_id for class_id in names if names[class_id].casefold() != "ignore"]
+        classes = [class_id for class_id in names if names[class_id] != "ignore"]
         # IDs that dataset.json does not define are counted apart and flagged
         undefined = {key: value for key, value in voxels.items() if value > 0 and key not in names}
         present = {key: value for key, value in voxels.items() if value > 0 and key in names}

@@ -373,3 +373,20 @@ def test_r28_json_editor_fields_show_the_start_of_long_names(tmp_path: Path) -> 
     finally:
         parent.close()
     assert application is not None
+
+
+def test_only_the_exact_ignore_key_is_the_ignore_label(tmp_path: Path) -> None:
+    """As nnU-Net: "Ignore" is an ordinary class (no ID shift, dense description); only "ignore" is the ignore label."""
+    from nnworkbench.services.dataset_description import description_template
+    from nnworkbench.services.napari_inspector import annotation_label_summary
+
+    for key, sparse in (("Ignore", False), ("ignore", True)):
+        folder = tmp_path / key / "Dataset001_Cells"
+        (folder / "imagesTr").mkdir(parents=True)
+        (folder / "imagesTr" / "cells_000_0000.nii.gz").touch()
+        (folder / "dataset.json").write_text(json.dumps({
+            "channel_names": {"0": "light"}, "labels": {"background": 0, "cell": 1, key: 2},
+            "numTraining": 1, "file_ending": ".nii.gz"}), encoding="utf-8")
+        summary = {name: value for value, name in annotation_label_summary(folder / "imagesTr" / "cells_000_0000.nii.gz")}
+        assert summary == ({"ignore": 0, "background": 1, "cell": 2} if sparse else {"background": 0, "cell": 1, "Ignore": 2})
+        assert ("**Dense or sparse:** sparse" in description_template(folder)) is sparse

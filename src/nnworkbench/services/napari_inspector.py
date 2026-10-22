@@ -405,7 +405,7 @@ def annotation_label_summary(image_path: Path) -> tuple[tuple[int, str], ...]:
         if not sparse:
             translated.append((value, name))
         else:
-            translated.append((0 if name.strip().casefold() == "ignore" else value + 1, name))
+            translated.append((0 if name == "ignore" else value + 1, name))
     return tuple(sorted(translated, key=lambda entry: (entry[0], entry[1].casefold())))
 
 

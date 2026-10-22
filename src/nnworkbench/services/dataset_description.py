@@ -140,7 +140,8 @@ def dataset_channels(dataset_directory: Path) -> list[tuple[int, str]]:
 
 
 def _is_ignore(name: str) -> bool:
-    return name.strip().casefold() == "ignore"
+    """The ignore label as nnU-Net reads it: exactly "ignore" ("Ignore" is an ordinary class there)."""
+    return name.strip() == "ignore"
 
 
 def class_key(name: str) -> str:

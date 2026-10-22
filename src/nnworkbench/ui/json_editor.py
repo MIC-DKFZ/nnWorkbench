@@ -380,7 +380,7 @@ class DatasetJsonPanel(QFrame):
         labels = manifest.get("labels", {})
         if not isinstance(labels, dict):  # e.g. a list typed into the field; definition_errors reports it
             labels = {}
-        ignore = next((value for name, value in labels.items() if name.strip().casefold() == "ignore"), None)
+        ignore = next((value for name, value in labels.items() if name == "ignore"), None)  # nnU-Net: exact key
         numeric = [value for value in labels.values() if isinstance(value, int)]
         if ignore is not None and numeric and ignore != max(numeric):
             problems.append("ignore must be the highest label ID.")

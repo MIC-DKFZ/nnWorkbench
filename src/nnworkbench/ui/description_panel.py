@@ -767,7 +767,7 @@ class DescriptionPanel(QWidget):
         for token, value, name in ordered:
             section = self._class_sections[token]
             section.set_class(value, name)
-            visible = name.strip().casefold() != "ignore"
+            visible = name.strip() != "ignore"
             if section.isHidden() == visible:
                 section.setVisible(visible)
 
@@ -784,7 +784,7 @@ class DescriptionPanel(QWidget):
         answers = {key: editor.answer() for key, editor in self._editors.items()}
         if self._class_table is not None:
             for token, _value, name in self._class_table.rows():
-                if token in self._class_sections and name.strip().casefold() != "ignore":
+                if token in self._class_sections and name.strip() != "ignore":
                     key = class_key(name)
                     answers.update({f"{key}:{field}": answer
                                     for field, answer in self._class_sections[token].answers().items()})

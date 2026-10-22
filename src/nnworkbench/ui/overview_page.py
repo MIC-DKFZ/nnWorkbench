@@ -533,7 +533,7 @@ class DetailsPanel(Card):
                                               muted=True, wrap=True)))
         channels = manifest.get("channel_names") if isinstance(manifest.get("channel_names"), dict) else {}
         labels = manifest.get("labels") if isinstance(manifest.get("labels"), dict) else {}
-        classes = [name for name in labels if str(name).casefold() != "ignore"]
+        classes = [name for name in labels if name != "ignore"]
         grid = QGridLayout()
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(6)
@@ -552,7 +552,7 @@ class DetailsPanel(Card):
         for name, value in list(labels.items())[:_CHIP_LIMIT]:  # one widget per chip: thousands would freeze
             chip = _plain(QLabel())
             chip.setObjectName("chip")
-            if str(name).casefold() == "ignore":
+            if name == "ignore":
                 chip.setProperty("ignore", True)
             elide_to(chip, f"{_short(name, 60)} · {_short(value, 40)}", _CHIP_WIDTH)
             chips.addWidget(chip)
@@ -566,7 +566,7 @@ class DetailsPanel(Card):
         folders = QGridLayout()
         folders.setHorizontalSpacing(12)
         folders.setVerticalSpacing(6)
-        mode = "sparse labels" if any(str(name).casefold() == "ignore" for name in labels) else "dense labels"
+        mode = "sparse labels" if any(name == "ignore" for name in labels) else "dense labels"
         entries = (("RAW", [", ".join(details["raw_folders"]) + f" · {mode}" if details["raw_folders"] else "—"]),
                    ("PRE", details["plans"] or ["—"]),  # one line per plans file, long names end with "…"
                    ("RES", [f"{details['models']} model{'s' if details['models'] != 1 else ''} · "
