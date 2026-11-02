@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/nnworkbench/assets/images/readme-header.png" alt="nnWorkbench: from the first image to a trained segmentation model" width="720">
+  <img src="src/nnworkbench/assets/images/readme-header.png" alt="nnWorkbench: from a few labels to your own segmentation model" width="720">
 </p>
 
 <p align="center">
