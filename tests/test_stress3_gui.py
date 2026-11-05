@@ -55,10 +55,6 @@ class _Env:
     def __init__(self, root: Path, monkeypatch) -> None:
         from nnworkbench.ui.context import AppContext
         from nnworkbench.ui.dataset_page import DatasetPage
-        from nnworkbench.ui.stages import preprocess_stage, train_stage
-
-        monkeypatch.setattr(preprocess_stage, "available_planners", lambda: ("ExperimentPlanner",))
-        monkeypatch.setattr(train_stage, "available_trainers", lambda: ("nnUNetTrainer",))
         self.application = _application()
         self.root = root
         self.holder = QWidget()

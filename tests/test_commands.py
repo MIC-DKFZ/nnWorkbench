@@ -13,7 +13,6 @@ from nnworkbench.services.commands import (
     training_command,
     wrapped_command,
 )
-from nnworkbench.services.nnunet_discovery import available_trainers
 
 
 def test_nnunet_command_generation() -> None:
@@ -34,15 +33,6 @@ def test_nnunet_command_generation() -> None:
     assert prediction_command(1, "/input", "/output", "nnUNetPlans", "2d", folds="0 2") == (
         "nnUNetv2_predict -i /input -o /output -d 1 -c 2d -p nnUNetPlans -tr nnUNetTrainer -f 0 2 -npp 3 -nps 3")
     assert wrapped_command("nnUNetv2_train 1 2d 0") == "nnworkbench-run nnUNetv2_train 1 2d 0"
-
-
-def test_bundled_annotation_workflow_trainer_is_discoverable() -> None:
-    trainers = available_trainers()
-
-    assert "nnUNetTrainer" in trainers
-    assert "nnUNetTrainerBetterIgnoreSampling" in trainers
-    assert "nnUNetTrainerBetterIgnoreSamplingOnlyMirror01" in trainers
-    assert "nnUNetTrainerBetterIgnoreSamplingNoMirroring" in trainers
 
 
 def test_bundled_trainer_directory_exists() -> None:

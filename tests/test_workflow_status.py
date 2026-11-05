@@ -127,3 +127,38 @@ def test_extended_command_options() -> None:
     assert prediction_command(10, "/i", "/o", "P", "2d", folds="0 1", disable_tta=True).endswith("-f 0 1 -npp 3 -nps 3 --disable_tta")
     assert prediction_command(10, "/i", "/o", "P", "2d", folds="0", continue_prediction=True).endswith(
         "-f 0 -npp 3 -nps 3 --continue_prediction")
+
+
+def test_loading_a_dataset_state_stats_each_file_at_most_once(tmp_path: Path, monkeypatch) -> None:
+    """Large datasets on network drives: folders are read with os.scandir (the type comes with the listing) and
+    the label times are shared by the case rows and the outdated checks. Before: ~18 stat calls per case."""
+    import os
+
+    from nnworkbench.services.dataset_scanner import scan_datasets
+    from nnworkbench.ui.dataset_state import load_state
+
+    cases = 200
+    raw, pre = tmp_path / "raw" / "Dataset001_Big", tmp_path / "pre" / "Dataset001_Big"
+    (raw / "imagesTr").mkdir(parents=True), (raw / "labelsTr").mkdir()
+    for index in range(cases):
+        (raw / "imagesTr" / f"c_{index:04d}_0000.nii.gz").touch()
+        (raw / "labelsTr" / f"c_{index:04d}.nii.gz").touch()
+    (raw / "dataset.json").write_text(json.dumps({"channel_names": {"0": "x"}, "labels": {"background": 0, "a": 1},
+                                                  "numTraining": cases, "file_ending": ".nii.gz"}), encoding="utf-8")
+    (pre / "nnUNetPlans_3d_fullres").mkdir(parents=True)
+    for index in range(cases):
+        for ending in (".b2nd", "_seg.b2nd", ".pkl"):
+            (pre / "nnUNetPlans_3d_fullres" / f"c_{index:04d}{ending}").touch()
+    (pre / "nnUNetPlans.json").write_text(json.dumps({"plans_name": "nnUNetPlans", "configurations": {
+        "3d_fullres": {"data_identifier": "nnUNetPlans_3d_fullres", "patch_size": [8], "spacing": [1]}}}),
+        encoding="utf-8")
+    record = scan_datasets(tmp_path / "raw", tmp_path / "pre", None)[0]
+    stats = []
+    real_stat = os.stat
+    monkeypatch.setattr(os, "stat", lambda *args, **kwargs: stats.append(args[:1]) or real_stat(*args, **kwargs))
+    state = load_state(record)
+    assert len(state.raw.cases) == cases and state.plans[0].configurations[0].preprocessed_cases == cases
+    assert state.raw.newest_label is not None and len(state.raw.label_times) == cases
+    # one stat per label file for its time, plus a handful for folders and JSON files: not one per image or
+    # preprocessed file (os.DirEntry.is_file is answered from the listing on local and most network file systems)
+    assert len(stats) <= cases + 40, len(stats)

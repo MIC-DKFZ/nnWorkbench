@@ -14,6 +14,7 @@ from qtpy.QtWidgets import QMessageBox
 from nnworkbench.services.commands import shell_join
 from nnworkbench.services.device_probe import DeviceInfo, probe_device
 from nnworkbench.services.label_analysis import available_workers
+from nnworkbench.services.nnunet_discovery import NnunetClasses, discover_nnunet_classes
 
 from .jobs import JobRunner, echo, start_process_group, stop_process_group
 from .tasks import TaskRunner
@@ -41,6 +42,7 @@ class AppContext(QObject):
     annotation_changed = Signal(bool)
     howto_changed = Signal(bool)
     device_changed = Signal()
+    classes_changed = Signal()  # nnunet_classes is known
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -60,6 +62,9 @@ class AppContext(QObject):
         self.tasks = TaskRunner(self)
         self._napari: list[QProcess] = []
         self.device: DeviceInfo | None = None  # None while the check runs (see detect_device)
+        # nnU-Net's planner and trainer classes; None until discover_classes has read them (once per session)
+        self.nnunet_classes: NnunetClasses | None = None
+        self._classes_requested = False
 
     def _stored_number(self, key: str, default: int, limits: tuple[int, int]) -> int:
         """A saved whole number within *limits* (the settings file may have been edited, or the CPU changed)."""
@@ -81,6 +86,22 @@ class AppContext(QObject):
     def _device_detected(self, info: object) -> None:
         self.device = info if isinstance(info, DeviceInfo) else DeviceInfo("unknown")
         self.device_changed.emit()
+
+    # ------------------------------------------------------------ nnU-Net classes
+
+    def discover_classes(self) -> None:
+        """List the installed planners and trainers (also custom ones) once per session, in the background and in
+        a separate process: importing nnU-Net loads torch, which would cost this process about 400 MB for good
+        and slow down its other background work for seconds. Pages read ``nnunet_classes`` on ``classes_changed``."""
+        if self._classes_requested:
+            return
+        self._classes_requested = True
+        self.tasks.run("nnunet-classes", discover_nnunet_classes, self._classes_discovered,
+                       lambda _error: self._classes_discovered(NnunetClasses()))
+
+    def _classes_discovered(self, classes: object) -> None:
+        self.nnunet_classes = classes if isinstance(classes, NnunetClasses) else NnunetClasses()
+        self.classes_changed.emit()
 
     # ------------------------------------------------------------ settings
 

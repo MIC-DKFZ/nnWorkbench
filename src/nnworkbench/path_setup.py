@@ -72,11 +72,16 @@ def unusable_for_nnunet(path: str | os.PathLike, windows: bool | None = None) ->
     return windows and not os.fspath(path).isascii() and not _utf8_code_page()
 
 
+def own_trainer_folders() -> list[str]:
+    """The user's own ``nnUNet_extTrainer`` folders (nnU-Net searches them for trainers), without the bundled one."""
+    bundled = os.path.abspath(trainer_directory())
+    return [folder for folder in os.environ.get("nnUNet_extTrainer", "").split(os.pathsep)
+            if folder.strip() and os.path.abspath(folder) != bundled]
+
+
 def trainer_folders() -> str:
     """The bundled trainers, followed by the user's own ``nnUNet_extTrainer`` folders (nnU-Net takes a list)."""
-    own = [folder for folder in os.environ.get("nnUNet_extTrainer", "").split(os.pathsep)
-           if folder and folder != str(trainer_directory())]
-    return os.pathsep.join([str(trainer_directory()), *own])
+    return os.pathsep.join([str(trainer_directory()), *own_trainer_folders()])
 
 
 def save_paths(raw: str, preprocessed: str, results: str) -> None:

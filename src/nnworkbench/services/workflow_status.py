@@ -44,14 +44,23 @@ def finite_number(value: object) -> float | None:
     return number if math.isfinite(number) else None
 
 
-def _entries(folder: Path | None) -> list[Path]:
-    """The entries of a folder; empty when it is missing or cannot be read (permissions, removed meanwhile)."""
+def _scan(folder: Path | None) -> list[os.DirEntry]:
+    """The entries of a folder with their type from the listing itself (os.scandir: no stat call per entry on most
+    file systems, which matters on network drives); empty when the folder is missing or cannot be read."""
     if folder is None:
         return []
     try:
-        return list(folder.iterdir())
+        with os.scandir(folder) as entries:
+            return list(entries)
     except (OSError, ValueError):
         return []
+
+
+def _entry_is_file(entry: os.DirEntry) -> bool:
+    try:
+        return entry.is_file()
+    except OSError:
+        return False
 
 
 def _is_file(path: Path) -> bool:
@@ -112,6 +121,7 @@ class CaseRow:
     channels_present: bool  # a file for every channel of dataset.json (RGB files count as three)
     label_file: Path | None
     last_edit: float | None  # modification time of the label file
+    channel_suffixes: tuple[str | None, ...]  # of image_files ("0000", …; None without a suffix), read once
 
     @property
     def has_label(self) -> bool:
@@ -119,8 +129,7 @@ class CaseRow:
 
     def extra_channels(self, required: tuple[str, ...]) -> list[str]:
         """Channel suffixes of this case beyond channel_names (nnU-Net: "Unexpected number of modalities")."""
-        return [channel for channel in (_image_case(path)[1] for path in self.image_files)
-                if channel is not None and channel not in required]
+        return [channel for channel in self.channel_suffixes if channel is not None and channel not in required]
 
 
 @dataclass(frozen=True)
@@ -138,6 +147,14 @@ class RawOverview:
     file_list: bool = False  # the cases come from the "dataset" file list of dataset.json, not imagesTr/labelsTr
     missing_files: tuple[str, ...] = ()  # images listed there but not found (a missing label: missing_labels)
     unlisted_images: tuple[str, ...] = ()  # in imagesTr but not in the file list: nnU-Net ignores them
+    label_times: tuple[float, ...] = ()  # when each label file found was last changed (the outdated checks)
+
+    @property
+    def newest_label(self) -> float | None:
+        """The last label change; a time from the future (clock skew) is ignored, it would make preprocessing
+        outdated forever, even right after it."""
+        times = [value for value in self.label_times if value <= time.time() + 60]
+        return max(times) if times else None
 
     @property
     def missing_labels(self) -> int:
@@ -148,7 +165,7 @@ class RawOverview:
         return all(case.channels_present for case in self.cases)
 
 
-def _image_case(path: Path) -> tuple[str, str | None]:
+def _image_case(path: str | Path) -> tuple[str, str | None]:
     """Split an imagesTr file name into case ID and channel (``"0000"``), if present."""
     stem = strip_image_suffix(path)
     match = _CHANNEL_SUFFIX.search(stem)
@@ -186,7 +203,7 @@ def _listed_overview(raw_path: Path, manifest: dict, listed: dict[str, tuple[tup
     first = next(iter(listed.values()), ((), None))[0]
     components = {f"{index:04d}": color_components(path) or 1 for index, path in enumerate(first) if _is_file(path)}
     required, channel_problem = required_channels(channels, components)
-    rows, missing = [], []
+    rows, missing, label_times = [], [], []
     image_count = label_count = 0
     for case in sorted(listed, key=str.casefold):
         images, label = listed[case]
@@ -195,15 +212,17 @@ def _listed_overview(raw_path: Path, manifest: dict, listed: dict[str, tuple[tup
         image_count += len(present)
         label_file = label if _is_file(label) else None  # none yet: "without label", e.g. still to annotate
         label_count += label_file is not None
-        rows.append(CaseRow(case, present, len(present) == len(images) == len(required), label_file,
-                            _modified(label_file) if label_file else None))
+        edited = _modified(label_file) if label_file else None
+        if edited is not None:
+            label_times.append(edited)
+        rows.append(CaseRow(case, present, len(present) == len(images) == len(required), label_file, edited,
+                            tuple(_image_case(path.name)[1] for path in present)))
     listed_files = {path for images, _label in listed.values() for path in images}
-    images_dir = raw_path / "imagesTr"
-    unlisted = sorted((path.name for path in (_entries(images_dir) if images_dir.is_dir() else ())
-                       if _is_file(path) and has_image_suffix(path) and Path(os.path.abspath(path)) not in listed_files),
-                      key=str.casefold)
+    unlisted = sorted((entry.name for entry in _scan(raw_path / "imagesTr")
+                       if _entry_is_file(entry) and has_image_suffix(entry.name)
+                       and Path(os.path.abspath(entry.path)) not in listed_files), key=str.casefold)
     return RawOverview(tuple(rows), image_count, label_count, channels, True, (), (), required, channel_problem,
-                       True, tuple(missing), tuple(unlisted))
+                       True, tuple(missing), tuple(unlisted), tuple(label_times))
 
 
 def raw_overview(raw_path: Path | None, manifest: dict | None) -> RawOverview:
@@ -218,22 +237,24 @@ def raw_overview(raw_path: Path | None, manifest: dict | None) -> RawOverview:
     names_valid = True
     image_count = 0
     unsupported = []
-    if images_dir is not None and images_dir.is_dir():
-        for path in _entries(images_dir):
-            if not _is_file(path) or not has_image_suffix(path):
-                if path.suffix.lower() in UNSUPPORTED_IMAGE_SUFFIXES and _is_file(path):
-                    unsupported.append(path.name)
-                continue
-            image_count += 1
-            case, channel = _image_case(path)
-            if channel is None:
-                names_valid = False
-            images.setdefault(case, []).append(path)
+    for entry in _scan(images_dir):
+        if not _entry_is_file(entry):
+            continue
+        if not has_image_suffix(entry.name):
+            if os.path.splitext(entry.name)[1].lower() in UNSUPPORTED_IMAGE_SUFFIXES:
+                unsupported.append(entry.name)
+            continue
+        image_count += 1
+        case, channel = _image_case(entry.name)
+        if channel is None:
+            names_valid = False
+        images.setdefault(case, []).append(Path(entry.path))
     labels: dict[str, Path] = {}
-    if labels_dir is not None and labels_dir.is_dir():
-        for path in _entries(labels_dir):
-            if _is_file(path) and has_image_suffix(path):
-                labels[strip_image_suffix(path)] = path
+    for entry in _scan(labels_dir):
+        if _entry_is_file(entry) and has_image_suffix(entry.name):
+            labels[strip_image_suffix(entry.name)] = Path(entry.path)
+    # one stat per label file, shared by the case rows and the outdated checks (newest_label, label_times)
+    edited = {case: _modified(path) for case, path in labels.items()}
     # colour channels per suffix, from the first image of each (2D formats only; one header read per suffix)
     components: dict[str, int] = {}
     for case in sorted(images, key=str.casefold):
@@ -245,28 +266,21 @@ def raw_overview(raw_path: Path | None, manifest: dict | None) -> RawOverview:
     rows = []
     for case in sorted(images, key=str.casefold):
         files = tuple(sorted(images[case], key=lambda item: item.name))
-        found_channels = {_image_case(item)[1] for item in files}
-        label = labels.get(case)
-        last_edit = _modified(label) if label else None
-        rows.append(CaseRow(case, files, set(required) <= found_channels, label, last_edit))
+        suffixes = tuple(_image_case(item.name)[1] for item in files)
+        rows.append(CaseRow(case, files, set(required) <= set(suffixes), labels.get(case), edited.get(case),
+                            suffixes))
     unmatched = tuple(sorted((path.name for case, path in labels.items() if case not in images), key=str.casefold))
     return RawOverview(tuple(rows), image_count, len(labels), channels, names_valid, unmatched,
-                       tuple(sorted(unsupported, key=str.casefold)), required, channel_problem)
+                       tuple(sorted(unsupported, key=str.casefold)), required, channel_problem,
+                       label_times=tuple(value for value in edited.values() if value is not None))
 
 
 def newest_label_time(raw_path: Path | None) -> float | None:
-    """Return the newest modification time in labelsTr, or of the listed label files (for the outdated rules)."""
-    listed = listed_cases(raw_path)
-    labels_dir = raw_path / "labelsTr" if raw_path else None
-    if listed is not None:
-        times = [_modified(label) for _images, label in listed.values()]
-    elif labels_dir is None or not labels_dir.is_dir():
+    """The newest change of a label file (in labelsTr, or listed in dataset.json), for the outdated rules: the
+    case listing's ``RawOverview.newest_label``, which ``load_state`` already has."""
+    if raw_path is None:
         return None
-    else:
-        times = [_modified(path) for path in _entries(labels_dir) if _is_file(path) and has_image_suffix(path)]
-    # a label file from the future (clock skew) would make preprocessing outdated forever, even right after it
-    times = [value for value in times if value is not None and value <= time.time() + 60]
-    return max(times) if times else None
+    return raw_overview(raw_path, json_object(raw_path / "dataset.json")).newest_label
 
 
 # ---------------------------------------------------------------- preprocessing
@@ -296,11 +310,9 @@ class PlansInfo:
 
 
 def _count_preprocessed_cases(folder: Path) -> int:
-    if not folder.is_dir():
-        return 0
     # .b2nd since nnU-Net 2.6; .npz (with .npy) from older versions, which nnU-Net still trains on
-    return sum(1 for path in _entries(folder) if _is_file(path) and (
-        path.name.endswith(".b2nd") and not path.name.endswith("_seg.b2nd") or path.name.endswith(".npz")))
+    return sum(1 for entry in _scan(folder) if _entry_is_file(entry) and (
+        entry.name.endswith(".b2nd") and not entry.name.endswith("_seg.b2nd") or entry.name.endswith(".npz")))
 
 
 def _inherited(configurations: dict, name: str) -> dict:
@@ -315,11 +327,13 @@ def _inherited(configurations: dict, name: str) -> dict:
     return values
 
 
-def plans_overview(preprocessed_path: Path | None, raw_path: Path | None = None) -> tuple[PlansInfo, ...]:
-    """Describe every plans file of a preprocessed dataset and its configurations."""
+def plans_overview(preprocessed_path: Path | None, raw_path: Path | None = None,
+                   raw: RawOverview | None = None) -> tuple[PlansInfo, ...]:
+    """Describe every plans file of a preprocessed dataset and its configurations. ``raw`` (the case listing) has
+    the newest label change already; without it the labels are listed here."""
     if preprocessed_path is None or not preprocessed_path.is_dir():
         return ()
-    newest_label = newest_label_time(raw_path)
+    newest_label = raw.newest_label if raw is not None else newest_label_time(raw_path)
     plans: list[PlansInfo] = []
     for file in sorted(preprocessed_path.glob("*.json"), key=lambda item: item.name.casefold()):
         content = json_object(file)
@@ -671,15 +685,14 @@ def prediction_status(input_dir: Path | None, output_dir: Path | None, channels:
         return []
     cases: dict[str, set[str | None]] = {}
     wrong: dict[str, list[str]] = {}
-    for path in input_dir.iterdir():  # an unreadable input folder raises: the stage shows the error
-        if _is_file(path) and has_image_suffix(path):
-            case, channel = _image_case(path)
-            cases.setdefault(case, set()).add(channel)
-            if file_ending and not path.name.endswith(file_ending):
-                wrong.setdefault(case, []).append(path.name)
-    predicted = set()
-    if output_dir is not None and output_dir.is_dir():
-        predicted = {strip_image_suffix(path) for path in _entries(output_dir)
-                     if _is_file(path) and image_suffix(path)}
+    with os.scandir(input_dir) as entries:  # an unreadable input folder raises: the stage shows the error
+        for entry in entries:
+            if _entry_is_file(entry) and has_image_suffix(entry.name):
+                case, channel = _image_case(entry.name)
+                cases.setdefault(case, set()).add(channel)
+                if file_ending and not entry.name.endswith(file_ending):
+                    wrong.setdefault(case, []).append(entry.name)
+    predicted = {strip_image_suffix(entry.name) for entry in _scan(output_dir)
+                 if _entry_is_file(entry) and image_suffix(entry.name)}
     return [PredictionCase(case, cases[case], case in predicted, channels, wrong.get(case, ()))
             for case in sorted(cases, key=str.casefold)]

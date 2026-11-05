@@ -30,7 +30,6 @@ from nnworkbench.services.device_probe import (
     device_argument,
     device_hint,
 )
-from nnworkbench.services.nnunet_discovery import available_trainers
 from nnworkbench.services.workflow_status import FoldInfo, ModelInfo
 
 from ..context import AppContext
@@ -103,7 +102,8 @@ class TrainStage(StagePage):
         super().__init__(context, _howto(), parent)
         self._model: ModelInfo | None = None
         self._fold: FoldInfo | None = None
-        self._trainers_loaded = False
+        self._trainers_loaded = False  # the trainer list holds the installed trainers (context.nnunet_classes)
+        context.classes_changed.connect(self._set_trainers)
         models_card = Card()
         head = models_card.add_header("Models")
         self._models_path = header_note(mono=True)
@@ -351,9 +351,9 @@ class TrainStage(StagePage):
 
     def set_state(self, state: DatasetState) -> None:
         super().set_state(state)
-        if not self._trainers_loaded:
-            self._trainers_loaded = True
-            self.context.tasks.run("trainers", available_trainers, self._set_trainers)
+        self.context.discover_classes()  # once per session; _set_trainers fills the list when it is known
+        if not self._trainers_loaded and self.context.nnunet_classes is not None:
+            self._set_trainers()
         record = state.record
         self._models_path.setText(f"nnUNet_results/{record.directory_name}")
         self._models_count.setText(f"{len(state.models)} model folder{'s' if len(state.models) != 1 else ''}")
@@ -415,8 +415,11 @@ class TrainStage(StagePage):
         existing = {fold.name for fold in model.folds} if model else set()
         return next((fold for fold in folds if fold not in existing), folds[0])
 
-    def _set_trainers(self, trainers: object) -> None:
-        if isinstance(trainers, tuple) and trainers:
+    def _set_trainers(self) -> None:
+        """The installed trainers (also custom ones) in the dropdown; the typed or chosen name stays."""
+        trainers = self.context.nnunet_classes.trainers if self.context.nnunet_classes else ()
+        self._trainers_loaded = bool(trainers)
+        if trainers:
             current = self._trainer.currentText()
             self._trainer.blockSignals(True)
             self._trainer.clear()

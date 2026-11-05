@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 
 from nnworkbench.models.dataset import DatasetRecord
@@ -13,7 +15,6 @@ from nnworkbench.services.dataset_json import (
     file_ending_error,
     file_ending_mismatch,
     has_regions,
-    listed_cases,
     manifest_source,
     num_training_error,
 )
@@ -79,6 +80,12 @@ class DatasetState:
     # (ready to run, or running), "warn" orange ! (outdated), "error" red ! (must be fixed), "ok" green ✓.
 
     def data_problems(self) -> list[str]:
+        """What must be fixed on Data before preprocessing (see ``_problems``: computed once per state)."""
+        return list(self._problems)
+
+    @cached_property
+    def _problems(self) -> tuple[str, ...]:
+        # every stage state and page asks for the problems: computed once (the frozen dataclass allows the cache)
         raw = self.raw
         problems = list(self.manifest_errors)
         if self.record.id_problem[1]:
@@ -121,7 +128,7 @@ class DatasetState:
             problems.append(f"label files contain IDs that dataset.json does not define: "
                             f"{', '.join(map(str, undefined[:10]))} (see Statistics; e.g. 255 instead of 1); "
                             "nnU-Net fails on them")
-        return problems
+        return tuple(problems)
 
     def undefined_label_ids(self) -> list[int]:
         """Label IDs that Compute statistics found in labelsTr but dataset.json does not define (while the
@@ -196,23 +203,15 @@ class DatasetState:
         return "", "Predict · no model with a finished fold yet"
 
 
-def _analysis_outdated(raw_path: Path | None, analysis: dict | None) -> int:
+def _analysis_outdated(raw_path: Path | None, analysis: dict | None, raw: RawOverview) -> int:
+    """Label files changed after the statistics were computed (their times come with the case listing)."""
     if raw_path is None or analysis is None:
         return 0
     try:
         analysed = analysis_path(raw_path).stat().st_mtime
     except OSError:
         return 0
-    listed = listed_cases(raw_path)
-    labels = raw_path / "labelsTr"
-    try:
-        if listed is not None:  # the "dataset" file list of dataset.json
-            return sum(1 for _images, path in listed.values() if path.is_file() and path.stat().st_mtime > analysed)
-        if not labels.is_dir():
-            return 0
-        return sum(1 for path in labels.iterdir() if path.is_file() and path.stat().st_mtime > analysed)
-    except OSError:  # unreadable labelsTr, or a label removed while counting
-        return 0
+    return sum(1 for edited in raw.label_times if edited > analysed)
 
 
 def _label_analysis(raw_path: Path | None) -> dict | None:
@@ -263,10 +262,10 @@ def load_state(record: DatasetRecord, ended: dict[Path, float] | None = None) ->
         manifest_kind=source[0] if source else None,
         manifest_errors=tuple(errors),
         raw=raw,
-        plans=plans_overview(record.preprocessed_path, record.raw_path),
+        plans=plans_overview(record.preprocessed_path, record.raw_path, raw),
         models=models_overview(record.results_path, ended),
         analysis=analysis,
-        analysis_outdated=_analysis_outdated(record.raw_path, analysis),
+        analysis_outdated=_analysis_outdated(record.raw_path, analysis, raw),
         fold_count=splits_fold_count(record.preprocessed_path),
     )
 
@@ -281,7 +280,8 @@ def _is_dir(path: Path) -> bool:
 def _images_in(folder: Path) -> int:
     """Image files directly in a dataset folder (copied there instead of into imagesTr)."""
     try:
-        return sum(1 for path in folder.iterdir() if (has_image_suffix(path) or path.suffix.lower()
-                                                       in UNSUPPORTED_IMAGE_SUFFIXES) and path.is_file())
+        with os.scandir(folder) as entries:
+            return sum(1 for entry in entries if entry.is_file() and (
+                has_image_suffix(entry.name) or os.path.splitext(entry.name)[1].lower() in UNSUPPORTED_IMAGE_SUFFIXES))
     except OSError:
         return 0

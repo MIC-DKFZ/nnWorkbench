@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 # Formats supported by nnU-Net's readers. Compound and longer endings come first,
@@ -11,7 +12,7 @@ IMAGE_SUFFIXES = (".nii.gz", ".nii", ".nrrd", ".mha", ".gipl", ".tiff", ".tif", 
 
 def image_suffix(name: str | Path) -> str | None:
     """Return the file's image ending as written in the name, or ``None`` if it is no image."""
-    name = Path(name).name
+    name = os.path.basename(os.fspath(name))  # far cheaper than Path(name).name, called once per file
     folded = name.casefold()
     for suffix in IMAGE_SUFFIXES:
         if folded.endswith(suffix):
@@ -25,7 +26,7 @@ def has_image_suffix(name: str | Path) -> bool:
 
 def strip_image_suffix(name: str | Path) -> str:
     """Remove an image ending (keeping compound endings intact), or the last suffix otherwise."""
-    name = Path(name).name
+    name = os.path.basename(os.fspath(name))
     suffix = image_suffix(name)
     return name[:-len(suffix)] if suffix else Path(name).stem
 

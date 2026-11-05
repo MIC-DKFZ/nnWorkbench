@@ -382,7 +382,8 @@ nnworkbench-run inspect-predictions OUT --images IN
 
 - Install the core version there (`pip install -e .`, later `pip install nnworkbench`) and run
   `nnworkbench-set-paths` with the cluster's folders; the commands above then work unchanged.
-- Run `status` (device) on a GPU node, not the login node; submit training as a job.
+- Run `status` (device) on a GPU node, not the login node; submit training as a job. The device check is cached
+  per computer, so a login-node result is never shown on a GPU node.
 - Data per step: preprocessing reads `nnUNet_raw`, training reads `nnUNet_preprocessed`, prediction reads
   `nnUNet_results`. Annotating and inspecting need `nnUNet_raw` (and `nnUNet_results`) on the user's computer.
   Shared storage is easiest; otherwise copy the dataset folders before and after each step.
@@ -393,7 +394,9 @@ nnworkbench-run inspect-predictions OUT --images IN
   `"dataset"` file list of dataset.json), `folders` (`raw`, `preprocessed`, `results`; `null` when absent), `cases`,
   `labeled_cases`, `unlabeled_cases[]` (case names), `channels`, `labels` (`sparse`/`dense`), `ignore_label`,
   `problems[]`, `device` (`kind` = `cuda`/`mps`/`cpu`/`unknown`, `summary`, `gpus[]` with `name` and `memory_gb`
-  (GiB), `torch`, `cuda`, `problem`; `null` with `--no-device`), `stages.<data|preprocess|train|validate|predict>`
+  (GiB), `torch`, `cuda`, `problem`; `null` with `--no-device`; a clean result is cached for an hour per
+  computer and environment in `device_cache.json` next to the saved paths, a `problem` is checked every time),
+  `stages.<data|preprocess|train|validate|predict>`
   with `state` (`ok`, `todo` = ready to run, `warn` = outdated, `error` = must be fixed, `none`) and `detail`,
   `plans[]` (`name`, `planner`, `configurations[]` that are preprocessed, `outdated`), `models[]` with `trainer`,
   `plans`, `configuration`, `mean_dice`, `folds[]` (`fold`, `status` = `done`/`training`/`stopped`/`reduced`,

@@ -32,7 +32,6 @@ from nnworkbench.services.defaults import (
     preprocessing_configuration,
     preprocessing_processes,
 )
-from nnworkbench.services.nnunet_discovery import available_planners
 from nnworkbench.services.workflow_status import PlansInfo
 
 from .. import style
@@ -107,7 +106,8 @@ class PreprocessStage(StagePage):
         super().__init__(context, _howto(), parent)
         self._selected_plans: tuple[str, str] | None = None  # (plans, configuration)
         self._rows: list = []
-        self._planners_loaded = False
+        self._planners_loaded = False  # the planner list holds the installed planners (context.nnunet_classes)
+        context.classes_changed.connect(self._set_planners)
         # Plans
         plans_card = Card()
         head = plans_card.add_header("Plans")
@@ -286,9 +286,9 @@ class PreprocessStage(StagePage):
 
     def set_state(self, state: DatasetState) -> None:
         super().set_state(state)
-        if not self._planners_loaded:
-            self._planners_loaded = True
-            self.context.tasks.run("planners", available_planners, self._set_planners)
+        self.context.discover_classes()  # once per session; _set_planners fills the list when it is known
+        if not self._planners_loaded and self.context.nnunet_classes is not None:
+            self._set_planners()
         record = state.record
         default = preprocessing_configuration(state.manifest, (config.name for plans in state.plans
                                                                 for config in plans.configurations))
@@ -358,8 +358,11 @@ class PreprocessStage(StagePage):
             table.setColumnWidth(column, min(width, 220) if column == 1 else width)  # a custom planner may be long
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
 
-    def _set_planners(self, planners: object) -> None:
-        if isinstance(planners, tuple) and planners:
+    def _set_planners(self) -> None:
+        """The installed planners (also custom ones) in the dropdown; the typed or chosen name stays."""
+        planners = self.context.nnunet_classes.planners if self.context.nnunet_classes else ()
+        self._planners_loaded = bool(planners)
+        if planners:
             current = self._planner.currentText()
             self._planner.blockSignals(True)
             self._planner.clear()

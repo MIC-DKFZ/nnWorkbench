@@ -1,16 +1,24 @@
 """Which device nnU-Net can use here (NVIDIA GPU, Apple GPU or CPU) and the matching -device argument.
 
 PyTorch is imported in a separate Python process: importing it in the GUI would slow the start and set up CUDA
-in the GUI process.
+in the GUI process. That takes about two seconds, so a clean result is cached for an hour (``CACHE_SECONDS``) per
+computer and environment: ``status`` and ``suggest``, which agents call again and again, answer at once.
 """
 
 from __future__ import annotations
 
+import importlib.metadata
+import importlib.util
 import json
+import os
+import platform
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from .commands import WINDOWS
 
@@ -33,6 +41,7 @@ else:
     result["mps"] = bool(mps is not None and mps.is_available())
 print("NNWORKBENCH_DEVICE " + json.dumps(result))
 """
+_RESULT_PREFIX = "NNWORKBENCH_DEVICE "  # the probe's result line (other output, e.g. warnings, is ignored)
 
 
 @dataclass(frozen=True)
@@ -82,7 +91,7 @@ class DeviceInfo:
 
 def parse_probe(output: str, nvidia_gpu: bool = False) -> DeviceInfo:
     """Turn the probe's output into a DeviceInfo (other output, e.g. warnings, is ignored)."""
-    line = next((line for line in reversed(output.splitlines()) if line.startswith("NNWORKBENCH_DEVICE ")), None)
+    line = _result_line(output)
     if line is None:
         return DeviceInfo("unknown", nvidia_gpu=nvidia_gpu, error="The PyTorch check gave no result.")
     try:
@@ -96,9 +105,87 @@ def parse_probe(output: str, nvidia_gpu: bool = False) -> DeviceInfo:
     return DeviceInfo(kind, str(data.get("torch", "")), data.get("cuda_build"), gpus, nvidia_gpu)
 
 
-def probe_device(timeout: float = 60) -> DeviceInfo:
-    """Check in a separate Python process which device PyTorch can use (takes a few seconds)."""
-    nvidia_gpu = shutil.which("nvidia-smi") is not None
+def _result_line(output: str) -> str | None:
+    return next((line for line in reversed(output.splitlines()) if line.startswith(_RESULT_PREFIX)), None)
+
+
+CACHE_SECONDS = 3600  # a cached result is used for this long
+
+
+def cache_path() -> Path:
+    """Where the last clean probe result is kept: next to the saved nnU-Net paths (per user)."""
+    from nnworkbench.path_setup import configuration_path
+
+    return configuration_path().parent / "device_cache.json"
+
+
+def _cache_key(nvidia_smi: str | None) -> dict[str, str]:
+    """What the result depends on: the environment (sys.prefix: the same for python and pythonw, a shortcut and a
+    terminal) and its torch package, the NVIDIA driver, the computer (a cluster's login node and GPU nodes share
+    the home folder) and the visible GPUs."""
+    return {"environment": sys.prefix, "torch": _torch_signature(), "nvidia_smi": nvidia_smi or "",
+            "host": platform.node(), "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", "")}
+
+
+def _torch_signature() -> str:
+    """The installed torch package without importing it: its version from the package metadata, and where and when
+    its files were installed (the metadata version is the same for the CPU and the CUDA build of a release)."""
+    try:
+        version = importlib.metadata.version("torch")
+    except importlib.metadata.PackageNotFoundError:
+        version = ""
+    try:
+        origin = importlib.util.find_spec("torch").origin or ""
+        installed = os.path.getmtime(origin)
+    except (ImportError, ValueError, AttributeError, OSError):
+        origin, installed = "", 0.0
+    return f"{version} {origin} {installed:.0f}"
+
+
+def _cached_result(key: dict[str, str]) -> str | None:
+    """The cached probe output for *key* while it is fresh; None otherwise (also for an unreadable file)."""
+    try:
+        data = json.loads(cache_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("key") != key or not isinstance(data.get("result"), str):
+        return None
+    written = data.get("time")
+    if not isinstance(written, (int, float)) or isinstance(written, bool):
+        return None
+    age = time.time() - written
+    return data["result"] if 0 <= age <= CACHE_SECONDS else None  # a time in the future: the clock changed
+
+
+def _store_result(key: dict[str, str], result: str) -> None:
+    """Keep the probe's result line; written atomically, as several commands may run at once. A folder that cannot
+    be written (read-only configuration) only means the next call probes again."""
+    path = cache_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary = tempfile.mkstemp(prefix=".device.", suffix=".json", dir=path.parent)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+                json.dump({"key": key, "time": time.time(), "result": result}, file)
+            os.replace(temporary, path)
+        except Exception:
+            os.unlink(temporary)
+            raise
+    except OSError:
+        pass
+
+
+def probe_device(timeout: float = 60, use_cache: bool = True) -> DeviceInfo:
+    """Check which device PyTorch can use, in a separate Python process (takes a few seconds). With ``use_cache`` a
+    clean result from the last hour is reused (see ``cache_path``); a failed check or one with a problem to fix is
+    never cached, so the next call sees the fix."""
+    nvidia_smi = shutil.which("nvidia-smi")
+    nvidia_gpu = nvidia_smi is not None
+    key = _cache_key(nvidia_smi)
+    if use_cache:
+        cached = _cached_result(key)
+        if cached is not None:
+            return parse_probe(cached, nvidia_gpu)
     try:
         completed = subprocess.run(
             [sys.executable, "-c", _PROBE], capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -107,7 +194,10 @@ def probe_device(timeout: float = 60) -> DeviceInfo:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if WINDOWS else 0)
     except (OSError, subprocess.SubprocessError) as error:
         return DeviceInfo("unknown", nvidia_gpu=nvidia_gpu, error=f"The PyTorch check failed: {error}")
-    return parse_probe(completed.stdout, nvidia_gpu)
+    info = parse_probe(completed.stdout, nvidia_gpu)
+    if use_cache and info.kind != "unknown" and not info.problem:
+        _store_result(key, _result_line(completed.stdout) or "")
+    return info
 
 
 # ------------------------------------------------------------ the Device choice in Train and Predict
