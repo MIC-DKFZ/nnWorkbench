@@ -387,8 +387,10 @@ def models_table(folds_header: str):
 def size_models_table(table, models) -> None:
     """Folds column fits the model with the most folds; height fits up to five rows."""
     most = max((len(model.folds) for model in models), default=1)
-    # the cell widget is 16 px narrower than its column (item margins); it needs 12 + its chips and spacing
-    table.setColumnWidth(2, max(120, 28 + most * (FOLD_SIZE[0] + FOLD_SPACING)))
+    # the cell widget is 16 px narrower than its column (item margins); it needs 12 + its chips and the spacing
+    # between them (no slack: at the minimum window width the three columns fit the viewport by a few pixels only,
+    # and macOS leaves the viewport 4 px narrower than Linux)
+    table.setColumnWidth(2, max(120, 28 + fold_cells_width(most) - 12))
     table._model_column.fit()
     header = table.horizontalHeader().sizeHint().height() + 4
     rows = min(max(len(models), 1), 5)
@@ -452,8 +454,14 @@ def fold_cells(widgets) -> QWidget:
     widgets = list(widgets)
     holder = cell_widget(*widgets, spacing=FOLD_SPACING)
     # the chips and buttons have a fixed size; their size hint (used by cell_widget) may be larger
-    holder.setMinimumWidth(12 + len(widgets) * (FOLD_SIZE[0] + FOLD_SPACING))
+    holder.setMinimumWidth(fold_cells_width(len(widgets)))
     return holder
+
+
+def fold_cells_width(count: int) -> int:
+    """The width of a fold_cells holder with *count* chips or buttons: 6 px margins on both sides, the fixed chip
+    width and the spacing between the chips."""
+    return 12 + count * FOLD_SIZE[0] + max(0, count - 1) * FOLD_SPACING
 
 
 def fold_chip(fold) -> QLabel:

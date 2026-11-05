@@ -344,7 +344,10 @@ def test_r15_r24_models_tables_fit_the_minimum_window(tmp_path: Path, monkeypatc
             assert folds >= needed, (key, folds, needed)  # all folds incl. 4 and all
             assert table.columnWidth(0) >= MODEL_MIN_WIDTH
             # model, mean Dice and folds fit next to each other: no sideways scrolling at 1200 px
-            assert sum(table.columnWidth(column) for column in range(3)) <= table.viewport().width(), key
+            widths = [table.columnWidth(column) for column in range(3)]
+            assert sum(widths) <= table.viewport().width(), (
+                key, widths, "viewport", table.viewport().width(), "table", table.width(), "frame", table.frameWidth(),
+                "scrollbar", table.verticalScrollBar().isVisible(), table.verticalScrollBar().width())
             first = table.cellWidget(0, 0).findChildren(QWidget)[0]
             # the start stays visible (elided at the end); with the app's 12 px mono font it shows "variant00"
             assert first.text().startswith("nnUNetTrainer_") and first._mode == Qt.TextElideMode.ElideRight
