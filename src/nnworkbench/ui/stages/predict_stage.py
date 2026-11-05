@@ -18,7 +18,7 @@ from qtpy.QtWidgets import (
 
 from nnworkbench.path_setup import NON_ASCII_HINT, typed_path, unusable_for_nnunet
 from nnworkbench.services.commands import prediction_command
-from nnworkbench.services.defaults import PREDICTION_PROCESSES, prediction_folds
+from nnworkbench.services.defaults import prediction_folds, prediction_processes
 from nnworkbench.services.device_probe import (
     DEVICE_CHOICES,
     default_choice,
@@ -165,7 +165,7 @@ class PredictStage(StagePage):
         self._continue.toggled.connect(self._update_command)
         self._continue_hint = form_hint("", width=_HINT_INDENT)
         # Processes for preprocessing (-npp) and segmentation export (-nps); nnU-Net's default is 3 each.
-        self._npp, self._nps = NumberField(1, 99, PREDICTION_PROCESSES), NumberField(1, 99, PREDICTION_PROCESSES)
+        self._npp, self._nps = NumberField(1, 99, prediction_processes()), NumberField(1, 99, prediction_processes())
         processes = QWidget()
         processes_grid = QGridLayout(processes)  # under each other: side by side is too wide for the panel
         processes_grid.setContentsMargins(0, 0, 0, 0)
@@ -175,7 +175,7 @@ class PredictStage(StagePage):
                   (self._nps, "export", "-nps: processes for writing the segmentations")]
         for row, (field, name, purpose) in enumerate(fields):
             field.setRange(1, max(1, os.cpu_count() or 1))
-            field.setValue(PREDICTION_PROCESSES)
+            field.setValue(prediction_processes())
             field.setFixedWidth(60)
             field.setToolTip(purpose)
             field.valueChanged.connect(self._update_command)

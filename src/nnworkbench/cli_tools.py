@@ -274,6 +274,7 @@ def suggestion(roots: dict[str, Path | None], dataset_id: int, step: str, *, dev
         default_plans,
         next_fold,
         prediction_folds,
+        prediction_processes,
         preprocessing_configuration,
         preprocessing_processes,
         trainer_for,
@@ -335,14 +336,16 @@ def suggestion(roots: dict[str, Path | None], dataset_id: int, step: str, *, dev
         command = prediction_command(dataset, input_directory or "INPUT_FOLDER", output_directory or "OUTPUT_FOLDER",
                                      chosen.plans, chosen.configuration, trainer=chosen.trainer,
                                      folds=" ".join(folds), continue_prediction=True,
-                                     preprocessing_processes=PREDICTION_PROCESSES,
-                                     export_processes=PREDICTION_PROCESSES, device=device_flag)
+                                     preprocessing_processes=prediction_processes(),
+                                     export_processes=prediction_processes(), device=device_flag)
         reasons = [f"model {chosen.label}: " + ("the first model with finished folds" if not model
                                                 else f"the first model matching '{model}'"),
                    f"folds {' '.join(folds)}: the finished cross-validation folds (fold all only if it is the only one)",
                    "mirroring (test-time augmentation) on: best quality (add --disable_tta to be faster)",
                    "--continue_prediction: skips cases that already have a prediction in the output folder",
-                   f"{PREDICTION_PROCESSES} processes for preprocessing (-npp) and export (-nps), nnU-Net's default",
+                   f"{prediction_processes()} processes for preprocessing (-npp) and export (-nps): "
+                   + ("nnU-Net's default" if prediction_processes() == PREDICTION_PROCESSES
+                      else f"nnU-Net's default is {PREDICTION_PROCESSES}, this computer has fewer cores"),
                    device_reason]
         if not input_directory or not output_directory:
             reasons.append("replace INPUT_FOLDER and OUTPUT_FOLDER (or pass --input and --output)")

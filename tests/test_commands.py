@@ -466,3 +466,12 @@ def test_describe_and_create_dataset_add_the_description(tmp_path, monkeypatch, 
     assert json.loads(capsys.readouterr().out)["created"] is True
     assert command_runner._run_builtin_command(["describe", "-d", "43", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["created"] is False  # never replaced
+
+
+@pytest.mark.parametrize("cpus, expected", [(16, 3), (3, 3), (2, 2), (1, 1), (None, 1)])
+def test_prediction_processes_never_exceed_the_cpu_cores(monkeypatch, cpus: int | None, expected: int) -> None:
+    """The GUI's -npp/-nps fields cannot go beyond the cores; `suggest` gives the same number (a CI runner has 2)."""
+    from nnworkbench.services import defaults
+
+    monkeypatch.setattr(defaults.os, "cpu_count", lambda: cpus)
+    assert defaults.prediction_processes() == expected

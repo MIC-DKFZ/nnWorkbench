@@ -20,6 +20,12 @@ def preprocessing_processes() -> int:
     return min(8, os.cpu_count() or 1)
 
 
+def prediction_processes() -> int:
+    """Processes for prediction (-npp and -nps): nnU-Net's default of 3, never more than CPU cores (the GUI's
+    fields cannot go beyond the cores, so `suggest` gives the same number on a small machine)."""
+    return min(PREDICTION_PROCESSES, max(1, os.cpu_count() or 1))
+
+
 def trainer_for(sparse: bool) -> str:
     """Sparse labels (dataset.json has an ignore label) train with the bundled trainer, dense labels with nnU-Net's."""
     return SPARSE_TRAINER if sparse else DENSE_TRAINER

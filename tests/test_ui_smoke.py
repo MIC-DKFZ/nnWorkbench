@@ -233,7 +233,10 @@ def test_train_validate_predict_pages(tmp_path: Path) -> None:
         assert predict._input.text() == str(tmp_path)  # kept when switching datasets
         assert window.context.store.value("predict/input") == str(tmp_path)
         predict._continue.setChecked(True)
-        assert predict._command.command().endswith("-f 0 1 -npp 3 -nps 3 --continue_prediction")
+        from nnworkbench.services.defaults import prediction_processes
+
+        processes = prediction_processes()  # nnU-Net's 3, fewer on a machine with fewer cores (e.g. a CI runner)
+        assert predict._command.command().endswith(f"-f 0 1 -npp {processes} -nps {processes} --continue_prediction")
         predict._npp.setValue(1); predict._nps.setValue(2)  # fewer processes, e.g. when running out of RAM
         assert "-npp 1 -nps 2" in predict._command.command()
     finally:
