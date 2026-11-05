@@ -6,7 +6,7 @@
   <img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-blue">
   <img alt="Platforms: Linux, Windows, macOS" src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey">
   <img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-green">
-  <!-- CI badge once the repository is public: <img alt="CI" src="https://github.com/OWNER/nnWorkbench/actions/workflows/ci.yml/badge.svg"> -->
+  <a href="https://github.com/MIC-DKFZ/nnWorkbench/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/MIC-DKFZ/nnWorkbench/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
 > A GUI for nnU-Net and nnInteractive-powered annotation that keeps the entire workflow in one place.
@@ -65,7 +65,7 @@ nnworkbench-gui
 ```bash
 conda create -n nnworkbench python=3.12
 conda activate nnworkbench
-git clone <your-repository-url> nnWorkbench
+git clone https://github.com/MIC-DKFZ/nnWorkbench.git
 cd nnWorkbench
 pip install -e ".[all]"
 nnworkbench-gui

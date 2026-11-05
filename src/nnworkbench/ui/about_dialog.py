@@ -50,7 +50,8 @@ class AboutDialog(QDialog):
         layout.addWidget(self._text(
             f"Built on {_link('https://github.com/MIC-DKFZ/nnUNet', 'nnU-Net')} and "
             f"{_link('https://github.com/MIC-DKFZ/napari-nninteractive', 'nnInteractive')}, with Napari for "
-            "viewing and annotating images."))
+            "viewing and annotating images.<br>"
+            f"Source code, documentation and issues: {_link('https://github.com/MIC-DKFZ/nnWorkbench', 'github.com/MIC-DKFZ/nnWorkbench')}."))
         layout.addWidget(self._device_card(device))
         layout.addWidget(separator())
         logos = QHBoxLayout()
