@@ -205,6 +205,9 @@ nnworkbench-run create-dataset -d 42 --name CellSegmentation --labels background
 
 - Create the three folders first (empty is fine); `set-paths` stores absolute paths and lists folders that do not
   exist yet in `missing`.
+- **Windows:** the three folders (and the input/output folders of a prediction) need paths with ASCII characters
+  only: nnU-Net cannot read or write files under a path with `ä`, `é`, … (e.g. `C:\Users\Jürgen\…`); `set-paths`
+  lists such folders in `non_ascii`, and `status` reports them under `problems`. Suggest e.g. `C:\nnUNet\nnUNet_raw`.
 - `--file-ending` is `.nii.gz` by default: pass the ending of the images for anything else, e.g. `--file-ending .png`
   or `.tif` (exactly as the files end, also upper/lower case; `status` reports images or labels with another ending).
 - **Colour images** (RGB/RGBA `.png`, `.bmp`, `.tif`, one file per image): nnU-Net reads each colour as a channel,
@@ -302,8 +305,10 @@ nnworkbench-run nnUNetv2_train 42 3d_fullres 0 -tr nnUNetTrainerBetterIgnoreSamp
 - **Plans** (`-p`) match the planner; **configuration** as in preprocessing; device flag from the device table.
 - **Folds:** start with `0`; for a reliable model and a fair validation train `0`–`4` (one command each, one after
   another or in parallel on several GPUs). Fold `all` trains on everything but gives no validation score.
-- **Long runs** must survive the session: a cluster job, `nohup … > train_42_fold0.log 2>&1 &`, or the user's own
-  terminal. Note the log path and job ID in the project notes.
+- **Long runs** must survive the session: a cluster job, `nohup … > train_42_fold0.log 2>&1 &` (Linux, macOS), on
+  Windows `Start-Process nnworkbench-run -ArgumentList '…' -RedirectStandardOutput train_42_fold0.log
+  -RedirectStandardError train_42_fold0.err -WindowStyle Hidden` (PowerShell), or the user's own terminal. Note the
+  log path and job ID in the project notes.
 - **Following:** `status --json` → `models[].folds[]` (`status`, `epoch`, `total_epochs`, `pseudo_dice`, `dice`,
   `log_age_seconds`). The status is read from the fold folder (the training may run on a cluster): `training` and
   `stopped` are a guess from how long ago the log changed, so say "the log was updated 3 minutes ago".
@@ -414,7 +419,7 @@ nnworkbench-run inspect-predictions OUT --images IN
   `base_name` and `iteration` (from the `_iterN` name; a second iteration from the same source has the same name, the
   higher ID is the newer one), `inherits_from` (the source iteration, from dataset.json).
 - **`nnworkbench-get-paths --json`:** `config`, `paths` (`nnUNet_raw`, `nnUNet_preprocessed`, `nnUNet_results`,
-  `nnUNet_extTrainer`), `environment_differs[]` (nnU-Net variables that point elsewhere); `nnworkbench-set-paths … --json`: `saved`, `paths`, `missing[]` (folders that do not exist).
+  `nnUNet_extTrainer`), `environment_differs[]` (nnU-Net variables that point elsewhere); `nnworkbench-set-paths … --json`: `saved`, `paths`, `missing[]` (folders that do not exist), `non_ascii[]` (folders nnU-Net cannot use on Windows).
 - Every JSON object starts with `"schema_version": 1`; the number increases only when a field is renamed or removed
   (new fields keep it). Check it if you depend on exact fields.
 - With `--json`, stdout holds only the JSON result; progress and library logs go to stderr. Errors are JSON as well
@@ -422,7 +427,10 @@ nnworkbench-run inspect-predictions OUT --images IN
   print a readable message and exit non-zero.
 - `annotate`, `inspect`, `inspect-predictions` and `validation --open` only open Napari for the human and refuse
   `--json`; they return when Napari is closed.
-- A job killed by a signal exits with 128 + the signal number (137: killed, often out of memory).
+- A job killed by a signal exits with 128 + the signal number (137: killed, often out of memory). On Windows a
+  crashed program keeps its Windows status (e.g. `0xC0000005`, access violation; PowerShell `$LASTEXITCODE`
+  -1073741819), and `nnworkbench-run` says on stderr what it means.
+- Text output is UTF-8, also when it goes to a pipe or file on Windows; `--json` output is ASCII.
 - Commands that nnWorkbench prints (`suggest`, `--dry-run`, the GUI's Copy command) are quoted for bash/zsh and
   PowerShell alike (single quotes, one command per line); on Windows run them in PowerShell, not the command prompt.
 
@@ -438,6 +446,8 @@ nnworkbench-run inspect-predictions OUT --images IN
 | nnInteractive **Initialize** fails with `_out_slice_checkbox_control` | Napari 0.9 is not supported by napari-nninteractive yet: `pip install "napari<0.9"` |
 | `No matching distribution found for mitk-python` | Python must be 3.12; macOS ≥ 13; Linux glibc ≥ 2.35; else core installation only |
 | A fold shows `stopped` | Job ended (time limit, closed app, error): resume with `--c` |
+| Windows: "Unable to open … for reading" (SimpleITK) or "Error while creating the NDArray" (blosc2) | A folder path with non-ASCII characters (`problems` says which): move the nnU-Net folders to an ASCII path and run `set-paths` again |
+| Windows: `dataset.json cannot be read` although it looks fine | Saved with a byte order mark (PowerShell 5.1 `Set-Content -Encoding utf8`): save it as UTF-8 without BOM, e.g. `[IO.File]::WriteAllText($path, $text)` |
 
 ---
 

@@ -6,8 +6,6 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
-import torch
-
 from .dataset_contents import model_folds
 
 DEFAULT_TRAINER_NAME = "nnUNetTrainer"
@@ -19,6 +17,10 @@ def reduce_checkpoint(checkpoint_path: Path | str, *, reset_trainer_name: bool =
     When ``reset_trainer_name`` is set, the checkpoint's ``trainer_name`` is also
     rewritten to ``nnUNetTrainer`` so custom trainer classes are not required for inference.
     """
+    # imported here: every nnworkbench-run call imports this module, and torch takes ~2 s to import (and a broken
+    # torch installation would otherwise break `status`, the command that reports it)
+    import torch
+
     path = Path(checkpoint_path)
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
     checkpoint.pop("optimizer_state", None)

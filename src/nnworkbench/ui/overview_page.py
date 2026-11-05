@@ -30,7 +30,12 @@ from qtpy.QtWidgets import (
 )
 
 from nnworkbench.models.dataset import DatasetRecord
-from nnworkbench.path_setup import environment_conflicts, set_paths_command, typed_path
+from nnworkbench.path_setup import (
+    environment_conflicts,
+    set_paths_command,
+    typed_path,
+    unusable_for_nnunet,
+)
 from nnworkbench.services.dataset_contents import json_object, model_folds, trained_models
 from nnworkbench.services.dataset_json import manifest_source
 from nnworkbench.services.dataset_scanner import id_badge
@@ -129,6 +134,8 @@ def _layout_problem(texts: list[str]) -> tuple[str, str, str] | None:
             inside = False
         if inside:
             return "check folders", "orange", f"{path} contains a folder {expected}: did you mean {path / expected}?"
+    if any(unusable_for_nnunet(path) for path in paths):  # the note has one line: the short form of NON_ASCII_HINT
+        return "non-ASCII path", "red", r"nnU-Net cannot use paths with ä, é, … on Windows: use e.g. C:\nnUNet\…"
     return None
 
 

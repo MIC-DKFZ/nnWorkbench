@@ -80,6 +80,7 @@ def test_p2_a1_set_paths_saves_absolute_expanded_paths_and_lists_missing(tmp_pat
     config = tmp_path / "config" / "paths.json"
     monkeypatch.setattr(path_setup, "configuration_path", lambda: config)
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # "~" on Windows
     monkeypatch.chdir(tmp_path)
     (tmp_path / "raw").mkdir()
     # as pasted from the GUI's Export (quoted: the remote shell does not expand ~ or $HOME)

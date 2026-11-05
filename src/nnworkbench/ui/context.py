@@ -13,6 +13,7 @@ from qtpy.QtWidgets import QMessageBox
 
 from nnworkbench.services.commands import shell_join
 from nnworkbench.services.device_probe import DeviceInfo, probe_device
+from nnworkbench.services.label_analysis import available_workers
 
 from .jobs import JobRunner, echo, start_process_group, stop_process_group
 from .tasks import TaskRunner
@@ -21,7 +22,7 @@ PREFETCH_RADIUS_RANGE = (1, 20)  # the limits of the settings dialog, also appli
 
 
 def worker_range() -> tuple[int, int]:
-    return 1, os.cpu_count() or 1
+    return 1, available_workers()  # at most 61 on Windows (ProcessPoolExecutor's limit there)
 
 
 @dataclass

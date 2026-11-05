@@ -57,6 +57,7 @@ from nnworkbench.services.dataset_description import (
     save_answers,
     table_problems,
     update_description,
+    write_description,
 )
 
 from .widgets import button, empty_state, label, svg_icon, tip
@@ -520,7 +521,7 @@ class DescriptionPanel(QWidget):
 
     def _write(self, text: str) -> bool:
         try:
-            self._path().write_text(text, encoding="utf-8")
+            write_description(self._path(), text)
         except OSError as error:
             QMessageBox.warning(self, "Not saved", f"{DESCRIPTION_FILE} could not be written: {error}")
             return False

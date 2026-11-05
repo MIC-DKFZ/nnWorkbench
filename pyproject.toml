@@ -47,7 +47,7 @@ gui = [
     "napari-nninteractive[local]>=2.5.4,<3",  # 2.5.4: works with napari 0.9
 ]
 all = ["nnworkbench[gui]", "PySide6>=6.6,<7"]
-dev = ["qtpy>=2.4,<3", "PySide6>=6.6,<7", "pytest>=8.0,<9", "ruff>=0.6,<1", "build>=1,<2"]
+dev = ["qtpy>=2.4,<3", "PySide6>=6.6,<7", "pytest>=8.0,<9", "pytest-timeout>=2.3,<3", "ruff>=0.6,<1", "build>=1,<2"]
 
 [project.scripts]
 nnworkbench-gui = "nnworkbench.app:main"
@@ -69,6 +69,8 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# a test that waits forever (e.g. on a modal dialog, as happened on Windows) fails instead of hanging the run
+timeout = 600
 
 [tool.ruff]
 line-length = 100

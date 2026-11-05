@@ -20,6 +20,7 @@ from nnworkbench.services.dataset_description import (
     IMAGES_FOLDER,
     add_image_next_to,
     read_description,
+    write_description,
 )
 
 from . import style
@@ -121,7 +122,7 @@ class DescriptionDialog(QDialog):
                 QMessageBox.StandardButton.Cancel) != QMessageBox.StandardButton.Save:
             return
         try:
-            self._path.write_text(self._editor.toPlainText(), encoding="utf-8")
+            write_description(self._path, self._editor.toPlainText())
         except OSError as error:  # the text stays in the editor
             QMessageBox.warning(self, "Not saved", f"{self._path.name} could not be written: {error}")
             return

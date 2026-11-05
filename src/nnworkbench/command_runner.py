@@ -8,15 +8,16 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from .json_output import print_json, stdout_to_stderr
+from .json_output import print_json, stdout_to_stderr, use_utf8_output
 from .path_setup import configured_paths, note_environment_differences
 from .services.checkpoint_reduction import reduce_model_for_sharing, reduction_plan
 from .services.commands import shell_join
 from .services.dataset_scanner import discover
 from .services.image_stack import stack_image_folder
 from .services.label_analysis import analyse_label_distribution, analysis_path
+from .services.process_runner import crash_note, exit_status
 
 BUILTIN_COMMANDS = (
     "list",
@@ -41,17 +42,24 @@ def _progress(as_json: bool):
 
 
 def find_executable(name: str) -> str:
-    """Find a console script such as nnUNetv2_train: on PATH, or next to this Python (bin/ on Linux and macOS,
-    Scripts\\ on Windows), so it is found even when the environment is not activated."""
-    found = shutil.which(name)
-    if found:
-        return found
+    """Find a console script such as nnUNetv2_train: next to this Python first (bin/ on Linux and macOS, Scripts\\ on
+    Windows), then on PATH. This environment's nnU-Net wins over another one earlier on PATH (e.g. conda base's), also
+    when the environment is not activated (a Windows shortcut, the macOS Dock, an agent calling the program by its
+    full path): another nnU-Net version may not know nnWorkbench's trainers (nnUNet_extTrainer)."""
     folder = Path(sys.executable).parent
     for directory in (folder, folder / "Scripts", folder / "bin"):
         found = shutil.which(name, path=str(directory))
         if found:
             return found
-    return name
+    return shutil.which(name) or name
+
+
+def is_program(command: str, name: str, windows: bool = os.name == "nt") -> bool:
+    """Whether *command* (a name or path, as typed) starts the program *name*: on Windows also in another case and
+    with .exe, as Windows finds it then too."""
+    if not windows:
+        return PurePosixPath(command).name == name
+    return PureWindowsPath(command).name.casefold().removesuffix(".exe") == name.casefold()
 
 
 YES_ENVIRONMENT = "NNWORKBENCH_YES"  # set by the GUI, which asks the user itself before such jobs
@@ -59,7 +67,8 @@ YES_ENVIRONMENT = "NNWORKBENCH_YES"  # set by the GUI, which asks the user itsel
 
 def trained_fold(command: Sequence[str], results_root: Path | None) -> tuple[Path, argparse.Namespace] | None:
     """The fold folder (with a log or checkpoint) an nnUNetv2_train command trains, and its arguments."""
-    if not command or Path(command[0]).name != "nnUNetv2_train" or results_root is None or len(command) < 4:
+    # any spelling that starts nnU-Net's training: nnunetv2_train and nnUNetv2_train.exe also run it on Windows
+    if not command or not is_program(command[0], "nnUNetv2_train") or results_root is None or len(command) < 4:
         return None
     parsed = _training_arguments(command[1:])
     if parsed is None:
@@ -162,8 +171,15 @@ def run_with_configured_paths(command: Sequence[str]) -> int:
             "program such as nnUNetv2_train. Add --help to a tool to see its options.")
     environment = os.environ.copy()
     environment.update(paths)
+    if os.name == "nt":
+        # nnU-Net reads dataset.json and plans with open()'s default encoding, the ANSI code page (cp1252) on
+        # Windows: UTF-8 mode reads them as UTF-8, as they are written (also by other tools than nnWorkbench)
+        environment.setdefault("PYTHONUTF8", "1")
     code = subprocess.run([program, *command[1:]], env=environment, check=False).returncode
-    return 128 - code if code < 0 else code  # killed by signal N (e.g. 9: out of memory): 128 + N, as shells do
+    note = crash_note(program, code)
+    if note:
+        print(note, file=sys.stderr)
+    return exit_status(code)  # signal N: 128 + N as shells do; a Windows crash status: passed on unchanged
 
 
 def saved_roots() -> dict[str, Path | None]:
@@ -506,7 +522,7 @@ def _run_builtin_command(command: Sequence[str]) -> int | None:
     if name == "new-iteration":
         parser = argparse.ArgumentParser(
             prog=f"nnworkbench-run {name}",
-            description="Start the next iteration (as ＋ New iteration in the GUI): copy imagesTr, labelsTr "
+            description="Start the next iteration (as + New iteration in the GUI): copy imagesTr, labelsTr "
                         "and dataset.json of a dataset into a new dataset.")
         parser.add_argument("-d", "--dataset", type=int, required=True, help="Source dataset ID")
         parser.add_argument("--id", type=int, default=None,
@@ -526,6 +542,7 @@ def _run_builtin_command(command: Sequence[str]) -> int | None:
 
 def main() -> None:
     """Run a command after applying the persisted nnWorkbench path configuration."""
+    use_utf8_output()  # also for --help: piped output on Windows is cp1252 otherwise
     parser = argparse.ArgumentParser(
         description="Run nnU-Net commands or nnWorkbench dataset tools with saved paths.",
         epilog=f"nnWorkbench tools: {', '.join(BUILTIN_COMMANDS)}. Each takes --help. Any other command (e.g. "

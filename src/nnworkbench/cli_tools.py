@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 from .json_output import print_json
+from .path_setup import NON_ASCII_HINT, unusable_for_nnunet
 from .services.commands import wrapped_command
 from .services.dataset_contents import json_object
 from .services.dataset_creator import (
@@ -86,7 +87,7 @@ def run_create_dataset(roots: dict[str, Path | None], dataset_id: int, name: str
 
 def run_new_iteration(roots: dict[str, Path | None], source_id: int, dataset_id: int | None = None,
                       name: str | None = None, *, link_images: bool = False, as_json: bool = False) -> int:
-    """Copy imagesTr, labelsTr and dataset.json of a dataset into the next iteration (as ＋ New iteration in the GUI);
+    """Copy imagesTr, labelsTr and dataset.json of a dataset into the next iteration (as + New iteration in the GUI);
     ``link_images`` lists the source's images in dataset.json instead of copying them."""
     records = scan_datasets(roots.get("raw"), roots.get("preprocessed"), roots.get("results"))
     source = next((record for record in records if record.dataset_id == source_id and record.raw_path), None)
@@ -373,6 +374,9 @@ def _suggest_warnings(state, step: str, input_directory: str = "", output_direct
             warnings.append(f"The input folder {source} does not exist.")
         elif output_directory and source.resolve() == Path(output_directory).resolve():
             warnings.append("The output folder is the input folder: choose another output folder.")
+        unusable = [folder for folder in (input_directory, output_directory) if folder and unusable_for_nnunet(folder)]
+        if unusable:
+            warnings.append(f"{NON_ASCII_HINT}: {', '.join(unusable)}.")
     return warnings
 
 

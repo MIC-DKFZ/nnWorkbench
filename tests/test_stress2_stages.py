@@ -9,6 +9,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import pytest
 from qtpy.QtCore import QStandardPaths, Qt
 from qtpy.QtWidgets import QApplication, QScrollArea, QWidget
 
@@ -312,6 +313,21 @@ def _three_models(root: Path) -> None:
                plans="nnUNetResEncUNetLPlans_custom_patchsize_192x192x192")
 
 
+def _windows_long_paths_disabled() -> bool:
+    """Windows without LongPathsEnabled: paths are limited to 260 characters (MAX_PATH)."""
+    if os.name != "nt":
+        return False
+    import winreg
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\FileSystem") as key:
+            return winreg.QueryValueEx(key, "LongPathsEnabled")[0] != 1
+    except OSError:
+        return True
+
+
+# the model folders of these long names under pytest's temporary folder are ~280 characters long
+@pytest.mark.skipif(_windows_long_paths_disabled(), reason="Windows without LongPathsEnabled (MAX_PATH 260)")
 def test_r15_r24_models_tables_fit_the_minimum_window(tmp_path: Path, monkeypatch) -> None:
     from nnworkbench.ui.stages.common import MODEL_MIN_WIDTH
 

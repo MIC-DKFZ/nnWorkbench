@@ -381,7 +381,8 @@ def test_only_the_exact_ignore_key_is_the_ignore_label(tmp_path: Path) -> None:
     from nnworkbench.services.napari_inspector import annotation_label_summary
 
     for key, sparse in (("Ignore", False), ("ignore", True)):
-        folder = tmp_path / key / "Dataset001_Cells"
+        # "Ignore" and "ignore" are the same folder on Windows and macOS (case-insensitive file systems)
+        folder = tmp_path / ("sparse" if sparse else "dense") / "Dataset001_Cells"
         (folder / "imagesTr").mkdir(parents=True)
         (folder / "imagesTr" / "cells_000_0000.nii.gz").touch()
         (folder / "dataset.json").write_text(json.dumps({

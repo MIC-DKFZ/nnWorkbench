@@ -573,20 +573,32 @@ def create_description(dataset_directory: Path) -> Path:
     if path.exists():
         raise ValueError(f"{path} already exists.")
     (path.parent / IMAGES_FOLDER).mkdir(parents=True, exist_ok=True)
-    path.write_text(description_template(dataset_directory), encoding="utf-8")
+    write_description(path, description_template(dataset_directory))
     return path
 
 
 def read_description(path: Path) -> str:
-    """The description's text; a file saved in another encoding (e.g. ANSI by Windows Notepad) is read as Windows-1252
-    instead of failing, and saving writes it as UTF-8. Raises OSError."""
+    r"""The description's text with "\n" line ends; a file saved in another encoding (e.g. ANSI by Windows Notepad)
+    is read as Windows-1252 instead of failing, and saving writes it as UTF-8. Raises OSError.
+
+    Windows line ends ("\r\n", e.g. from Notepad, git's autocrlf or a file written on Windows) become "\n": the field
+    markers and tables are matched line by line. A UTF-8 byte order mark is dropped."""
     data = path.read_bytes()
-    for encoding in ("utf-8", "cp1252"):
+    for encoding in ("utf-8-sig", "cp1252"):
         try:
-            return data.decode(encoding)
+            text = data.decode(encoding)
+            break
         except UnicodeDecodeError:
             pass
-    return data.decode("latin-1")  # never fails
+    else:
+        text = data.decode("latin-1")  # never fails
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def write_description(path: Path, text: str) -> None:
+    r"""Write the description as UTF-8 with "\n" line ends on every system (Path.write_text writes "\r\n" on
+    Windows). Raises OSError."""
+    path.write_text(text, encoding="utf-8", newline="\n")
 
 
 def save_answers(dataset_directory: Path, answers: dict[str, Answer],
@@ -596,8 +608,7 @@ def save_answers(dataset_directory: Path, answers: dict[str, Answer],
     path = description_path(dataset_directory)
     text = read_description(path) if path.is_file() else description_template(dataset_directory)
     path.parent.mkdir(exist_ok=True)
-    path.write_text(update_description(text, dataset_directory, answers, classes, renames, channels),
-                    encoding="utf-8")
+    write_description(path, update_description(text, dataset_directory, answers, classes, renames, channels))
     return path
 
 

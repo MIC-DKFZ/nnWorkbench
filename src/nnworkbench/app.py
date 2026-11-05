@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import os
 import signal
@@ -32,6 +33,13 @@ def missing_gui_message(missing: list[str]) -> str:
 
 
 def main() -> None:
+    if any(argument in ("-h", "--help") for argument in sys.argv[1:]):
+        # print the help instead of opening the window (other arguments, e.g. Qt's -platform, are left to Qt)
+        argparse.ArgumentParser(
+            prog="nnworkbench-gui",
+            description="Start the nnWorkbench app: nnU-Net workflows and nnInteractive-powered annotation.",
+            epilog="Command-line tools: nnworkbench-run, nnworkbench-set-paths, nnworkbench-get-paths (each takes "
+                   "--help).").parse_args(["--help"])
     missing = missing_gui_packages()
     if missing:
         raise SystemExit(missing_gui_message(missing))

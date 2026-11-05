@@ -11,7 +11,7 @@ from shlex import quote
 from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
 
-from .json_output import print_json
+from .json_output import print_json, use_utf8_output
 
 
 def configuration_path() -> Path:
@@ -46,6 +46,30 @@ def typed_path(text: str) -> str:
         return os.path.expanduser(text)
     except RuntimeError:  # "~nosuchuser/...": used as typed
         return text
+
+
+NON_ASCII_HINT = ("nnU-Net cannot use folders whose path contains non-ASCII characters (e.g. ä, é, ß) on Windows: "
+                  "its image reader (SimpleITK) cannot open such files and preprocessing (blosc2) cannot write there. "
+                  r"Move the folders to a path with only ASCII characters (e.g. C:\nnUNet\nnUNet_raw) and set them "
+                  "again")
+
+
+def _utf8_code_page() -> bool:
+    """Whether Windows uses UTF-8 as its ANSI code page ("Beta: Use Unicode UTF-8 for worldwide language support")."""
+    try:
+        import ctypes
+
+        return ctypes.windll.kernel32.GetACP() == 65001
+    except (AttributeError, OSError):
+        return False
+
+
+def unusable_for_nnunet(path: str | os.PathLike, windows: bool | None = None) -> bool:
+    """Whether nnU-Net cannot read or write files under *path*: on Windows, a path with non-ASCII characters (unless
+    the system's code page is UTF-8). nnWorkbench's own tools (MITK, Napari) handle such paths; nnU-Net does not."""
+    if windows is None:
+        windows = os.name == "nt"
+    return windows and not os.fspath(path).isascii() and not _utf8_code_page()
 
 
 def trainer_folders() -> str:
@@ -130,7 +154,11 @@ def configured_paths() -> dict[str, str]:
 
 
 def paths_report() -> str:
-    """Return the configured paths in a copyable shell-assignment format."""
+    """Return the configured paths as copyable assignments: bash/zsh (``nnUNet_raw='/data/raw'``), on Windows
+    PowerShell (``$env:nnUNet_raw = 'C:\\data\\raw'``)."""
+    if os.name == "nt":
+        return "\n".join(f"$env:{name} = '{value.replace(chr(39), chr(39) * 2)}'"
+                         for name, value in configured_paths().items())
     return "\n".join(f"{name}={quote(value)}" for name, value in configured_paths().items())
 
 
@@ -149,17 +177,21 @@ def set_paths_main() -> None:
     parser.add_argument("--results", required=True, help="Path to nnUNet_results")
     parser.add_argument("--json", action="store_true", help="Print the result as JSON, e.g. for scripts")
     arguments = parser.parse_args()
+    use_utf8_output()
     # Absolute and expanded: the remote shell got "~/x" quoted from Export, and nnU-Net runs from any folder.
     paths = [os.path.abspath(typed_path(value).strip()) if value.strip() else ""
              for value in (arguments.raw, arguments.preprocessed, arguments.results)]
     save_paths(*paths)
     missing = [path for path in paths if path and not os.path.isdir(path)]
-    warning = (f"These folders do not exist yet: {', '.join(missing)}. Create them (empty is fine) before creating "
-               "or preprocessing a dataset." if missing else "")
+    non_ascii = [path for path in paths if path and unusable_for_nnunet(path)]
+    warnings = [f"These folders do not exist yet: {', '.join(missing)}. Create them (empty is fine) before creating "
+                "or preprocessing a dataset." if missing else "",
+                f"{NON_ASCII_HINT}: {', '.join(non_ascii)}." if non_ascii else ""]
     if arguments.json:
-        print_json({"saved": str(configuration_path()), "paths": configured_paths(), "missing": missing})
+        print_json({"saved": str(configuration_path()), "paths": configured_paths(), "missing": missing,
+                    "non_ascii": non_ascii})
     else:
-        print(f"Saved nnWorkbench paths to {configuration_path()}" + (f"\n{warning}" if warning else ""))
+        print("\n".join([f"Saved nnWorkbench paths to {configuration_path()}", *filter(None, warnings)]))
 
 
 def get_paths_main() -> None:
@@ -167,6 +199,7 @@ def get_paths_main() -> None:
     parser = argparse.ArgumentParser(description="Show the nnU-Net folders saved for nnWorkbench.")
     parser.add_argument("--json", action="store_true", help="Print the paths as JSON, e.g. for scripts")
     arguments = parser.parse_args()
+    use_utf8_output()
     try:
         if arguments.json:
             paths = configured_paths()

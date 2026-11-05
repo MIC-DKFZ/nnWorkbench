@@ -170,5 +170,6 @@ def _listed_path(path: Path, dataset: Path) -> str:
 
 
 def _write_manifest(dataset: Path, manifest: dict) -> None:
-    (dataset / "dataset.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
-                                          encoding="utf-8")
+    # ASCII with escapes: nnU-Net reads dataset.json with the system encoding (cp1252 on Windows), where UTF-8 class
+    # names or paths (Ősejt, ä) crash or turn into "Ã¤"; escaped JSON reads the same everywhere
+    (dataset / "dataset.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

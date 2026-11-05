@@ -16,7 +16,7 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from nnworkbench.path_setup import typed_path
+from nnworkbench.path_setup import NON_ASCII_HINT, typed_path, unusable_for_nnunet
 from nnworkbench.services.commands import prediction_command
 from nnworkbench.services.defaults import PREDICTION_PROCESSES, prediction_folds
 from nnworkbench.services.device_probe import (
@@ -409,6 +409,8 @@ class PredictStage(StagePage):
             reason = self._not_ready
         if not reason and _same_folder(source, target):
             reason = "Choose an output folder different from the input folder."
+        if not reason and (unusable := [str(path) for path in (source, target) if unusable_for_nnunet(path)]):
+            reason = f"{NON_ASCII_HINT}: {', '.join(unusable)}."
         if not reason and not self._folds.selected():
             reason = "Select at least one fold."
         self._predict.setEnabled(not reason)

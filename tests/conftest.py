@@ -5,6 +5,10 @@ import os
 import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+if os.name == "nt":
+    # The offscreen platform on Windows finds no fonts by itself and measures text with a fallback about twice as
+    # wide as Segoe UI: layout tests (minimum widths, elided labels) would fail for text that fits on screen.
+    os.environ.setdefault("QT_QPA_FONTDIR", os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts"))
 
 
 @pytest.fixture(autouse=True, scope="session")

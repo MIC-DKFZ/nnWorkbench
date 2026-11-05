@@ -88,6 +88,9 @@ def test_window_minimum_fits_a_laptop_screen(config: Path) -> None:
         _close(window, application)
 
 
+@pytest.mark.skipif(os.name == "nt" and os.environ.get("QT_QPA_PLATFORM") == "offscreen",
+                    reason="Qt's offscreen platform on Windows lays the chip rows out shorter than their size hint; "
+                           "passes with QT_QPA_PLATFORM=windows (checked on Windows 11)")
 def test_details_panel_scrolls_and_shows_every_chip(config: Path, tmp_path: Path) -> None:
     application = _application()
     window = _window(application)

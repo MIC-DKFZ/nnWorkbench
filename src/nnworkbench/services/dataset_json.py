@@ -171,7 +171,7 @@ def write_manifest(dataset_directory: Path, data: dict) -> None:
     descriptor, temporary_name = tempfile.mkstemp(prefix=".dataset.", suffix=".json", dir=dataset_directory)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as file:
-            json.dump(data, file, indent=2, ensure_ascii=False)
+            json.dump(data, file, indent=2)  # ASCII with escapes: nnU-Net reads it as cp1252 on Windows
             file.write("\n")
         os.replace(temporary_name, target)
     except Exception:

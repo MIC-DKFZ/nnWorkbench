@@ -70,7 +70,8 @@ def test_a_detached_job_keeps_running_and_writing_its_log(tmp_path: Path) -> Non
             f"flush=True); pathlib.Path({str(marker)!r}).write_text('ok')")
     assert runner._start("Train · fold 0", "Cells", "one fold", [_step("fold 0", code)])
     end = time.time() + 10
-    while "running\n" not in "".join(runner.current.output) and time.time() < end:
+    # print() ends lines with "\r\n" on Windows
+    while "running\n" not in "".join(runner.current.output).replace("\r\n", "\n") and time.time() < end:
         application.processEvents()
         time.sleep(0.01)
     job = runner.detach()

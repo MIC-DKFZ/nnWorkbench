@@ -21,6 +21,14 @@ from .image_files import has_image_suffix, strip_image_suffix
 
 ANALYSIS_FILENAME = "class_distribution.json"
 _CHANNEL_SUFFIX = re.compile(r"_\d{4}$")
+# Windows: ProcessPoolExecutor accepts at most 61 workers (ValueError beyond, e.g. on a 64-core Threadripper)
+MAX_WORKERS = 61 if os.name == "nt" else None
+
+
+def available_workers() -> int:
+    """The worker processes this machine can use: its CPU count, at most 61 on Windows."""
+    count = os.cpu_count() or 1
+    return min(count, MAX_WORKERS) if MAX_WORKERS else count
 
 
 def analysis_path(dataset_directory: Path) -> Path:
@@ -176,7 +184,7 @@ def analyse_label_distribution(dataset_directory: Path, workers: int | None = No
     files = label_files(dataset_directory)
     if not files:
         raise ValueError("No label images were found in labelsTr.")
-    available = os.cpu_count() or 1
+    available = available_workers()
     worker_count = max(1, min(workers or available, available, len(files)))
     # Spawn avoids forking a running Qt process from its background worker thread.
     context = multiprocessing.get_context("spawn")

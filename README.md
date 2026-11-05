@@ -136,6 +136,7 @@ Optionally, you can prepare this in the nnWorkbench GUI: on the overview, add a 
 <details>
 <summary><b>Troubleshooting</b></summary>
 
+- **Windows, preprocessing or prediction fails with *Unable to open … for reading* or *Error while creating the NDArray*:** a folder path contains non-ASCII characters (e.g. `C:\Users\Jürgen\…`), which nnU-Net cannot use on Windows. Move the nnU-Net folders (and prediction input/output folders) to a path with ASCII characters only, e.g. `C:\nnUNet\nnUNet_raw`, and set them again. nnWorkbench marks such folders in red.
 - **`No matching distribution found for mitk-python`:** the environment does not use Python 3.12, or the system is too old (macOS below 13, Linux with glibc below 2.35). Create the environment with `python=3.12`; on older Linux systems, use the core installation (`pip install -e .`, later `pip install nnworkbench`) without the GUI.
 - **Info shows *CPU only* although there is an NVIDIA GPU:** PyTorch was installed without CUDA support or does not match the driver; Info shows the cause and the fix.
 - **Qt 5 instead of Qt 6:** install the GUI without a Qt binding and add PyQt5: `pip install -e ".[gui]" PyQt5` (from PyPI, coming soon: `pip install "nnworkbench[gui]" PyQt5`).

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import signal
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -904,6 +906,10 @@ def open_validation_prediction(prediction_path: Path, raw_dataset: Path | None =
 
 
 def main() -> None:
+    if os.name == "nt":
+        # started by the GUI, this window shares the GUI's console: Ctrl+C there must not interrupt Napari (and a
+        # half-saved annotation); the window closes with its close button or with the GUI
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
     parser = argparse.ArgumentParser(description="Open an nnU-Net case in Napari.")
     parser.add_argument("file", type=Path, nargs="?")
     parser.add_argument("--prefetch-radius", type=int, default=1, choices=range(1, 21))

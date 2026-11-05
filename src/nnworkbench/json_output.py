@@ -13,6 +13,20 @@ SCHEMA_VERSION = 1  # raise when a JSON field is renamed or removed; new fields 
 _result_stream: TextIO | None = None  # the real stdout while it is redirected
 
 
+def use_utf8_output() -> None:
+    """Write stdout and stderr as UTF-8 when they are not already (Windows: a pipe or file uses the ANSI code page,
+    e.g. cp1252, which cannot encode "→", "＋" or many path characters and crashes or turns "ä" into a byte that a
+    UTF-8 reader such as an AI agent shows as "�"). A console window already gets UTF-8 from Python."""
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, "encoding", None) or "").lower().replace("-", "").replace("_", "")
+        if stream is None or not hasattr(stream, "reconfigure") or encoding == "utf8":
+            continue
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):  # already read from, or closed
+            pass
+
+
 def print_json(value: object) -> None:
     """Write the machine-readable result (to the real stdout, also while other output is redirected)."""
     if isinstance(value, dict) and "schema_version" not in value:

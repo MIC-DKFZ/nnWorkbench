@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from nnworkbench.models.dataset import DatasetRecord
+from nnworkbench.path_setup import NON_ASCII_HINT, unusable_for_nnunet
 from nnworkbench.services.dataset_contents import json_object
 from nnworkbench.services.dataset_json import (
     definition_errors,
@@ -82,6 +83,10 @@ class DatasetState:
         problems = list(self.manifest_errors)
         if self.record.id_problem[1]:
             problems.append(self.record.id_problem[1])
+        unusable = [str(path) for path in (self.record.raw_path, self.record.preprocessed_path,
+                                           self.record.results_path) if path is not None and unusable_for_nnunet(path)]
+        if unusable:
+            problems.append(f"{NON_ASCII_HINT}: {', '.join(unusable)}")
         if raw.missing_labels:
             problems.append(f"{raw.missing_labels} image{'s' if raw.missing_labels != 1 else ''} without label")
         if not raw.names_valid:
@@ -219,6 +224,18 @@ def _label_analysis(raw_path: Path | None) -> dict | None:
         return None
 
 
+def _bom_hint(path: Path) -> str:
+    """Why a dataset.json that looks fine cannot be read: a UTF-8 byte order mark, which Windows PowerShell 5.1 writes
+    (Set-Content / Out-File -Encoding utf8) and which neither nnWorkbench nor nnU-Net (json.load) accept."""
+    try:
+        with path.open("rb") as file:
+            bom = file.read(3) == b"\xef\xbb\xbf"
+    except OSError:
+        return ""
+    return (" It starts with a byte order mark (BOM), e.g. from Windows PowerShell 5.1's Set-Content -Encoding utf8, "
+            "which nnU-Net cannot read either: save it as UTF-8 without BOM." if bom else "")
+
+
 def load_state(record: DatasetRecord, ended: dict[Path, float] | None = None) -> DatasetState:
     """Everything the pages show. ``ended``: fold folders whose GUI training job ended, and when (see fold_info)."""
     source = manifest_source(record.raw_path, record.preprocessed_path, record.results_path)
@@ -229,7 +246,7 @@ def load_state(record: DatasetRecord, ended: dict[Path, float] | None = None) ->
     if raw_json is not None and not raw_json.is_file():
         errors.insert(0, "dataset.json is missing in nnUNet_raw.")
     elif raw_json is not None and source and source[0] == "raw" and not isinstance(manifest, dict):
-        errors.insert(0, "dataset.json cannot be read (no valid JSON object).")
+        errors.insert(0, "dataset.json cannot be read (no valid JSON object)." + _bom_hint(raw_json))
     raw = raw_overview(record.raw_path, manifest)
     if isinstance(manifest, dict) and source and source[0] == "raw" and raw.cases:
         problem = num_training_error(manifest, len(raw.cases))

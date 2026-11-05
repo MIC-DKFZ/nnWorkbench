@@ -180,11 +180,46 @@ def test_dataset_inspection_opens_selected_image(monkeypatch, tmp_path) -> None:
 def test_find_executable_looks_next_to_python_when_not_on_path(tmp_path, monkeypatch) -> None:
     # e.g. started from the macOS Dock or a Windows shortcut: the environment's scripts are not on PATH
     scripts = tmp_path / "bin"; scripts.mkdir()
-    tool = scripts / "nnUNetv2_train"; tool.write_text("#!/bin/sh\n"); tool.chmod(0o755)
+    tool = _fake_program(scripts, "nnUNetv2_train")
     monkeypatch.setenv("PATH", "")
     monkeypatch.setattr(command_runner.sys, "executable", str(scripts / "python"))
-    assert command_runner.find_executable("nnUNetv2_train") == str(tool)
+    assert _same_file(command_runner.find_executable("nnUNetv2_train"), tool)
     assert command_runner.find_executable("missing_tool") == "missing_tool"
+
+
+def _same_file(found: str, expected: Path) -> bool:
+    # on Windows, shutil.which appends the extension as PATHEXT spells it (.EXE): compare case-insensitively there
+    return os.path.normcase(found) == os.path.normcase(str(expected))
+
+
+def _fake_program(folder: Path, name: str) -> Path:
+    """An executable stub that shutil.which finds: a script on POSIX, an .exe name on Windows (PATHEXT)."""
+    tool = folder / (f"{name}.exe" if os.name == "nt" else name)
+    tool.write_text("#!/bin/sh\n")
+    tool.chmod(0o755)
+    return tool
+
+
+def test_find_executable_prefers_this_environment_over_path(tmp_path, monkeypatch) -> None:
+    # another environment's nnU-Net earlier on PATH (e.g. conda base): the one next to this Python wins
+    own, other = tmp_path / "env" / "bin", tmp_path / "base" / "bin"
+    own.mkdir(parents=True); other.mkdir(parents=True)
+    mine, foreign = _fake_program(own, "nnUNetv2_train"), _fake_program(other, "nnUNetv2_train")
+    only_on_path = _fake_program(other, "some_tool")
+    monkeypatch.setenv("PATH", str(other))
+    monkeypatch.setattr(command_runner.sys, "executable", str(own / "python"))
+    found = command_runner.find_executable("nnUNetv2_train")
+    assert _same_file(found, mine) and not _same_file(found, foreign)
+    assert _same_file(command_runner.find_executable("some_tool"), only_on_path)  # still found on PATH
+
+
+def test_training_guard_recognises_other_spellings_on_windows() -> None:
+    # Windows starts nnU-Net's training for all of these: the --yes guard must see them too
+    for spelling in ("nnUNetv2_train", "nnunetv2_train", "nnUNetv2_train.exe", r"C:\env\Scripts\NNUNETV2_TRAIN.EXE"):
+        assert command_runner.is_program(spelling, "nnUNetv2_train", windows=True), spelling
+    assert not command_runner.is_program("nnUNetv2_train_other", "nnUNetv2_train", windows=True)
+    assert command_runner.is_program("/env/bin/nnUNetv2_train", "nnUNetv2_train", windows=False)
+    assert not command_runner.is_program("nnunetv2_train", "nnUNetv2_train", windows=False)  # case matters there
 
 
 def test_windows_quoting_and_argument_splitting(monkeypatch) -> None:

@@ -6,6 +6,7 @@ job running (``JobRunner.detach``): the command goes on and keeps writing to its
 
 from __future__ import annotations
 
+import codecs
 import hashlib
 import os
 import re
@@ -37,6 +38,7 @@ class Job:
     # A job can run several commands one after another (e.g. folds 0–4); it stops at the first failure.
     steps: list[tuple[str, str, list[str]]] = field(default_factory=list)  # (label, program, arguments) still to run
     step_prefix: str = ""  # e.g. "fold 2 (3/5) · " in front of the progress hint
+    decoder: codecs.IncrementalDecoder | None = field(default=None, repr=False)  # UTF-8 output of the running step
     cases_total: int | None = None
     cases_done: int = 0
     log: Path | None = None  # the job's output, also after the GUI quit
@@ -139,7 +141,19 @@ def start_process_group(process: QProcess, program: str, arguments: list[str]) -
         process.start(program, arguments)
 
 
-def stop_process_group(process: QProcess, wait_ms: int = 0) -> None:
+def _taskkill(process_id: int, force: bool) -> None:
+    """Stop a process and its children on Windows (QProcess owns only the direct child; the tree mode /T also
+    stops nnU-Net's worker processes). Without /F, taskkill only asks windows to close (WM_CLOSE), which console
+    programs without a window (the runner, nnU-Net) ignore."""
+    subprocess.run(["taskkill", "/PID", str(process_id), "/T", *(["/F"] if force else [])],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+                   creationflags=subprocess.CREATE_NO_WINDOW)  # no console window flashing up
+
+
+def stop_process_group(process: QProcess, wait_ms: int = 0, *, force: bool = False) -> None:
+    """Stop *process* and its children. POSIX: SIGTERM to its process group (SIGKILL after *wait_ms*). Windows:
+    ``force`` ends the tree at once (jobs: console programs ignore a close request); otherwise the windows are asked
+    to close first (Napari: it may still save) and the tree is ended after *wait_ms*."""
     if process.state() == QProcess.ProcessState.NotRunning:
         return
     process_id = process.processId()
@@ -152,9 +166,7 @@ def stop_process_group(process: QProcess, wait_ms: int = 0) -> None:
         except PermissionError:
             process.terminate()
     elif os.name == "nt" and process_id > 0:
-        # QProcess only owns the direct child on Windows; taskkill's tree mode also stops its workers.
-        subprocess.run(["taskkill", "/PID", str(process_id), "/T"], stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, check=False)
+        _taskkill(process_id, force)
     else:
         process.terminate()
     if wait_ms and not process.waitForFinished(wait_ms):
@@ -164,8 +176,7 @@ def stop_process_group(process: QProcess, wait_ms: int = 0) -> None:
             except (ProcessLookupError, PermissionError):
                 process.kill()
         elif os.name == "nt" and process_id > 0:
-            subprocess.run(["taskkill", "/PID", str(process_id), "/T", "/F"], stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL, check=False)
+            _taskkill(process_id, force=True)
         else:
             process.kill()
         process.waitForFinished(1_000)
@@ -264,6 +275,7 @@ class JobRunner(QObject):
                 log.write(header)
         except OSError:
             pass  # the runner reports a log file it cannot write
+        job.decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")  # a new step: a new output stream
         process = QProcess(self)
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("PYTHONUNBUFFERED", "1")
@@ -284,7 +296,7 @@ class JobRunner(QObject):
         self._job.status = "terminated"
         self._append(self._job, "\nTermination requested.\n")
         process = self._process
-        stop_process_group(process)
+        stop_process_group(process, force=True)
         QTimer.singleShot(5_000, lambda: self._stop_again(process))
 
     def _stop_again(self, process: QProcess) -> None:
@@ -292,7 +304,7 @@ class JobRunner(QObject):
         if process is not self._process:
             return
         try:
-            stop_process_group(process, wait_ms=1)
+            stop_process_group(process, wait_ms=1, force=True)
         except RuntimeError:  # deleted by Qt in the meantime
             pass
 
@@ -312,11 +324,18 @@ class JobRunner(QObject):
     def shutdown(self) -> None:
         if self._process is not None:
             _disconnect(self._process)  # the app is closing: no finished handling on half-deleted objects
-            stop_process_group(self._process, wait_ms=2_000)
+            stop_process_group(self._process, wait_ms=2_000, force=True)
         self._process, self._job = None, None
 
     def _read(self, process: QProcess, job: Job) -> None:
-        text = bytes(process.readAllStandardOutput()).decode(errors="replace")
+        try:
+            data = bytes(process.readAllStandardOutput())
+        except RuntimeError:  # the QProcess was deleted by Qt meanwhile (the job ended): nothing left to read
+            return
+        # one decoder per step: a character split between two reads (ä is 2 bytes in UTF-8) is not turned into "�"
+        if job.decoder is None:
+            job.decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        text = job.decoder.decode(data)
         if text:
             self._append(job, text)
             echo(text, end="")
