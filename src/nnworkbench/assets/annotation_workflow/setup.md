@@ -32,7 +32,7 @@ To train on a remote machine or cluster, see [Work with a Remote Machine](#work-
 
 If your computer has no suitable GPU, you can keep working in nnWorkbench on your computer (annotating, validating, inspecting) and run the GPU-heavy commands, training and prediction, on a remote machine or cluster.
 
-**Set up the remote machine once:** Install the core installation of nnWorkbench there, without the GUI (see *Remote machines and clusters* in the nnWorkbench README) and save the remote nnU-Net folders:
+**Set up the remote machine once:** Install the core installation of nnWorkbench there, without the GUI (see [Remote machines and clusters](https://github.com/MIC-DKFZ/nnWorkbench#installation) in the nnWorkbench README) and save the remote nnU-Net folders:
 
 ```bash
 nnworkbench-set-paths --raw /remote/path/to/nnUNet_raw \
@@ -137,7 +137,7 @@ nnworkbench-run stack-images /path/to/slices --file-type .tif --spacing 1.0 1.0 
 
 ## Commands and Console
 
-The preprocessing, training and prediction dialogs in nnWorkbench all offer **Copy command** and run exactly the displayed command. Common options have their own fields (e.g. **Processes**, **Device**); use **Additional arguments** for further nnU-Net options, e.g. `--npz` for training. Only one command runs at a time; its output appears in the **Console** at the bottom (**▴ Expand** shows the full output, **Copy output** copies it) and in the terminal that started nnWorkbench. Use **■ Terminate** to stop it. Closing nnWorkbench also stops a running command.
+The preprocessing, training and prediction dialogs in nnWorkbench all offer **Copy command** and run exactly the displayed command. Common options have their own fields (e.g. **Processes**, **Device**); use **Additional arguments** for further nnU-Net options, e.g. `--npz` for training. Only one command runs at a time; its output appears in the **Console** at the bottom (**▴ Expand** shows the full output, **Copy output** copies it) and in the terminal that started nnWorkbench. Use **■ Terminate** to stop it. Closing nnWorkbench also stops a running command and the Napari windows opened from it (it asks first); to run a command without nnWorkbench, e.g. overnight, use **Copy command** and run it in a terminal.
 
 **⚙ Settings** (top right) sets the worker processes for **Compute statistics** and how many neighbouring cases Napari loads in advance (**Previous cases**, **Next cases**, **Prefetch radius**).
 

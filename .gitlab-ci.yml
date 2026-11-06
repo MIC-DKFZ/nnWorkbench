@@ -11,7 +11,7 @@ variables:
   - python -m pip install '.[dev]'
   - if [ "$QT_API" = "pyqt5" ]; then python -m pip install 'PyQt5>=5.15,<6'; fi
   - python -m build --wheel
-  - python -m pip install --force-reinstall --no-deps dist/nnworkbench-0.1.0-py3-none-any.whl
+  - python -m pip install --force-reinstall --no-deps dist/*.whl
   - nnworkbench-set-paths --help
   - nnworkbench-run --help
   - pytest -q
@@ -22,7 +22,7 @@ lint:
   script:
     - python -m pip install 'ruff>=0.6,<1'
     - ruff check .
-  # Existing findings of newer ruff versions are not fixed yet; do not block the tests.
+  # ruff is not pinned, so a new release can add findings; report them without blocking the tests.
   allow_failure: true
 
 test:linux:

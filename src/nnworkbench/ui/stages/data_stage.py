@@ -61,8 +61,7 @@ def _howto() -> HowToCard:
         "Labels go to <b>labelsTr</b> with the same case name, without the channel suffix.",
         ("<b>dataset.json</b> describes channels, labels and the file ending. An optional <b>ignore</b> label marks "
         "voxels that are not annotated; it must have the highest label ID."),
-        (f"{icon_html('search')} inspects a case in Napari; {icon_html('edit')} annotates it (saved to <b>labelsTr</b>; "
-         "shown when <b>Annotation Workflow</b> is on in the top bar)."),
+        f"{icon_html('search')} inspects a case in Napari; {icon_html('edit')} annotates it (saved to <b>labelsTr</b>).",
     ], [], "Setup · Create a dataset")
 
 
@@ -153,7 +152,7 @@ class CaseStatisticsPanel(QFrame):
         self._content.addLayout(self._geometry)
         self._content.addWidget(separator())
         self._add_classes(row, state)
-        self._annotate.setVisible(self._stage.context.settings.annotation_workflow and not state.regions)
+        self._annotate.setVisible(not state.regions)
         image = row.image_files[0] if row.image_files else None
         label_file = row.label_file
         self._stage.context.tasks.run(
@@ -341,9 +340,7 @@ class DataStage(StagePage):
     def set_state(self, state: DatasetState) -> None:
         super().set_state(state)
         record = state.record
-        annotation = self.context.settings.annotation_workflow
         for widget, active in ((self._sparse_tip, state.sparse), (self._dense_tip, not state.sparse)):
-            widget.setVisible(annotation)
             widget.setProperty("tone", "purple" if active else "gray")
             polish(widget)
         raw = state.raw
@@ -352,7 +349,7 @@ class DataStage(StagePage):
         self._counts_text = (f"imagesTr <b style='color:#1e293b'>{raw.image_files}</b>  ·  labelsTr "
                              f"<b style='color:#1e293b'>{raw.label_files}</b>  ·  dataset.json")
         self._description.set_dataset(record.raw_path)
-        self._fill_table(annotation)
+        self._fill_table(annotate=not state.regions)
         self._fill_statistics(state)
         note = ""
         if state.manifest_kind not in (None, "raw"):
@@ -377,7 +374,7 @@ class DataStage(StagePage):
 
     def _row_buttons(self, index: int) -> list:
         buttons = [("search", "Open in Napari · image and label", False)]
-        if self.context.settings.annotation_workflow and not (self.state and self.state.regions):
+        if not (self.state and self.state.regions):
             buttons.append(("edit", "Annotate in Napari · saves to labelsTr", False))
         open_case = self._case_index if self.right.currentWidget() is self._case_panel else -1
         buttons.append(("chart", "Case statistics · classes, geometry, files", index == open_case))
@@ -395,12 +392,13 @@ class DataStage(StagePage):
         else:
             self.show_case(index)
 
-    def _fill_table(self, annotation: bool) -> None:
+    def _fill_table(self, annotate: bool) -> None:
+        """*annotate*: the rows get the pencil button (not for region-based labels)."""
         self._fill_version += 1
         self._table.setRowCount(0)
         self._table.setRowCount(len(self._rows))
         self._table_stack.setCurrentIndex(0)
-        width = 16 + (3 if annotation else 2) * 34
+        width = 16 + (3 if annotate else 2) * 34
         self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
         self._table.setColumnWidth(3, width)
         self._fill_batch(0, self._fill_version)
@@ -450,7 +448,7 @@ class DataStage(StagePage):
                 "then reused. They have not been computed yet: run <b>Compute statistics</b> (above) first. It reads every "
                 "label file and can take a few minutes for large datasets.", "chart"), 1)
             return
-        view = LabelStatisticsView(state.analysis, annotation_workflow_enabled=state.sparse)
+        view = LabelStatisticsView(state.analysis, sparse_labels=state.sparse)
         if state.analysis_outdated:
             view.header_row.insertWidget(1, badge(f"{state.analysis_outdated} label"
                                                   f"{'s' if state.analysis_outdated != 1 else ''} changed since", "orange",

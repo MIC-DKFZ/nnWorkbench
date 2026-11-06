@@ -134,7 +134,7 @@ class ConsolePanel(QFrame):
         current = self._runner.current
         shown = jobs[-4:] if self._expanded else ([current] if current else jobs[-1:])
         for job in shown:
-            symbol = _SYMBOLS.get(job.status, "●")  # e.g. "running in the background"
+            symbol = _SYMBOLS.get(job.status, "●")
             suffix = f" · {job.started:%H:%M}" if job.status != "running" else " · running"
             chip = QLabel(f"{symbol} {job.label}{suffix if self._expanded else ''}")
             chip.setObjectName("jobChip")

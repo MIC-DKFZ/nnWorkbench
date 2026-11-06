@@ -1,7 +1,7 @@
 """Run one command at a time (analysis, preprocessing, training, prediction) and keep its output.
 
-Every job writes its output to a log file (``job_log_folder()``); the GUI shows a copy. Quitting the GUI can leave a
-job running (``JobRunner.detach``): the command goes on and keeps writing to its log file.
+Every job writes its output to a log file (``job_log_folder()``); the GUI shows a copy. Quitting the GUI stops the
+running job (``JobRunner.shutdown``); a job that should outlive the GUI is run from a terminal instead.
 """
 
 from __future__ import annotations
@@ -307,19 +307,6 @@ class JobRunner(QObject):
             stop_process_group(process, wait_ms=1, force=True)
         except RuntimeError:  # deleted by Qt in the meantime
             pass
-
-    def detach(self) -> Job | None:
-        """Leave the running job running when the GUI quits: stop only the runner that copies its output; the command
-        goes on and writes to its log file. Later steps of the job (e.g. the next folds) do not start."""
-        process, job = self._process, self._job
-        if process is None or job is None:
-            return None
-        _disconnect(process)
-        process.kill()  # the runner only (not its process group or tree)
-        process.waitForFinished(2_000)
-        job.status = "running in the background"
-        self._process, self._job = None, None
-        return job
 
     def shutdown(self) -> None:
         if self._process is not None:

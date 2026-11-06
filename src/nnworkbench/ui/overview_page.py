@@ -673,10 +673,9 @@ class OverviewPage(QWidget):
         head.addWidget(self._iteration, 0, Qt.AlignmentFlag.AlignBottom)
         head.addWidget(button("＋ New dataset", primary=True, clicked=self.new_dataset_requested.emit),
                        0, Qt.AlignmentFlag.AlignBottom)
-        context.annotation_changed.connect(lambda _enabled: self._update_iteration())
         self._selected_record: DatasetRecord | None = None
         self._records: list[DatasetRecord] = []
-        self._update_iteration()  # hidden from the start while the Annotation Workflow is off
+        self._update_iteration()
         layout.addLayout(head)
         self.paths = PathsCard()
         layout.addWidget(self.paths)
@@ -834,8 +833,7 @@ class OverviewPage(QWidget):
         self._table_stack.setCurrentWidget(self._empty)
 
     def _update_iteration(self) -> None:
-        """Only with the Annotation Workflow; the source dataset is chosen in the dialog (default: the selected one)."""
-        self._iteration.setVisible(self._context.settings.annotation_workflow)
+        """The source dataset is chosen in the dialog (default: the selected one)."""
         available = any(record.raw_path is not None for record in getattr(self, "_records", []))
         self._iteration.setEnabled(available)
         self._iteration.setToolTip(

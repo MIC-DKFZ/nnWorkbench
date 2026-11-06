@@ -6,7 +6,7 @@
 
 ```bash
 # Preprocess the dataset once
-nnworkbench-run nnUNetv2_plan_and_preprocess -d 42 -c 3d_fullres -pl nnUNetPlannerResEncL
+nnworkbench-run nnUNetv2_plan_and_preprocess -d 42 -c 3d_fullres -pl nnUNetPlannerResEncL --verify_dataset_integrity
 
 # Train fold 0, then repeat for folds 1 to 4 or train all
 nnworkbench-run nnUNetv2_train 42 3d_fullres 0 -tr nnUNetTrainer -p nnUNetResEncUNetLPlans
@@ -102,13 +102,13 @@ To train a single model on all images instead, use fold `all` in place of `0`.
 
 Training runs unattended and takes hours to days per fold (see [Planners and GPU Memory](#planners-and-gpu-memory)). nnU-Net writes a log and a `progress.png` plot of the training curves into each fold folder in `nnUNet_results`. `nnworkbench-run status -d 42` shows the state of all folds in a terminal.
 
-**In nnWorkbench:** The **Models** table on the **Train** page lists every model with its **Mean Dice** and **Folds**; click a model to see its folds with **Status**, **Epoch**, **Dice** and **Pseudo Dice**. The status of a fold is *done*, *training* (its log was updated in the last 15 minutes), *stopped* (can be continued) or *final checkpoint only* (a shared model). Select a fold for its details and actions:
+**In nnWorkbench:** The **Models** table on the **Train** page lists every model with its **Mean Dice** and **Folds**; click a model to see its folds with **Status**, **Epoch**, **Dice** and **Pseudo Dice**. The status of a fold is *done*, *training* (its log was updated in the last 15 minutes, or within two epochs when epochs take longer, e.g. on the CPU or an Apple GPU), *stopped* (can be continued) or *final checkpoint only* (a shared model). Select a fold for its details and actions:
 
 - **▶ Continue…** resumes a stopped fold from its latest checkpoint (`--c`).
 - **↻ Run again…** trains the fold again from the start with the same settings.
 - **▶ Next fold…** trains the next missing fold of this model with the same settings.
 
-The console at the bottom shows the training output. Closing nnWorkbench stops a running training; resume it later with **▶ Continue…**.
+The console at the bottom shows the training output. Closing nnWorkbench stops a running training (it asks first); resume it later with **▶ Continue…**. To train without nnWorkbench, use **Copy command** and run it in a terminal.
 
 ## Options Explained
 
@@ -125,7 +125,7 @@ The planner decides how large the network is, and therefore how much GPU memory 
 | **`nnUNetPlannerResEncL`** *(recommended)* | **`nnUNetResEncUNetLPlans`** | 24 GB | ~35 h |
 | `nnUNetPlannerResEncXL` | `nnUNetResEncUNetXLPlans` | 40 GB | ~66 h |
 
-*\*Per fold on an NVIDIA A100; your times depend on the GPU and the data.*
+*\*Per fold on an NVIDIA A100; your times depend on the GPU and the data. On a workstation GPU such as an RTX 3090 or 4090, expect roughly one and a half to two times these times; on older or smaller cards considerably more.*
 
 We recommend **`nnUNetPlannerResEncL`**, which is used in all examples of this guide. If your GPU has less than 24 GB of memory, use `nnUNetPlannerResEncM` or `ExperimentPlanner` instead, and replace the plans name in the commands accordingly.
 

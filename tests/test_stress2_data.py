@@ -68,7 +68,7 @@ def test_r1_statistics_view_with_500_classes_and_5000_images_opens_at_once() -> 
     parent = QWidget()
     try:
         start = time.perf_counter()
-        view = LabelStatisticsView(analysis, annotation_workflow_enabled=True, parent=parent)
+        view = LabelStatisticsView(analysis, sparse_labels=True, parent=parent)
         parent.resize(900, 600)
         parent.show()
         application.processEvents()

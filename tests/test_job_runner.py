@@ -61,27 +61,6 @@ def test_the_output_is_also_in_a_log_file(tmp_path: Path) -> None:
     assert f"Log file: {job.log}" in "".join(job.output)
 
 
-def test_a_detached_job_keeps_running_and_writing_its_log(tmp_path: Path) -> None:
-    application = _application()
-    runner = JobRunner(application, log_folder=tmp_path)
-    marker = tmp_path / "done.txt"
-    # 'run' + 'ning': the command line in the output must not match before the command printed it
-    code = (f"import time, pathlib; print('run' + 'ning', flush=True); time.sleep(1.5); print('after the GUI quit', "
-            f"flush=True); pathlib.Path({str(marker)!r}).write_text('ok')")
-    assert runner._start("Train · fold 0", "Cells", "one fold", [_step("fold 0", code)])
-    end = time.time() + 10
-    # print() ends lines with "\r\n" on Windows
-    while "running\n" not in "".join(runner.current.output).replace("\r\n", "\n") and time.time() < end:
-        application.processEvents()
-        time.sleep(0.01)
-    job = runner.detach()
-    assert job is not None and not runner.busy and job.status == "running in the background"
-    end = time.time() + 15
-    while not marker.exists() and time.time() < end:
-        time.sleep(0.05)
-    assert marker.read_text() == "ok" and "after the GUI quit" in job.log.read_text(encoding="utf-8")
-
-
 def test_the_runner_returns_the_exit_code_and_survives_a_closed_output(tmp_path: Path) -> None:
     import subprocess
 

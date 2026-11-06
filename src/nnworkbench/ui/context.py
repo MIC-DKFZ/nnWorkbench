@@ -28,7 +28,6 @@ def worker_range() -> tuple[int, int]:
 
 @dataclass
 class Settings:
-    annotation_workflow: bool = False
     workers: int = 8
     prefetch_previous: bool = True
     prefetch_next: bool = True
@@ -39,7 +38,6 @@ class AppContext(QObject):
     """One instance per window; pages read paths and settings from here."""
 
     settings_changed = Signal()
-    annotation_changed = Signal(bool)
     howto_changed = Signal(bool)
     device_changed = Signal()
     classes_changed = Signal()  # nnunet_classes is known
@@ -48,7 +46,6 @@ class AppContext(QObject):
         super().__init__(parent)
         self.store = QSettings("nnWorkbench", "nnWorkbench")
         self.settings = Settings(
-            annotation_workflow=self.store.value("annotation_workflow/enabled", False, type=bool),
             workers=self._stored_number("analysis/workers", min(8, os.cpu_count() or 1), worker_range()),
             prefetch_previous=self.store.value("napari/prefetch_previous", True, type=bool),
             prefetch_next=self.store.value("napari/prefetch_next", True, type=bool),
@@ -106,16 +103,12 @@ class AppContext(QObject):
     # ------------------------------------------------------------ settings
 
     def save_settings(self, settings: Settings) -> None:
-        annotation_changed = settings.annotation_workflow != self.settings.annotation_workflow
         self.settings = settings
-        self.store.setValue("annotation_workflow/enabled", settings.annotation_workflow)
         self.store.setValue("analysis/workers", settings.workers)
         self.store.setValue("napari/prefetch_previous", settings.prefetch_previous)
         self.store.setValue("napari/prefetch_next", settings.prefetch_next)
         self.store.setValue("napari/prefetch_radius", settings.prefetch_radius)
         self.settings_changed.emit()
-        if annotation_changed:
-            self.annotation_changed.emit(settings.annotation_workflow)
 
     @property
     def howto_expanded(self) -> bool:
@@ -125,11 +118,6 @@ class AppContext(QObject):
     def set_howto_expanded(self, expanded: bool) -> None:
         self.store.setValue("ui/howto_expanded", expanded)
         self.howto_changed.emit(expanded)
-
-    def set_annotation_workflow(self, enabled: bool) -> None:
-        if enabled != self.settings.annotation_workflow:
-            self.save_settings(Settings(enabled, self.settings.workers, self.settings.prefetch_previous,
-                                        self.settings.prefetch_next, self.settings.prefetch_radius))
 
     def local_roots_available(self, *names: str) -> list[str]:
         """Return the nnU-Net folders that are missing locally (empty when all exist)."""

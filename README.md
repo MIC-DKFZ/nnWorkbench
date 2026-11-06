@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="https://pypi.org/project/nnworkbench/"><img alt="PyPI" src="https://img.shields.io/pypi/v/nnworkbench"></a>
   <img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-blue">
   <img alt="Platforms: Linux, Windows, macOS" src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey">
   <img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-green">
@@ -50,6 +51,7 @@ No labels yet? The Annotation Workflow gets you from raw images to a trained mod
 - **Python 3.12**
 - Windows 10/11, macOS 13 or newer, or Linux with glibc 2.35 or newer (e.g. Ubuntu 22.04+)
 - Conda or another Python environment manager
+- For training: an NVIDIA GPU, 24 GB of memory for the recommended setup, 8 GB at minimum with a smaller planner (see [Planners and GPU Memory](src/nnworkbench/assets/annotation_workflow/4-train.md#planners-and-gpu-memory) in the guide). Annotating, validating and predicting also work without one.
 
 **From PyPI** *(coming soon: nnWorkbench is not on PyPI yet, so this does not work at the moment)*:
 
@@ -151,7 +153,7 @@ Start the GUI with `nnworkbench-gui`.
 
 1. **Set your folders.** On the overview, select three folders: `nnUNet_raw` for your datasets (images, labels and `dataset.json`), `nnUNet_preprocessed` for the preprocessed data used in training, and `nnUNet_results` for the trained models and their validation results. nnU-Net fills the last two. Empty folders are fine. nnWorkbench lists every dataset it finds in them.
 2. **Create a dataset or select an existing one.** Click **＋ New dataset**, or open a dataset from the list. Put your images into `imagesTr` (and, if you have them, your labels into `labelsTr`), and describe the classes with **Edit** next to `dataset.json`. Red badges on the **Data** page tell you what is still missing.
-3. **Annotate** *(Annotation Workflow only)*. Turn on **Annotation Workflow** in the top bar. On the **Data** page, click the pencil next to an image, annotate in Napari with nnInteractive or the brush, and click **Save annotation**. Labels can be *dense* (every voxel is labelled; the mask starts as background, e.g. to segment a single organ with nnInteractive) or *sparse* (you annotate only parts of each image; the rest stays *ignore* and is not used for training). For sparse labels, add an `ignore` class with the highest ID to `dataset.json`.
+3. **Annotate** *(Annotation Workflow only)*. On the **Data** page, click the pencil next to an image, annotate in Napari with nnInteractive or the brush, and click **Save annotation**. Labels can be *dense* (every voxel is labelled; the mask starts as background, e.g. to segment a single organ with nnInteractive) or *sparse* (you annotate only parts of each image; the rest stays *ignore* and is not used for training). For sparse labels, add an `ignore` class with the highest ID to `dataset.json`.
 4. **Preprocess.** On **Preprocess**, click **▶ Preprocess…** and then **▶ Preprocess**, or **Copy command** to run it on a remote machine. The defaults are a good start.
 5. **Train.** On **Train**, click **▶ Train…**, choose the folds and click **▶ Train**, or **Copy command** to run it on a remote machine. The console at the bottom shows the progress.
 6. **Validate.** On **Validate**, click a fold of your model to see its Dice score per case, sort by **Dice** to see the weakest cases first, and open any case in Napari to compare the prediction with your label.
@@ -179,6 +181,9 @@ These use the recommended `nnUNetPlannerResEncL`, which the GUI also preselects.
 It also provides the following dataset tools:
 
 ```bash
+# List the datasets in the nnU-Net folders: ID, name, where they exist and the iteration (add --json)
+nnworkbench-run list
+
 # Create a dataset with imagesTr, labelsTr and dataset.json (add --ignore for sparse labels)
 nnworkbench-run create-dataset -d 42 --name CellSegmentation --labels background,cell,nucleus --ignore --channels fluorescence
 

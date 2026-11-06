@@ -166,7 +166,6 @@ class ValidateStage(StagePage):
 
     def __init__(self, context: AppContext, parent=None) -> None:
         super().__init__(context, _howto(), parent)
-        self._annotation_tip = self.howto._tips.itemAt(0).widget()
         self._fold: FoldInfo | None = None
         self._model: ModelInfo | None = None
         self._summary: dict | None = None
@@ -294,8 +293,6 @@ class ValidateStage(StagePage):
 
     def set_state(self, state: DatasetState) -> None:
         super().set_state(state)
-        annotation = self.context.settings.annotation_workflow
-        self._annotation_tip.setVisible(annotation)
         models = [model for model in state.models if any(fold.has_validation for fold in model.folds)]
         self._models_hint.setText("click a fold for its results, again or the model to go back" if len(models) > 1
                                   else "click a fold for its results, again to go back")

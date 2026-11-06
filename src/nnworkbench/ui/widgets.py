@@ -670,42 +670,6 @@ class StageTab(QAbstractButton):
         painter.end()
 
 
-class ToggleSwitch(QAbstractButton):
-    """A pill switch with a text label, used for the global Annotation Workflow setting."""
-
-    def __init__(self, text: str, parent=None) -> None:
-        super().__init__(parent)
-        self.setText(text)
-        self.setCheckable(True)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        font = self.font()
-        font.setBold(True)
-        font.setPixelSize(12)
-        self.setFont(font)
-
-    def sizeHint(self) -> QSize:
-        return QSize(self.fontMetrics().horizontalAdvance(self.text()) + 66, 32)
-
-    def paintEvent(self, event) -> None:
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        on = self.isChecked()
-        outline = QRect(1, 1, self.width() - 2, self.height() - 2)
-        painter.setPen(QPen(QColor("#c9b9ef" if on else style.LINE), 1))
-        painter.setBrush(QColor(style.PURPLE_SOFT if on else "white"))
-        painter.drawRoundedRect(outline, outline.height() / 2, outline.height() / 2)
-        track = QRect(12, (self.height() - 17) // 2, 30, 17)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(style.PURPLE if on else "#cbd5e1"))
-        painter.drawRoundedRect(track, 8.5, 8.5)
-        painter.setBrush(QColor("white"))
-        knob_x = track.x() + (15 if on else 2)
-        painter.drawEllipse(QRect(knob_x, track.y() + 2, 13, 13))
-        painter.setPen(QColor(style.PURPLE if on else style.MUTED))
-        painter.drawText(QRect(52, 0, self.width() - 56, self.height()), Qt.AlignmentFlag.AlignVCenter, self.text())
-        painter.end()
-
-
 class ToggleGroup(QFrame):
     """Segmented control (e.g. Files | Statistics)."""
 

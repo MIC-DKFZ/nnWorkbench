@@ -1,4 +1,4 @@
-"""Settings: analysis workers and Napari prefetching (the Annotation Workflow is switched in the top bar)."""
+"""Settings: analysis workers and Napari prefetching."""
 
 from __future__ import annotations
 
@@ -61,7 +61,6 @@ class SettingsDialog(QDialog):
             layout.addLayout(body)
             layout.addWidget(separator())
 
-        self._annotation = settings.annotation_workflow  # switched in the top bar, kept unchanged here
         self.workers = _number_field()
         self.workers.setRange(*worker_range())
         self.workers.setValue(settings.workers)  # clamped to the range
@@ -89,5 +88,5 @@ class SettingsDialog(QDialog):
         layout.addLayout(actions)
 
     def settings(self) -> Settings:
-        return Settings(self._annotation, self.workers.value(), self.previous.isChecked(),
+        return Settings(self.workers.value(), self.previous.isChecked(),
                         self.following.isChecked(), self.radius.value())

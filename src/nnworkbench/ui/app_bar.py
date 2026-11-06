@@ -1,4 +1,4 @@
-"""Top bar: logo, back to the overview, dataset switcher, Annotation Workflow, Guide, Settings and Info."""
+"""Top bar: logo, back to the overview, dataset switcher, Guide, Settings and Info."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from qtpy.QtWidgets import QFrame, QHBoxLayout, QPushButton, QWidget
 
 from nnworkbench.models.dataset import DatasetRecord
 
-from .widgets import AppMark, ElidedLabel, ToggleSwitch, button, dataset_id_label, label
+from .widgets import AppMark, ElidedLabel, button, dataset_id_label, label
 
 
 class AppBar(QFrame):
@@ -16,7 +16,6 @@ class AppBar(QFrame):
     guide_requested = Signal()
     about_requested = Signal()
     settings_requested = Signal()
-    annotation_toggled = Signal(bool)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -62,11 +61,6 @@ class AppBar(QFrame):
         self.switcher.setFixedHeight(40)
         row.addWidget(self.switcher)
         row.addStretch()
-        self.annotation = ToggleSwitch("Annotation Workflow")
-        self.annotation.setToolTip("Applies to all datasets: adds ✎ to annotate cases in Napari (saved directly to labelsTr) "
-                                   "and the annotation hints")
-        self.annotation.toggled.connect(self.annotation_toggled.emit)
-        row.addWidget(self.annotation)
         row.addWidget(button("? Guide", ghost=True, clicked=self.guide_requested.emit))
         row.addWidget(button("⚙ Settings", ghost=True, clicked=self.settings_requested.emit))
         # Rarely needed, so last: version, credits (logos) and licence
@@ -86,12 +80,6 @@ class AppBar(QFrame):
         self._switcher_id.setText(f"{record.dataset_id:03d}")
         self._switcher_name.setText(record.name)
         self._switcher_folder.setText(f"· Dataset{record.dataset_id:03d}")
-
-    def set_annotation(self, enabled: bool) -> None:
-        self.annotation.blockSignals(True)
-        self.annotation.setChecked(enabled)
-        self.annotation.blockSignals(False)
-        self.annotation.update()
 
     def switcher_anchor(self) -> QWidget:
         return self.switcher

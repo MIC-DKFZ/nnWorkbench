@@ -160,7 +160,6 @@ class StagePage(QWidget):
         self.right.setFixedWidth(RIGHT_WIDTH[1])
         row.addWidget(self.right)
         context.jobs.busy_changed.connect(lambda _busy: self.update_actions())
-        context.annotation_changed.connect(lambda _enabled: self.annotation_changed())
 
     def _build_header(self) -> None:
         """Same header on every stage: dataset name, Refresh and Open in the stage's nnU-Net folder."""
@@ -318,10 +317,6 @@ class StagePage(QWidget):
 
     def update_actions(self) -> None:
         """Enable or disable run buttons (one job at a time, missing folders)."""
-
-    def annotation_changed(self) -> None:
-        if self.state is not None:
-            self.set_state(self.state)
 
     def busy_or_missing(self, *roots: str) -> str:
         """Return why a run button is disabled, or an empty string when it can run."""

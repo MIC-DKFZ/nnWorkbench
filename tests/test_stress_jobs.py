@@ -115,17 +115,6 @@ def test_a_task_raising_system_exit_reports_a_failure() -> None:  # J4
     tasks.shutdown()
 
 
-def test_the_console_shows_a_job_running_in_the_background() -> None:  # J5
-    application = _application()
-    host = QWidget()
-    runner = JobRunner(application)
-    console = ConsolePanel(runner, host)
-    runner.jobs.append(Job("Train · fold 0", "Cells", "x", status="running in the background"))
-    console._refresh()
-    console.toggle()  # expanded: the chips show the status
-    host.close()
-
-
 def test_output_without_line_breaks_is_broken_into_short_blocks() -> None:  # J6
     application = _application()
     host = QWidget()

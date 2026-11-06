@@ -59,7 +59,7 @@ differs from `dataset.json`, an orange note lists the differences: **Push to dat
 
 ## Example Definition
 
-*Continuing the fictional `Dataset042_CellSegmentation` example from [1. Describe](1-describe.md#example-description), annotated sparsely with scribbles.*
+*Continuing the fictional `Dataset042_CellSegmentation` example from [1. Describe](1-describe.md#example-description), annotated sparsely: cells and nuclei with nnInteractive, the background with scribbles.*
 
 | ID | Class |
 | --- | --- |

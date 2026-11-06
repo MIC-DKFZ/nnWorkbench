@@ -387,14 +387,14 @@ class _ImageModel(QAbstractTableModel):
 class LabelStatisticsView(QWidget):
     """Inline label analysis with class, per-image, and geometry views."""
 
-    def __init__(self, analysis: dict, annotation_workflow_enabled: bool = False, parent=None) -> None:
+    def __init__(self, analysis: dict, sparse_labels: bool = False, parent=None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         classes = analysis["classes"]
         self._classes = classes
         per_image = analysis["per_image"]
-        self._show_labeled_data = annotation_workflow_enabled
+        self._show_labeled_data = sparse_labels
         undefined = undefined_ids(analysis)
         axis_count = max((len(item[key]) for item in per_image for key in ("shape", "spacing")), default=0)
         axes = ", ".join(_AxisScatterChart._AXIS_NAMES[:axis_count])

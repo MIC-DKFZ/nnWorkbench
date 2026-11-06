@@ -2,7 +2,7 @@
 
 ``process_runner PROGRAM ARGS…`` replaces itself with the command (POSIX). ``process_runner --log FILE PROGRAM ARGS…``
 runs the command with its output going to FILE and copies FILE to its own output while the command runs. The GUI
-reads that copy; when the GUI quits and stops only this runner, the command keeps running and keeps writing to FILE.
+reads that copy; the log is complete even when nobody reads the copy any more.
 """
 
 from __future__ import annotations

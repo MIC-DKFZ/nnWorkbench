@@ -475,7 +475,7 @@ def test_d10_statistics_view_with_an_unreadable_file() -> None:
     analysis = {"classes": [{"id": 0, "name": "background", "images": 1, "voxels": 8}], "per_image": [
         {"image": "a.nii.gz", "voxels": {"0": 8}, "shape": [2, 2, 2], "spacing": [1.0, 1.0, 1.0], "validity": []},
         {"image": "b.nii.gz", "voxels": {}, "shape": [], "spacing": [], "validity": ["Unreadable label file: x"]}]}
-    view = LabelStatisticsView(analysis, annotation_workflow_enabled=True, parent=parent)
+    view = LabelStatisticsView(analysis, sparse_labels=True, parent=parent)
     try:
         assert view.image_table.model().index(1, 4).data() == "—"  # no labeled share for an unreadable file
     finally:

@@ -44,12 +44,12 @@ def test_closing_with_a_running_job_asks_first(tmp_path: Path, monkeypatch) -> N
     try:
         assert jobs._start("Train · fold 0", "Cells", "one fold",
                            [("fold 0", sys.executable, ["-c", "import time; time.sleep(30)"])])
-        monkeypatch.setattr(window, "_ask_about_job", lambda job, windows: asked.append(job) or "cancel")
+        monkeypatch.setattr(window, "_ask_about_job", lambda job, windows: asked.append(job) or False)
         assert not window._confirm_quit() and jobs.busy  # Cancel: the window and the job stay
-        detached = []
-        monkeypatch.setattr(window, "_ask_about_job", lambda job, windows: "keep")
-        monkeypatch.setattr(jobs, "detach", lambda: detached.append(True))
-        assert window._confirm_quit() and detached == [True] and asked[0].title == "Train · fold 0"
+        monkeypatch.setattr(window, "_ask_about_job", lambda job, windows: True)
+        assert window._confirm_quit() and asked[0].title == "Train · fold 0"  # closeEvent then stops the job
+        window.context.shutdown()
+        assert not jobs.busy
     finally:
         monkeypatch.undo()
         jobs.shutdown()
@@ -273,9 +273,6 @@ def test_new_iteration_button_and_source_dataset(tmp_path: Path) -> None:
     window = MainWindow()
     try:
         overview = window.overview
-        window.context.set_annotation_workflow(False)
-        assert overview._iteration.isHidden()  # only with the Annotation Workflow
-        window.context.set_annotation_workflow(True)
         assert not overview._iteration.isHidden()
 
         first = DatasetRecord(3, "Cells", raw_path=tmp_path / "Dataset003_Cells")

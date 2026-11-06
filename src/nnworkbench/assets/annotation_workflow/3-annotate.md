@@ -11,7 +11,9 @@
 
 **nnInteractive:** An interactive segmentation method which can generate 3D instance segmentation masks from simple 2D user input like clicks, boxes, lasso or scribbles.
 
-Links: [Paper](https://arxiv.org/abs/2503.08373) | [Code](https://github.com/MIC-DKFZ/nnInteractive) | [Napari Integration](https://github.com/MIC-DKFZ/napari-nninteractive) | [MITK Integration](https://www.mitk.org/)
+Links: [Paper](https://arxiv.org/abs/2503.08373) | [Code](https://github.com/MIC-DKFZ/nnInteractive) | [Napari Integration](https://github.com/MIC-DKFZ/napari-nninteractive) (built into nnWorkbench) | [MITK Integration](https://www.mitk.org/) (a separate application, not integrated in nnWorkbench)
+
+> **Note:** The [nnInteractive model weights](https://huggingface.co/MIC-DKFZ/nnInteractive), downloaded on first use, are licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/): **non-commercial use only**. Scribble annotations, nnU-Net and the rest of nnWorkbench are not affected.
 
 ## Annotation Principles
 
@@ -53,7 +55,7 @@ nnInteractive is not required for this workflow, but highly recommended, because
 
 If nnInteractive cannot be applied or does not produce satisfactory results, use scribble annotations as a fallback. Typically this is the case for at least the background class.
 
-Napari and MITK support both nnInteractive and scribble annotations using the brush tool. You can therefore combine both methods within the same annotation mask, for example nnInteractive for cells and scribbles for the background. Within one class, however, stick to one method (see [Q&A](#qa)).
+nnWorkbench annotates in Napari, which supports both nnInteractive and scribble annotations with the brush tool ([MITK](https://www.mitk.org/) offers the same outside nnWorkbench; see [Q&A](#qa) for other software). You can therefore combine both methods within the same annotation mask, for example nnInteractive for cells and scribbles for the background. Within one class, however, stick to one method (see [Q&A](#qa)).
 
 ### Annotation IDs
 
@@ -93,7 +95,7 @@ nnInteractive creates instance segmentations, meaning that individual objects ar
 
 **In nnWorkbench:**
 
-- Turn on the **Annotation Workflow** switch in the top bar. On the **Data** page, click the pencil button (**Annotate**) next to a case. The same button continues a saved annotation.
+- On the **Data** page, click the pencil button (**Annotate**) next to a case. The same button continues a saved annotation.
 - Napari opens with the image, its semantic map (empty or previously saved) and the nnInteractive controls, with the semantic map output already enabled.
 - Initialize nnInteractive and segment each object as described above. Use the [annotation IDs](#annotation-ids) listed in the **nnWorkbench — Annotation saving** panel.
 - Click **Save annotation**. The semantic map is saved to `labelsTr` with the correct filename and the original IDs. **Close Napari (Ctrl+W, on macOS Cmd+W)** closes the window when you are done.

@@ -67,9 +67,6 @@ class MainWindow(QMainWindow):
         self.app_bar.settings_requested.connect(self._open_settings)
         self.app_bar.guide_requested.connect(lambda: self._open_guide("README.md"))
         self.app_bar.about_requested.connect(self._open_about)
-        self.app_bar.annotation_toggled.connect(self.context.set_annotation_workflow)
-        self.app_bar.set_annotation(self.context.settings.annotation_workflow)
-        self.context.annotation_changed.connect(self.app_bar.set_annotation)
         self.switcher.dataset_chosen.connect(self.open_dataset)
         self.switcher.overview_requested.connect(self.show_overview)
         self.switcher.new_dataset_requested.connect(self._create_dataset)
@@ -269,8 +266,8 @@ class MainWindow(QMainWindow):
         return False
 
     def _confirm_quit(self) -> bool:
-        """Ask before quitting with unsaved edits, while a job runs (keep it running or stop it) or Napari windows
-        are open."""
+        """Ask before quitting with unsaved edits, while a job runs (quitting stops it) or Napari windows are open
+        (quitting closes them). Jobs never outlive the GUI: to run one without it, copy the command to a terminal."""
         if not self._confirm_leave():
             return False
         jobs, napari = self.context.jobs, self.context.napari_windows
@@ -278,10 +275,7 @@ class MainWindow(QMainWindow):
                    "well; save your annotations first." if napari else "")
         job = jobs.current
         if job is not None:
-            answer = self._ask_about_job(job, windows)
-            if answer == "keep":
-                jobs.detach()
-            return answer in {"keep", "stop"}
+            return self._ask_about_job(job, windows)
         if napari:
             return QMessageBox.question(
                 self, "Quit nnWorkbench?", windows.strip(),
@@ -289,28 +283,28 @@ class MainWindow(QMainWindow):
                 QMessageBox.StandardButton.Cancel) == QMessageBox.StandardButton.Close
         return True
 
-    def _ask_about_job(self, job, windows: str) -> str:
-        """"keep", "stop" or "cancel"."""
+    def _ask_about_job(self, job, windows: str) -> bool:
+        """True to stop the job and quit, False to stay."""
         progress = f" ({job.progress})" if job.progress else ""
         later = ""
         if job.steps:
             names = ", ".join(step[0] or "the next step" for step in job.steps)
-            later = f" The steps after it ({names}) do not start; start them again later."
+            later = f" The steps after it ({names}) do not start either."
         box = QMessageBox(self)
-        box.setIcon(QMessageBox.Icon.Question)
+        box.setIcon(QMessageBox.Icon.Warning)
         box.setWindowTitle("A job is running")
         box.setText(f"{job.label}{progress} is still running.")
         box.setInformativeText(
-            "Keep it running: it goes on without nnWorkbench and writes its output to the log file\n"
-            f"{job.log}\nA training shows up on the Train page again when you reopen nnWorkbench." + later + windows)
-        keep = box.addButton("Keep running and quit", QMessageBox.ButtonRole.AcceptRole)
+            "Quitting nnWorkbench stops it." + later + " A stopped training can be continued later from its last "
+            f"checkpoint (▶ Continue… on the Train page). Its output so far is in the log file\n{job.log}\n\n"
+            "To run a job without nnWorkbench, use Copy command and run it in a terminal." + windows)
         stop = box.addButton("Stop job and quit", QMessageBox.ButtonRole.DestructiveRole)
-        cancel = box.addButton(QMessageBox.StandardButton.Cancel)
-        box.setDefaultButton(cancel)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
         box.exec()
         clicked = box.clickedButton()
         box.deleteLater()
-        return "keep" if clicked is keep else "stop" if clicked is stop else "cancel"
+        return clicked is stop
 
 
 def _is_dir(path) -> bool:

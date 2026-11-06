@@ -262,7 +262,7 @@ Notes:
 - **2D images:** nnInteractive does not work on 2D; annotate with the brush only.
 - **Mac / no NVIDIA GPU:** nnInteractive runs on the CPU (slow); it can use an nnInteractive server on a GPU machine
   ([napari-nninteractive](https://github.com/MIC-DKFZ/napari-nninteractive)).
-- **GUI alternative:** `nnworkbench-gui` → dataset → switch on **Annotation Workflow** → **Data** page → pencil.
+- **GUI alternative:** `nnworkbench-gui` → dataset → **Data** page → pencil.
 - More on strategy: [3. Annotate](src/nnworkbench/assets/annotation_workflow/3-annotate.md).
 - Afterwards, `status --json` shows the new label files (`labeled_cases`, `unlabeled_cases[]`); update
   `numTraining` if images were added.
@@ -446,7 +446,7 @@ nnworkbench-run inspect-predictions OUT --images IN
 | Data stage `error` | Read `problems`: missing labels, names not matching, `numTraining` wrong, ignore not the highest ID or not spelled exactly `ignore` |
 | `annotate` / `inspect` says Napari is not installed | Core installation: install the full one |
 | `nnworkbench-gui` prints an install hint | Same: `pip install -e ".[all]"` |
-| nnInteractive **Initialize** fails with `_out_slice_checkbox_control` | Napari 0.9 is not supported by napari-nninteractive yet: `pip install "napari<0.9"` |
+| nnInteractive **Initialize** fails with `_out_slice_checkbox_control` | napari-nninteractive older than 2.5.4 with napari 0.9: `pip install -U "napari-nninteractive[local]>=2.5.4"` |
 | `No matching distribution found for mitk-python` | Python must be 3.12; macOS ≥ 13; Linux glibc ≥ 2.35; else core installation only |
 | A fold shows `stopped` | Job ended (time limit, closed app, error): resume with `--c` |
 | Windows: "Unable to open … for reading" (SimpleITK) or "Error while creating the NDArray" (blosc2) | A folder path with non-ASCII characters (`problems` says which): move the nnU-Net folders to an ASCII path and run `set-paths` again |
