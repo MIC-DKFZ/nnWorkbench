@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/nnworkbench/assets/images/readme-header.png" alt="nnWorkbench: from a few labels to your own segmentation model" width="720">
+  <img src="https://raw.githubusercontent.com/MIC-DKFZ/nnWorkbench/main/src/nnworkbench/assets/images/readme-header.png" alt="nnWorkbench: from a few labels to your own segmentation model" width="720">
 </p>
 
 <p align="center">
@@ -42,7 +42,7 @@ No labels yet? The Annotation Workflow gets you from raw images to a trained mod
 - **Made for sparse labels:** A trainer bundled with nnWorkbench learns from sparse labels and is selected automatically.
 - **Guided from start to finish:** A built-in guide explains every step, from defining your classes to deciding when the model is good enough.
 
-![Annotation Workflow: describe, define, annotate, train, validate, predict, with a loop back to annotation](src/nnworkbench/assets/images/annotation-workflow-header.png)
+![Annotation Workflow: describe, define, annotate, train, validate, predict, with a loop back to annotation](https://raw.githubusercontent.com/MIC-DKFZ/nnWorkbench/main/src/nnworkbench/assets/images/annotation-workflow-header.png)
 
 ## Installation
 
@@ -51,9 +51,9 @@ No labels yet? The Annotation Workflow gets you from raw images to a trained mod
 - **Python 3.12**
 - Windows 10/11, macOS 13 or newer, or Linux with glibc 2.35 or newer (e.g. Ubuntu 22.04+)
 - Conda or another Python environment manager
-- For training: an NVIDIA GPU, 24 GB of memory for the recommended setup, 8 GB at minimum with a smaller planner (see [Planners and GPU Memory](src/nnworkbench/assets/annotation_workflow/4-train.md#planners-and-gpu-memory) in the guide). Annotating, validating and predicting also work without one.
+- For training: an NVIDIA GPU, 24 GB of memory for the recommended setup, 8 GB at minimum with a smaller planner (see [Planners and GPU Memory](https://github.com/MIC-DKFZ/nnWorkbench/blob/main/src/nnworkbench/assets/annotation_workflow/4-train.md#planners-and-gpu-memory) in the guide). Annotating, validating and predicting also work without one.
 
-**From PyPI** *(coming soon: nnWorkbench is not on PyPI yet, so this does not work at the moment)*:
+**From PyPI:**
 
 ```bash
 conda create -n nnworkbench python=3.12
@@ -62,7 +62,7 @@ pip install "nnworkbench[all]"
 nnworkbench-gui
 ```
 
-**From source** (works now):
+**From source:**
 
 ```bash
 conda create -n nnworkbench python=3.12
@@ -87,13 +87,13 @@ pip install torch --index-url https://download.pytorch.org/whl/cu128
 
 If a CPU-only PyTorch is already installed, add `--force-reinstall` (pip keeps the installed version otherwise); the Info dialog of the GUI (top right) shows this command when the GPU is not usable.
 
-Then install nnWorkbench from PyPI *(coming soon: does not work at the moment)*:
+Then install nnWorkbench from PyPI:
 
 ```bash
 pip install "nnworkbench[all]"
 ```
 
-or from source (works now, inside the cloned repository):
+or from source (inside the cloned repository):
 
 ```bash
 pip install -e ".[all]"
@@ -119,10 +119,10 @@ nnWorkbench itself runs fully on macOS (13 or newer). For the GPU-heavy parts, i
 On a cluster, the core installation is enough: nnU-Net, the bundled trainers and the command-line tools, without the nnWorkbench GUI, Napari or nnInteractive.
 
 ```bash
-# from PyPI (coming soon, does not work at the moment)
+# from PyPI
 pip install nnworkbench
 
-# from source (works now, inside the cloned repository)
+# from source (inside the cloned repository)
 pip install -e .
 ```
 
@@ -141,9 +141,9 @@ Optionally, you can prepare this in the nnWorkbench GUI: on the overview, add a 
 <summary><b>Troubleshooting</b></summary>
 
 - **Windows, preprocessing or prediction fails with *Unable to open … for reading* or *Error while creating the NDArray*:** a folder path contains non-ASCII characters (e.g. `C:\Users\Jürgen\…`), which nnU-Net cannot use on Windows. Move the nnU-Net folders (and prediction input/output folders) to a path with ASCII characters only, e.g. `C:\nnUNet\nnUNet_raw`, and set them again. nnWorkbench marks such folders in red.
-- **`No matching distribution found for mitk-python`:** the environment does not use Python 3.12, or the system is too old (macOS below 13, Linux with glibc below 2.35). Create the environment with `python=3.12`; on older Linux systems, use the core installation (`pip install -e .`, later `pip install nnworkbench`) without the GUI.
+- **`No matching distribution found for mitk-python`:** the environment does not use Python 3.12, or the system is too old (macOS below 13, Linux with glibc below 2.35). Create the environment with `python=3.12`; on older Linux systems, use the core installation (`pip install nnworkbench`) without the GUI.
 - **Info shows *CPU only* although there is an NVIDIA GPU:** PyTorch was installed without CUDA support or does not match the driver; Info shows the cause and the fix.
-- **Qt 5 instead of Qt 6:** install the GUI without a Qt binding and add PyQt5: `pip install -e ".[gui]" PyQt5` (from PyPI, coming soon: `pip install "nnworkbench[gui]" PyQt5`).
+- **Qt 5 instead of Qt 6:** install the GUI without a Qt binding and add PyQt5: `pip install "nnworkbench[gui]" PyQt5` (from source: `pip install -e ".[gui]" PyQt5`).
 
 </details>
 
@@ -151,7 +151,7 @@ Optionally, you can prepare this in the nnWorkbench GUI: on the overview, add a 
 
 Start the GUI with `nnworkbench-gui`.
 
-![The overview: the three nnU-Net folders, all datasets found in them and the details of the selected dataset](src/nnworkbench/assets/images/gui-overview.png)
+![The overview: the three nnU-Net folders, all datasets found in them and the details of the selected dataset](https://raw.githubusercontent.com/MIC-DKFZ/nnWorkbench/main/src/nnworkbench/assets/images/gui-overview.png)
 
 1. **Set your folders.** On the overview, select three folders: `nnUNet_raw` for your datasets (images, labels and `dataset.json`), `nnUNet_preprocessed` for the preprocessed data used in training, and `nnUNet_results` for the trained models and their validation results. nnU-Net fills the last two. Empty folders are fine. nnWorkbench lists every dataset it finds in them.
 2. **Create a dataset or select an existing one.** Click **＋ New dataset**, or open a dataset from the list. Put your images into `imagesTr` (and, if you have them, your labels into `labelsTr`), and describe the classes with **Edit** next to `dataset.json`. Red badges on the **Data** page tell you what is still missing.
@@ -162,9 +162,9 @@ Start the GUI with `nnworkbench-gui`.
 7. **Iterate** *(Annotation Workflow only)*. Where the model is still wrong, start another iteration: select the dataset on the overview and click **＋ New iteration**. It copies the images and labels into a new dataset (or links the images, to save space); continue there with step 3 and annotate where the model fails.
 8. **Predict.** On **Predict**, choose a folder of new images and an output folder and click **▶ Predict**, or **Copy command** to run it on a remote machine.
 
-![The Data page of a dataset with sparse labels: the cases with their images and labels, dataset.json and the how-to](src/nnworkbench/assets/images/gui-data.png)
+![The Data page of a dataset with sparse labels: the cases with their images and labels, dataset.json and the how-to](https://raw.githubusercontent.com/MIC-DKFZ/nnWorkbench/main/src/nnworkbench/assets/images/gui-data.png)
 
-Every page has a short how-to on the left, and **? Guide** in the top bar opens the full [nnWorkbench guide](src/nnworkbench/assets/annotation_workflow/README.md). It explains both workflows step by step: how to understand your images, define classes, annotate efficiently, read the validation results, and decide when a model is good enough.
+Every page has a short how-to on the left, and **? Guide** in the top bar opens the full [nnWorkbench guide](https://github.com/MIC-DKFZ/nnWorkbench/blob/main/src/nnworkbench/assets/annotation_workflow/README.md). It explains both workflows step by step: how to understand your images, define classes, annotate efficiently, read the validation results, and decide when a model is good enough.
 
 ## CLI overview
 
@@ -231,7 +231,7 @@ Add `--json` to any tool that returns a result for machine-readable output, e.g.
 
 nnWorkbench is ready for AI coding agents such as Claude Code or Codex. Open the repository (or your working folder with it) in
 the agent and describe your goal, e.g. *"Help me train a model that segments the nuclei in my microscopy images in
-/data/images."* The agent follows [AGENTS.md](AGENTS.md): it asks about your images and labels in plain words, sets
+/data/images."* The agent follows [AGENTS.md](https://github.com/MIC-DKFZ/nnWorkbench/blob/main/AGENTS.md): it asks about your images and labels in plain words, sets
 up the dataset, runs preprocessing and training, and summarises the results. You do what needs your eyes and
 expertise: it opens the images for you to annotate and the predictions for you to check, and continues when you are
 done.
@@ -276,7 +276,7 @@ Each step needs the folder written by the previous one on the machine that runs 
 <details>
 <summary><b>Which file formats are supported?</b></summary>
 
-The formats nnU-Net reads: for 3D images `.nii.gz` / `.nii` (recommended), `.nrrd`, `.mha`, `.gipl` and `.tif` / `.tiff`; for 2D images `.png`, `.bmp` and `.tif`. JPEG is not supported, because its lossy compression alters the images. All images and labels of a dataset use the same file ending, set in `dataset.json`. A folder of 2D slices can be combined into one 3D volume with `nnworkbench-run stack-images` (see the [CLI overview](#cli-overview)); more in the guide under [Prepare Your Images](src/nnworkbench/assets/annotation_workflow/setup.md#prepare-your-images-optional).
+The formats nnU-Net reads: for 3D images `.nii.gz` / `.nii` (recommended), `.nrrd`, `.mha`, `.gipl` and `.tif` / `.tiff`; for 2D images `.png`, `.bmp` and `.tif`. JPEG is not supported, because its lossy compression alters the images. All images and labels of a dataset use the same file ending, set in `dataset.json`. A folder of 2D slices can be combined into one 3D volume with `nnworkbench-run stack-images` (see the [CLI overview](#cli-overview)); more in the guide under [Prepare Your Images](https://github.com/MIC-DKFZ/nnWorkbench/blob/main/src/nnworkbench/assets/annotation_workflow/setup.md#prepare-your-images-optional).
 
 </details>
 
@@ -296,16 +296,16 @@ Yes. nnInteractive can run on a server with a GPU, while you annotate in Napari 
 
 ## Documentation
 
-The **[nnWorkbench guide](src/nnworkbench/assets/annotation_workflow/README.md)** explains both workflows step by step, with the matching command for each step. It is also built into the GUI: **? Guide** in the top bar and **More in the guide · …** on every page.
+The **[nnWorkbench guide](https://github.com/MIC-DKFZ/nnWorkbench/blob/main/src/nnworkbench/assets/annotation_workflow/README.md)** explains both workflows step by step, with the matching command for each step. It is also built into the GUI: **? Guide** in the top bar and **More in the guide · …** on every page.
 
-- **[Setup](src/nnworkbench/assets/annotation_workflow/setup.md):** nnU-Net folders, remote machines, creating a dataset and `dataset.json`.
-- **[1. Describe](src/nnworkbench/assets/annotation_workflow/1-describe.md)** and **[2. Define](src/nnworkbench/assets/annotation_workflow/2-define.md):** understanding your images, defining classes, dense or sparse labels.
-- **[3. Annotate](src/nnworkbench/assets/annotation_workflow/3-annotate.md):** annotating efficiently with nnInteractive and scribbles.
-- **[4. Train](src/nnworkbench/assets/annotation_workflow/4-train.md):** preprocessing, planners and GPU memory, trainers, folds and device.
-- **[5. Validate](src/nnworkbench/assets/annotation_workflow/5-validate.md):** inspecting predictions, metrics, typical errors and the next iteration.
-- **[6. Predict](src/nnworkbench/assets/annotation_workflow/6-predict.md):** applying and sharing a trained model.
+- **[Setup](https://github.com/MIC-DKFZ/nnWorkbench/blob/main/src/nnworkbench/assets/annotation_workflow/setup.md):** nnU-Net folders, remote machines, creating a dataset and `dataset.json`.
+- **[1. Describe](https://github.com/MIC-DKFZ/nnWorkbench/blob/main/src/nnworkbench/assets/annotation_workflow/1-describe.md)** and **[2. Define](https://github.com/MIC-DKFZ/nnWorkbench/blob/main/src/nnworkbench/assets/annotation_workflow/2-define.md):** understanding your images, defining classes, dense or sparse labels.
+- **[3. Annotate](https://github.com/MIC-DKFZ/nnWorkbench/blob/main/src/nnworkbench/assets/annotation_workflow/3-annotate.md):** annotating efficiently with nnInteractive and scribbles.
+- **[4. Train](https://github.com/MIC-DKFZ/nnWorkbench/blob/main/src/nnworkbench/assets/annotation_workflow/4-train.md):** preprocessing, planners and GPU memory, trainers, folds and device.
+- **[5. Validate](https://github.com/MIC-DKFZ/nnWorkbench/blob/main/src/nnworkbench/assets/annotation_workflow/5-validate.md):** inspecting predictions, metrics, typical errors and the next iteration.
+- **[6. Predict](https://github.com/MIC-DKFZ/nnWorkbench/blob/main/src/nnworkbench/assets/annotation_workflow/6-predict.md):** applying and sharing a trained model.
 
-**For AI agents:** [AGENTS.md](AGENTS.md) guides an agent (e.g. Claude Code or Codex) through the whole process with CLI commands, and tells it where you take over (annotating, looking at results).
+**For AI agents:** [AGENTS.md](https://github.com/MIC-DKFZ/nnWorkbench/blob/main/AGENTS.md) guides an agent (e.g. Claude Code or Codex) through the whole process with CLI commands, and tells it where you take over (annotating, looking at results).
 
 **Underlying tools:**
 
@@ -315,7 +315,21 @@ The **[nnWorkbench guide](src/nnworkbench/assets/annotation_workflow/README.md)*
 
 ## Citation
 
-nnWorkbench builds on nnInteractive and nnU-Net. If it helps your research, please cite the methods you used. A citable reference for nnWorkbench itself will follow with the first release.
+If nnWorkbench helps your research, please cite it together with the methods you used: nnInteractive for the annotation, nnU-Net for preprocessing, training and prediction. The software citation is also in [`CITATION.cff`](https://github.com/MIC-DKFZ/nnWorkbench/blob/main/CITATION.cff) (**Cite this repository** on GitHub).
+
+**nnWorkbench**:
+
+> Krämer, L., Isensee, F., Maier-Hein, K. H., & Dreher, K. K. (2026). nnWorkbench (Version 0.1.0) [Computer software]. https://github.com/MIC-DKFZ/nnWorkbench
+
+```bibtex
+@software{nnworkbench2026,
+  author  = {Krämer, Lars and Isensee, Fabian and Maier-Hein, Klaus H. and Dreher, Kris K.},
+  title   = {nnWorkbench},
+  version = {0.1.0},
+  year    = {2026},
+  url     = {https://github.com/MIC-DKFZ/nnWorkbench}
+}
+```
 
 **nnInteractive** (annotation):
 
@@ -333,7 +347,7 @@ nnWorkbench builds on nnInteractive and nnU-Net. If it helps your research, plea
 
 ## License
 
-nnWorkbench is licensed under the [Apache License 2.0](LICENSE).
+nnWorkbench is licensed under the [Apache License 2.0](https://github.com/MIC-DKFZ/nnWorkbench/blob/main/LICENSE).
 
 > **Note:** The [nnInteractive model weights](https://huggingface.co/MIC-DKFZ/nnInteractive), downloaded on first use
 > for interactive annotation, are licensed under
@@ -343,9 +357,9 @@ nnWorkbench is licensed under the [Apache License 2.0](LICENSE).
 ## Acknowledgements
 
 <p>
-  <img src="src/nnworkbench/assets/images/helmholtz-imaging-logo.svg" alt="Helmholtz Imaging" height="40">
+  <img src="https://raw.githubusercontent.com/MIC-DKFZ/nnWorkbench/main/src/nnworkbench/assets/images/helmholtz-imaging-logo.svg" alt="Helmholtz Imaging" height="40">
   &nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="src/nnworkbench/assets/images/dkfz-logo.svg" alt="German Cancer Research Center (DKFZ)" height="38">
+  <img src="https://raw.githubusercontent.com/MIC-DKFZ/nnWorkbench/main/src/nnworkbench/assets/images/dkfz-logo.svg" alt="German Cancer Research Center (DKFZ)" height="38">
 </p>
 
 This repository is developed and maintained by the Applied Computer Vision Lab (ACVL)

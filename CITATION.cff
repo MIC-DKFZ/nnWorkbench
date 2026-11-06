@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use nnWorkbench in your research, please cite it as below, together with nnInteractive and nnU-Net."
+type: software
+title: "nnWorkbench"
+abstract: "A GUI for nnU-Net workflows and nnInteractive-powered annotation"
+authors:
+  - family-names: "Krämer"
+    given-names: "Lars"
+    email: "lars.kraemer@dkfz-heidelberg.de"
+    affiliation: "Division of Medical Image Computing, German Cancer Research Center (DKFZ), Heidelberg, Germany; Helmholtz Imaging"
+  - family-names: "Isensee"
+    given-names: "Fabian"
+    affiliation: "Division of Medical Image Computing, German Cancer Research Center (DKFZ), Heidelberg, Germany; Helmholtz Imaging"
+  - family-names: "Maier-Hein"
+    given-names: "Klaus H."
+    affiliation: "Division of Medical Image Computing, German Cancer Research Center (DKFZ), Heidelberg, Germany; Helmholtz Imaging"
+  - family-names: "Dreher"
+    given-names: "Kris K."
+    affiliation: "Division of Medical Image Computing, German Cancer Research Center (DKFZ), Heidelberg, Germany; Helmholtz Imaging"
+version: "0.1.0"
+date-released: "2026-11-06"
+license: "Apache-2.0"
+repository-code: "https://github.com/MIC-DKFZ/nnWorkbench"
+url: "https://github.com/MIC-DKFZ/nnWorkbench"
+keywords:
+  - nnU-Net
+  - nnInteractive
+  - segmentation
+  - annotation
+  - medical imaging
