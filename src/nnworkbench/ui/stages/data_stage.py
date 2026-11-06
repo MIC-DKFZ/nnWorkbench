@@ -17,7 +17,13 @@ from qtpy.QtWidgets import (
 )
 
 from nnworkbench.services.dataset_scanner import id_badge
-from nnworkbench.services.workflow_status import CaseRow, geometries_match, read_geometry
+from nnworkbench.services.workflow_status import (
+    CaseRow,
+    channel_problems,
+    geometries_match,
+    read_geometry,
+    suffixed_name,
+)
 
 from ..context import AppContext
 from ..dataset_state import (
@@ -417,7 +423,9 @@ class DataStage(StagePage):
         for index in range(start, stop):
             row = self._rows[index]
             self._table.setItem(index, 0, table_item(row.case_id, mono=True))
-            self._table.setItem(index, 1, mark_item(row.channels_present))
+            images = mark_item(row.channels_present)
+            images.setToolTip(self._channel_tooltip(row))
+            self._table.setItem(index, 1, images)
             labels = mark_item(row.has_label)
             labels.setToolTip(f"Last edit: {format_time(row.last_edit)}" if row.has_label else "No label yet")
             self._table.setItem(index, 2, labels)
@@ -427,6 +435,19 @@ class DataStage(StagePage):
             QTimer.singleShot(0, lambda: self._fill_batch(stop, version))
         else:
             self._counts.setText(self._counts_text)
+
+    def _channel_tooltip(self, row: CaseRow) -> str:
+        """Why the Images mark is red: a file without _0000, or a missing channel file."""
+        if row.channels_present:
+            count = len(row.image_files)
+            return f"{count} image file{'s' if count != 1 else ''}"
+        unsuffixed = [path.name for path, suffix in zip(row.image_files, row.channel_suffixes) if suffix is None]
+        if unsuffixed:
+            return f"No _0000 channel suffix: rename {unsuffixed[0]} to {suffixed_name(unsuffixed[0])}"
+        required = self.state.raw.required_suffixes if self.state else ("0000",)
+        missing = [suffix for suffix in required if suffix not in row.channel_suffixes]
+        return (f"Channel file{'s' if len(missing) != 1 else ''} missing: {', '.join('_' + s for s in missing)} "
+                f"(expected {row.case_id}_{missing[0]}…)")
 
     def _update_stats_buttons(self) -> None:
         self._table.viewport().update()
@@ -470,10 +491,17 @@ class DataStage(StagePage):
                                "without label", "red"))
         if (id_warning := id_badge(state.record)) is not None:
             items.append(badge(*id_warning))
-        if not raw.names_valid:
-            items.append(badge("names invalid · images need a _0000 channel suffix", "red"))
-        if not raw.channels_complete:
-            items.append(badge("channels missing", "red"))
+        if raw.unsuffixed_images:  # the tooltips name a file and the fix, as the problems on the Data tab do
+            count = len(raw.unsuffixed_images)
+            items.append(badge(f"names invalid · {count} image{'s' if count != 1 else ''} without _0000 suffix", "red",
+                               next(problem for problem in channel_problems(raw) if "_0000 channel suffix" in problem)))
+        if (missing := raw.missing_channel_cases()) and not raw.channel_problem:
+            items.append(badge(f"channels missing · {len(missing)} case{'s' if len(missing) != 1 else ''}", "red",
+                               next(problem for problem in channel_problems(raw) if problem.startswith("channels"))))
+        if raw.unmatched_labels:  # always, not only when it is the sole problem
+            count = len(raw.unmatched_labels)
+            items.append(badge(f"{count} label{'s' if count != 1 else ''} without image", "red",
+                               next((problem for problem in state.data_problems() if "match no image" in problem), "")))
         for folder, files in (("imagesTr", raw.unsupported_images), ("labelsTr", raw.unsupported_labels)):
             if jpeg := jpeg_files(files):  # nnU-Net cannot read JPEG: convert
                 items.append(badge(f"{len(jpeg)} JPEG file{'s' if len(jpeg) != 1 else ''} in {folder}", "red",

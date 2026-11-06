@@ -152,6 +152,18 @@ class RawOverview:
     unlisted_images: tuple[str, ...] = ()  # in imagesTr but not in the file list: nnU-Net ignores them
     label_times: tuple[float, ...] = ()  # when each label file found was last changed (the outdated checks)
     unsupported_labels: tuple[str, ...] = ()  # the same in labelsTr (a .jpg mask: its case shows no label)
+    unsuffixed_images: tuple[str, ...] = ()  # image files without a _0000 channel suffix (names_valid is False)
+
+    def missing_channel_cases(self) -> list[tuple[str, list[str]]]:
+        """Cases that lack a channel file, with the missing suffixes; cases whose files have no suffix at all are
+        left out (they are the unsuffixed_images problem, not a missing channel)."""
+        found = []
+        for case in self.cases:
+            if case.channels_present or not any(suffix is not None for suffix in case.channel_suffixes):
+                continue
+            found.append((case.case_id, [suffix for suffix in self.required_suffixes
+                                         if suffix not in case.channel_suffixes]))
+        return found
 
     @property
     def newest_label(self) -> float | None:
@@ -248,6 +260,7 @@ def raw_overview(raw_path: Path | None, manifest: dict | None) -> RawOverview:
     labels_dir = raw_path / "labelsTr" if raw_path else None
     images: dict[str, list[Path]] = {}
     names_valid = True
+    unsuffixed = []
     image_count = 0
     unsupported = []
     for entry in _scan(images_dir):
@@ -261,6 +274,7 @@ def raw_overview(raw_path: Path | None, manifest: dict | None) -> RawOverview:
         case, channel = _image_case(entry.name)
         if channel is None:
             names_valid = False
+            unsuffixed.append(entry.name)
         images.setdefault(case, []).append(Path(entry.path))
     labels: dict[str, Path] = {}
     unsupported_labels = []
@@ -289,7 +303,31 @@ def raw_overview(raw_path: Path | None, manifest: dict | None) -> RawOverview:
     return RawOverview(tuple(rows), image_count, len(labels), channels, names_valid, unmatched,
                        tuple(sorted(unsupported, key=str.casefold)), required, channel_problem,
                        label_times=tuple(value for value in edited.values() if value is not None),
-                       unsupported_labels=tuple(sorted(unsupported_labels, key=str.casefold)))
+                       unsupported_labels=tuple(sorted(unsupported_labels, key=str.casefold)),
+                       unsuffixed_images=tuple(sorted(unsuffixed, key=str.casefold)))
+
+
+def suffixed_name(name: str) -> str:
+    """The file name with the _0000 channel suffix added, e.g. cells_003.nii.gz → cells_003_0000.nii.gz."""
+    stem = strip_image_suffix(name)
+    return f"{stem}_0000{name[len(stem):]}"
+
+
+def channel_problems(raw: RawOverview) -> list[str]:
+    """The file naming problems nnU-Net would fail on, each naming a file and the fix: images without a _0000
+    suffix, and cases that lack a channel file."""
+    problems = []
+    if raw.unsuffixed_images:
+        count, example = len(raw.unsuffixed_images), raw.unsuffixed_images[0]
+        problems.append(f"{count} image{'s' if count != 1 else ''} without a _0000 channel suffix (e.g. {example}): "
+                        f"rename to {suffixed_name(example)}")
+    missing = raw.missing_channel_cases()
+    if missing:
+        case, suffixes = missing[0]
+        problems.append(f"channels missing for {len(missing)} case{'s' if len(missing) != 1 else ''} (e.g. {case}: "
+                        f"{', '.join('_' + suffix for suffix in suffixes)} missing): one file per channel of "
+                        f"dataset.json, named {case}_0000, _0001, …")
+    return problems
 
 
 def newest_label_time(raw_path: Path | None) -> float | None:

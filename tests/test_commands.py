@@ -431,6 +431,9 @@ def test_training_an_existing_fold_again_needs_yes(tmp_path, monkeypatch, capsys
     fold.mkdir(parents=True)
     (fold / "training_log_1.txt").touch()
     os.utime(fold / "training_log_1.txt", (time.time() - 3600,) * 2)  # stopped an hour ago, not training
+    plans = tmp_path / "preprocessed" / "Dataset042_Cells" / "nnUNetResEncUNetLPlans.json"  # preprocessed
+    plans.parent.mkdir(parents=True)
+    plans.write_text("{}", encoding="utf-8")
     command = ["nnUNetv2_train", "42", "3d_fullres", "0", "-p", "nnUNetResEncUNetLPlans"]
     calls = []
     monkeypatch.setattr(command_runner, "find_executable", lambda name: name)
@@ -449,6 +452,7 @@ def test_training_an_existing_fold_again_needs_yes(tmp_path, monkeypatch, capsys
     assert calls[-1] == command  # --yes is not passed on to nnU-Net
     monkeypatch.setenv(command_runner.YES_ENVIRONMENT, "1")  # the GUI asks the user itself
     assert command_runner.run_with_configured_paths(command) == 0
+    (plans.parent / "nnUNetPlans.json").write_text("{}", encoding="utf-8")  # the default plans, preprocessed too
     assert command_runner.run_with_configured_paths(["nnUNetv2_train", "42", "3d_fullres", "1"]) == 0  # new fold
 
 

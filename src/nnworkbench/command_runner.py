@@ -85,6 +85,27 @@ def trained_fold(command: Sequence[str], results_root: Path | None) -> tuple[Pat
     return None
 
 
+def missing_preprocessing(command: Sequence[str], preprocessed_root: Path | None) -> str:
+    """Why an nnUNetv2_train command would fail at once: the plans of the dataset are not preprocessed in
+    nnUNet_preprocessed ("" when they are, or when this is no training command). nnU-Net itself ends in a
+    FileNotFoundError traceback for the plans file."""
+    if not command or not is_program(command[0], "nnUNetv2_train") or preprocessed_root is None:
+        return ""
+    parsed = _training_arguments(command[1:])
+    if parsed is None or parsed.val:  # --val only validates an existing training
+        return ""
+    dataset = parsed.dataset
+    folders = ([path for path in preprocessed_root.glob(f"Dataset{int(dataset):03d}_*") if path.is_dir()]
+               if dataset.isdigit() else [preprocessed_root / dataset])
+    if any((folder / f"{parsed.p}.json").is_file() for folder in folders):
+        return ""
+    where = (f"{folders[0]}" if folders and not dataset.isdigit() else
+             f"{preprocessed_root / f'Dataset{int(dataset):03d}_*' if dataset.isdigit() else preprocessed_root}")
+    return (f"No preprocessed data for dataset {dataset} with plans {parsed.p} ({parsed.p}.json not found in {where}): "
+            "run nnUNetv2_plan_and_preprocess first, e.g. nnworkbench-run suggest -d "
+            f"{dataset} --step preprocess.")
+
+
 def existing_training(command: Sequence[str], results_root: Path | None) -> Path | None:
     """The fold folder an nnUNetv2_train command would start again from scratch, or None.
 
@@ -144,18 +165,24 @@ def run_with_configured_paths(command: Sequence[str]) -> int:
     paths = configured_paths()
     note_environment_differences(paths)
     results_root = Path(paths["nnUNet_results"]) if paths.get("nnUNet_results") else None
+    preprocessed_root = Path(paths["nnUNet_preprocessed"]) if paths.get("nnUNet_preprocessed") else None
+    not_preprocessed = missing_preprocessing(command, preprocessed_root)
     replaced = existing_training(command, results_root)
     running = running_training(command, results_root)
     if dry_run:
         print("Would run: " + shell_join([find_executable(command[0]), *command[1:]]))
         for name, value in paths.items():
             print(f"  {name}={value}")
+        if not_preprocessed:
+            print(f"  Note: {not_preprocessed}")
         if replaced is not None:
             print(f"  This starts {replaced} again from scratch and replaces its results"
                   + ("" if confirmed else " (needs --yes)") + ".")
         if running is not None:
             print(f"  {running} seems to be still training" + ("" if confirmed else " (needs --yes)") + ".")
         return 0
+    if not_preprocessed:
+        raise ValueError(not_preprocessed)
     if replaced is not None and not confirmed:
         raise ValueError(f"{replaced} already has a training. Running this command starts it again and replaces its "
                          "checkpoints and validation results. Add --c to continue it instead, or --yes to start it "
@@ -303,15 +330,19 @@ def run_annotation(dataset_id: int, index: int = 1, case: str = "") -> int:
         from .services.napari_inspector import open_annotation
     except ImportError as error:
         raise RuntimeError("Napari is not installed. Use the full installation to annotate.") from error
-    from .services.dataset_json import REGIONS_NOTE, has_regions, read_manifest
+    from .services.dataset_json import REGIONS_NOTE, definition_errors, has_regions, read_manifest
 
     dataset_directory, image, index, total = _case_image(dataset_id, index, case)
     try:
         manifest = read_manifest(dataset_directory)
-    except (OSError, ValueError):
-        manifest = None
+        problems = definition_errors(manifest) if isinstance(manifest, dict) else ()
+    except (OSError, ValueError) as error:
+        manifest, problems = None, (f"dataset.json cannot be read ({error}).",)
     if has_regions(manifest):
         raise ValueError(f"{dataset_directory.name} has region-based labels. {REGIONS_NOTE}")
+    if problems:  # annotating is possible, but the saving panel cannot list or shift the IDs
+        print("Warning: dataset.json has problems, so Napari lists no annotation IDs and saving writes the IDs you "
+              "paint. Fix it before training: " + " ".join(problems), file=sys.stderr)
     print(f"Annotating {image.name} ({index} of {total}) in {dataset_directory.name}. "
           "Click Save annotation in Napari, then close it.")
     open_annotation(image)

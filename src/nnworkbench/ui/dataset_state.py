@@ -26,6 +26,7 @@ from nnworkbench.services.workflow_status import (
     PlansInfo,
     RawOverview,
     any_fold_training,
+    channel_problems,
     ignore_label_id,
     label_names,
     models_overview,
@@ -103,8 +104,6 @@ class DatasetState:
             problems.append(f"{NON_ASCII_HINT}: {', '.join(unusable)}")
         if raw.missing_labels:
             problems.append(f"{raw.missing_labels} image{'s' if raw.missing_labels != 1 else ''} without label")
-        if not raw.names_valid:
-            problems.append("image names need a _0000 channel suffix")
         if raw.unlisted_images:
             problems.append(f"{len(raw.unlisted_images)} image{'s' if len(raw.unlisted_images) != 1 else ''} in "
                             f"imagesTr (e.g. {raw.unlisted_images[0]}) not in the \"dataset\" file list of "
@@ -114,8 +113,8 @@ class DatasetState:
                             f"dataset.json (\"dataset\") not found (e.g. {raw.missing_files[0]})")
         if raw.channel_problem:
             problems.append(raw.channel_problem)
-        elif not raw.channels_complete:
-            problems.append("channels missing")
+        else:
+            problems.extend(channel_problems(raw))  # images without _0000, cases without a channel file
         extra = [] if raw.file_list else sorted(
             {channel for case in raw.cases for channel in case.extra_channels(raw.required_suffixes)})
         if extra and not raw.channel_problem:

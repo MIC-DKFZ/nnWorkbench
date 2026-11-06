@@ -162,3 +162,42 @@ def test_a_trainer_or_planner_that_is_not_installed_only_copies(env, tmp_path: P
     predict._trainer.setCurrentText("nnUNetTrainer_250epochs")
     assert not predict._predict.isEnabled() and "is not installed" in predict._busy_hint.text()
     assert "-tr nnUNetTrainer_250epochs" in predict._command.command()
+
+
+def test_a_gpu_run_on_a_computer_without_a_usable_gpu_only_copies(env, tmp_path: Path) -> None:
+    from nnworkbench.services.device_probe import DeviceInfo
+
+    _raw(env.root, cases=("a", "b", "c", "d", "e"))
+    _preprocessed(env.root, cases=5)
+    _model(env.root, folds=("0",))
+    source = env.root / "input"
+    source.mkdir()
+    (source / "x_0000.nii.gz").touch()
+    env.open()
+    train, predict = env.page.pages["train"], env.page.pages["predict"]
+    predict._input.setText(str(source))
+    predict._output.setText(str(env.root / "out"))
+    predict._folders_changed()
+    env.wait()
+    train._open_defaults()
+    assert train._device.index() == 0 and train._start.isEnabled()  # GPU preselected, device still being checked
+    # a PyTorch without CUDA next to an NVIDIA GPU (the Windows default): the run would crash at the start
+    env.context._device_detected(DeviceInfo(kind="cpu", torch_version="2.5.1+cpu", nvidia_gpu=True))
+    assert not train._start.isEnabled() and "No usable NVIDIA GPU" in train._busy_hint.text()
+    assert train._busy_hint.property("tone") == "orange" and "-device" not in train._command.command()
+    assert not predict._predict.isEnabled() and "No usable NVIDIA GPU" in predict._busy_hint.text()
+    train._device.set_index(2)  # CPU (set_index does not emit changed; a click does)
+    train._update_command()
+    assert train._start.isEnabled() and "-device cpu" in train._command.command()
+    predict._device.set_index(1)  # MPS on a Linux box
+    predict._update_command()
+    assert not predict._predict.isEnabled() and "No Apple GPU" in predict._busy_hint.text()
+    predict._device.set_index(2)
+    predict._update_command()
+    assert predict._predict.isEnabled()
+    env.context._device_detected(DeviceInfo(kind="cuda", torch_version="2.5.1+cu124", cuda_build="12.4",
+                                            gpus=(("NVIDIA RTX 4090", 24.0),)))
+    train._device.set_index(0)
+    train._update_command()
+    assert train._start.isEnabled()
+    train._run_dialog.close()

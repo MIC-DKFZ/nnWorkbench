@@ -325,6 +325,8 @@ nnworkbench-run nnUNetv2_train 42 3d_fullres 0 -tr nnUNetTrainerBetterIgnoreSamp
   fold already has results; after the user agreed, add `--yes`. Prefer a new iteration (`new-iteration`) to keep the
   old model for comparison.
 - **Out of GPU memory:** preprocess with a smaller planner and train with its plans.
+- **Not preprocessed:** `nnworkbench-run nnUNetv2_train` refuses when the plans (`-p`) are not in
+  `nnUNet_preprocessed` for the dataset and names the preprocess step; `--dry-run` prints it as a note.
 
 ## 6. Validate (agent summarises, human decides)
 

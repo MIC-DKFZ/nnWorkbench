@@ -503,6 +503,12 @@ class AnnotationSaveWidget(QWidget):
         labels = annotation_label_summary(image_path)
         self._label_summary = QLabel("<b>Annotation IDs</b>" if labels else "<b>Annotation IDs: </b> unavailable")
         layout.addWidget(self._label_summary)
+        if not labels:  # dataset.json unreadable or without labels: the IDs cannot be listed or shifted
+            warning = QLabel("<i>dataset.json of this dataset cannot be read or defines no labels, so the IDs are not "
+                             "listed and nothing is shifted: saving writes the IDs you paint. Fix dataset.json "
+                             "(Edit on the Data page) and check the saved label before training.</i>")
+            warning.setWordWrap(True)
+            layout.addWidget(warning)
         self._label_list = annotation_legend(labels)
         self._label_list.setVisible(bool(labels))
         layout.addWidget(self._label_list)

@@ -79,6 +79,10 @@ def definition_errors(manifest: dict) -> tuple[str, ...]:
                            for identifier in label_ids)
                 or sorted(label_ids) != list(range(len(label_ids)))):
             errors.append("Labels must have continuous numeric IDs and a name for every label.")
+        elif "ignore" in labels and labels["ignore"] != max(label_ids):
+            # nnU-Net asserts ignore_label == max(all_labels) + 1 when it preprocesses
+            errors.append(f"The ignore label must have the highest ID (it is {labels['ignore']}, the highest is "
+                          f"{max(label_ids)}). Renumber the classes in dataset.json and in the label files.")
     if isinstance(labels, dict):
         # nnU-Net recognises the ignore label only by the exact key "ignore"; anything else is trained as a class
         for name in labels:

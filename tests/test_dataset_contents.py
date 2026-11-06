@@ -81,6 +81,15 @@ def test_definition_errors_reports_invalid_labels() -> None:
     assert errors == ("Labels must have continuous numeric IDs and a name for every label.",)
 
 
+def test_definition_errors_reports_an_ignore_label_that_is_not_the_highest_id() -> None:
+    # nnU-Net asserts this in preprocessing; a hand-written dataset.json passed as "ready" before
+    manifest = {"channel_names": {"0": "CT"}, "labels": {"background": 0, "ignore": 1, "liver": 2, "tumor": 3}}
+    (error,) = definition_errors(manifest)
+    assert error.startswith("The ignore label must have the highest ID (it is 1, the highest is 3)")
+    manifest["labels"] = {"background": 0, "liver": 1, "tumor": 2, "ignore": 3}
+    assert definition_errors(manifest) == ()
+
+
 def test_file_ending_error() -> None:
     assert file_ending_error({"file_ending": ".nii.gz"}) is None
     assert file_ending_error({}) is not None

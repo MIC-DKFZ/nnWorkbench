@@ -595,6 +595,8 @@ class TrainStage(StagePage):
         if not reason:
             reason = self.unknown_class("trainer", self._trainer.currentText())
         if not reason:
+            reason = self.device_missing(DEVICE_CHOICES[self._device.index()])
+        if not reason:
             reason = self._not_preprocessed_here()
         folds = len(self._fold_choice.selected())
         if not reason and not folds:

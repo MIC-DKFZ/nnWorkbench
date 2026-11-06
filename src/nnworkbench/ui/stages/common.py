@@ -328,6 +328,22 @@ class StagePage(QWidget):
     def update_actions(self) -> None:
         """Enable or disable run buttons (one job at a time, missing folders)."""
 
+    def device_missing(self, choice: str) -> str:
+        """Why a run cannot start here: the chosen device (GPU or MPS) was not found on this computer, e.g. a
+        PyTorch build without CUDA ("" for CPU, while the check runs, or when the device is there)."""
+        info = self.context.device
+        if choice == "CPU" or info is None:
+            return ""
+        if choice == "GPU" and info.kind != "cuda":
+            cause = ("PyTorch cannot use it" if info.nvidia_gpu else "no NVIDIA GPU found") if info.kind == "cpu" \
+                else "PyTorch could not be checked"
+            return (f"No usable NVIDIA GPU on this computer ({cause}; see Info, top right). Choose CPU, or use Copy "
+                    "command and run it on a computer with a GPU.")
+        if choice == "MPS" and info.kind != "mps":
+            return ("No Apple GPU on this computer. Choose GPU or CPU, or use Copy command and run it on a Mac with "
+                    "Apple silicon.")
+        return ""
+
     def unknown_class(self, kind: str, name: str) -> str:
         """Why a run cannot start here: *name* is not an installed trainer or planner ("" when it is, when the
         name is empty, or while the installed classes are unknown or could not be listed)."""

@@ -57,6 +57,15 @@ def _state(raw: Path | None = None, preprocessed: Path | None = None, results: P
     return load_state(DatasetRecord(7, "Cells", raw, preprocessed, results))
 
 
+def _plans(preprocessed_root: Path, plans: str = "nnUNetPlans") -> Path:
+    """The plans file nnUNetv2_train needs (the dataset is preprocessed)."""
+    folder = preprocessed_root / NAME
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{plans}.json"
+    path.write_text("{}", encoding="utf-8")
+    return path
+
+
 def _fold(results_root: Path, fold: str = "0", log: str = "", age: float = 0.0) -> Path:
     folder = results_root / NAME / MODEL / f"fold_{fold}"
     folder.mkdir(parents=True)
@@ -119,6 +128,7 @@ def _no_run(monkeypatch) -> list:
     ["nnUNetv2_train", "007", "3d_fullres", "00"]])
 def test_e10_a5_retrain_guard_reads_arguments_as_nnunet(command, tmp_path, monkeypatch) -> None:
     roots = _roots(tmp_path, monkeypatch)
+    _plans(roots["preprocessed"])
     _fold(roots["results"], age=3600)
     calls = _no_run(monkeypatch)
     with pytest.raises(ValueError, match="already has a training"):
@@ -128,6 +138,7 @@ def test_e10_a5_retrain_guard_reads_arguments_as_nnunet(command, tmp_path, monke
 
 def test_a6_c7_a_fold_still_training_needs_yes_also_with_continue(tmp_path, monkeypatch) -> None:
     roots = _roots(tmp_path, monkeypatch)
+    _plans(roots["preprocessed"])
     _fold(roots["results"])  # log written just now
     calls = _no_run(monkeypatch)
     command = ["nnUNetv2_train", "7", "3d_fullres", "0", "--c"]
@@ -142,6 +153,24 @@ def test_a6_slow_epochs_keep_a_fold_training_and_c7_a_future_log_does_not(tmp_pa
     assert fold_info(slow).status == "training"  # two epochs of an hour, not 15 minutes
     future = _fold(tmp_path, "1", age=-3 * 24 * 3600)
     assert fold_info(future).status == "stopped"
+
+
+def test_training_without_preprocessed_data_is_refused_with_the_next_step(tmp_path, monkeypatch, capsys) -> None:
+    roots = _roots(tmp_path, monkeypatch)
+    calls = _no_run(monkeypatch)
+    command = ["nnUNetv2_train", "7", "3d_fullres", "0", "-p", "nnUNetResEncUNetLPlans"]
+    with pytest.raises(ValueError, match="No preprocessed data for dataset 7 with plans nnUNetResEncUNetLPlans"):
+        command_runner.run_with_configured_paths(command)
+    assert calls == []
+    assert command_runner.run_with_configured_paths([*command, "--dry-run"]) == 0  # dry-run: a note, exit 0
+    assert "Note: No preprocessed data" in capsys.readouterr().out and "suggest -d 7 --step preprocess" in str(
+        command_runner.missing_preprocessing(command, roots["preprocessed"]))
+    _plans(roots["preprocessed"], "nnUNetResEncUNetLPlans")  # preprocessed: runs
+    assert command_runner.run_with_configured_paths(command) == 0 and calls == [command]
+    # --val only validates: no preprocessing check; a dataset given by name is looked up by name
+    assert command_runner.missing_preprocessing([*command, "--val"], roots["preprocessed"]) == ""
+    assert "Dataset007_Cells" in command_runner.missing_preprocessing(["nnUNetv2_train", NAME, "2d", "0"],
+                                                                       roots["preprocessed"])
 
 
 def test_c11_killed_job_exits_with_128_plus_signal(tmp_path, monkeypatch) -> None:

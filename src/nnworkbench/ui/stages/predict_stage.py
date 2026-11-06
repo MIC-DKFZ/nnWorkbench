@@ -525,6 +525,8 @@ class PredictStage(StagePage):
             reason = "Enter the trainer, plans and configuration of the model."
         if not reason:
             reason = self.unknown_class("trainer", self._trainer.currentText())
+        if not reason:
+            reason = self.device_missing(DEVICE_CHOICES[self._device.index()])
         if not reason and self._current_model() is None:
             reason = ("This model is not in nnUNet_results on this computer. Use Copy command and run it where the "
                       "model is, or train it here first.")
