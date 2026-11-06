@@ -36,6 +36,9 @@ GUIDE_STAGES = (
 CODE_BLOCK_BACKGROUND = QColor("#f3f5f8")
 TAGLINE_COLOR = QColor("#0a4697")
 DOCUMENT_MARGIN = 20
+# Images are scaled down to the available width, but never shown wider than this: in a maximised window a
+# 1600 px screenshot filled the whole guide while the smaller images next to it stayed small.
+MAX_IMAGE_WIDTH = 960
 
 
 def _monospace_font() -> QFont:
@@ -115,7 +118,7 @@ class GuideBrowser(QTextBrowser):
     def _image_width(self) -> int:
         # Always reserve the vertical scroll bar so images fit whether or not it is shown.
         available = self.width() - 2 * self.frameWidth() - self.verticalScrollBar().sizeHint().width()
-        return max(160, available - 2 * DOCUMENT_MARGIN - 8)
+        return min(MAX_IMAGE_WIDTH, max(160, available - 2 * DOCUMENT_MARGIN - 8))
 
     def _reflow_images(self) -> None:
         if self.source().isEmpty() or abs(self._image_width() - self._rendered_width) < 8:

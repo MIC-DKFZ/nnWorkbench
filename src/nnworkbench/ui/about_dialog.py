@@ -17,6 +17,32 @@ from .widgets import AppMark, Card, badge, button, icon_label, label, logo_label
 _WIDTH = 560
 
 
+def device_rows(device: DeviceInfo) -> list[tuple[str, str]]:
+    """The device details as (name, value) rows: the GPUs (or why none is used) and the PyTorch build."""
+    rows = []
+    if device.kind == "cuda":
+        rows += [("GPU" if len(device.gpus) == 1 else f"GPU {index}", f"{name} · {memory:.0f} GB memory")
+                 for index, (name, memory) in enumerate(device.gpus)]
+    elif device.kind == "mps":
+        rows.append(("GPU", "Apple GPU (MPS)"))
+    elif device.kind == "cpu":
+        rows.append(("GPU", "none usable, nnU-Net runs on the CPU"))
+    if device.torch_version:
+        rows.append(("PyTorch", device.torch_version + (f" · CUDA {device.cuda_build}" if device.cuda_build
+                                                          else " · without CUDA")))
+    return rows
+
+
+def device_details(device: DeviceInfo) -> str:
+    """The device card as plain text, for the clipboard: status, the rows, the problem and its fix command."""
+    lines = [f"Device: {device.status[0]}"] + [f"{name}: {value}" for name, value in device_rows(device)]
+    if device.problem:
+        lines.append(f"Problem: {device.problem}")
+        if device.fix_command:
+            lines.append(f"Fix: {device.fix_command}")
+    return "\n".join(lines)
+
+
 def _version() -> str:
     try:
         return metadata.version("nnworkbench")
@@ -91,28 +117,21 @@ class AboutDialog(QDialog):
         head.addStretch()
         status, tone = device.status if device is not None else ("checking…", "gray")
         head.addWidget(badge(status, tone))
+        if device is not None:  # e.g. to report a GPU problem, or to look up the matching PyTorch build
+            head.addWidget(button("Copy", small=True, tooltip="Copy the device details as text",
+                                  clicked=lambda: QGuiApplication.clipboard().setText(device_details(device))))
         card.body.addLayout(head)
         if device is None:
             card.body.addWidget(label("Checking which device PyTorch can use…", muted=True, size=12))
             return card
-        rows = []
-        if device.kind == "cuda":
-            rows += [("GPU" if len(device.gpus) == 1 else f"GPU {index}", f"{name} · {memory:.0f} GB memory")
-                     for index, (name, memory) in enumerate(device.gpus)]
-        elif device.kind == "mps":
-            rows.append(("GPU", "Apple GPU (MPS)"))
-        elif device.kind == "cpu":
-            rows.append(("GPU", "none usable, nnU-Net runs on the CPU"))
-        if device.torch_version:
-            rows.append(("PyTorch", device.torch_version + (f" · CUDA {device.cuda_build}" if device.cuda_build
-                                                              else " · without CUDA")))
+        rows = device_rows(device)
         if rows:
             grid = QGridLayout()
             grid.setHorizontalSpacing(14)
             grid.setVerticalSpacing(4)
             for row, (name, value) in enumerate(rows):
                 grid.addWidget(label(name, muted=True, size=12), row, 0)
-                grid.addWidget(label(value, size=12), row, 1)
+                grid.addWidget(label(value, size=12, selectable=True), row, 1)
             grid.setColumnStretch(1, 1)
             card.body.addLayout(grid)
         if device.problem:

@@ -527,3 +527,30 @@ def test_app_mark_is_drawn_in_the_app_bar_and_about() -> None:
         about.close()
         window.close()
         application.processEvents()
+
+
+def test_info_dialog_copies_the_device_details(tmp_path: Path) -> None:
+    from qtpy.QtGui import QGuiApplication
+    from qtpy.QtWidgets import QPushButton
+
+    from nnworkbench.services.device_probe import DeviceInfo
+    from nnworkbench.ui.about_dialog import AboutDialog, device_details
+
+    application = _application()
+    window = MainWindow()
+    device = DeviceInfo(kind="cpu", torch_version="2.5.1+cpu", nvidia_gpu=True)
+    dialog = AboutDialog(window, device=device)
+    try:
+        text = device_details(device)
+        assert text.startswith("Device: CPU only\nGPU: none usable, nnU-Net runs on the CPU\nPyTorch: 2.5.1+cpu · without CUDA")
+        assert "Problem: An NVIDIA GPU is installed, but PyTorch 2.5.1+cpu" in text and "Fix: " in text
+        copy = next(widget for widget in dialog.findChildren(QPushButton) if widget.text() == "Copy"
+                    and "device" in widget.toolTip())
+        copy.click()
+        assert QGuiApplication.clipboard().text() == text
+        gpu = DeviceInfo(kind="cuda", torch_version="2.5.1+cu124", cuda_build="12.4", gpus=(("NVIDIA RTX 4090", 24.0),))
+        assert device_details(gpu) == "Device: GPU ready\nGPU: NVIDIA RTX 4090 · 24 GB memory\nPyTorch: 2.5.1+cu124 · CUDA 12.4"
+    finally:
+        dialog.close()
+        window.close()
+        application.processEvents()

@@ -99,3 +99,21 @@ def test_show_file_opens_the_file_at_its_anchor() -> None:
     guide.show_file("unknown.md")
     assert guide.current_file() == "README.md"
     guide.close()
+
+
+def test_guide_images_are_never_wider_than_the_readable_column() -> None:
+    from qtpy.QtWidgets import QWidget
+
+    from nnworkbench.ui.workflow_guide import MAX_IMAGE_WIDTH, GuideBrowser
+
+    application = QApplication.instance() or QApplication([])
+    holder = QWidget()
+    browser = GuideBrowser(holder)
+    try:
+        browser.resize(2400, 900)  # a maximised window on a wide screen
+        assert browser._image_width() == MAX_IMAGE_WIDTH
+        browser.resize(600, 900)
+        assert browser._image_width() < MAX_IMAGE_WIDTH
+    finally:
+        holder.close()
+        application.processEvents()
