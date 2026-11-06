@@ -327,7 +327,8 @@ def suggestion(roots: dict[str, Path | None], dataset_id: int, step: str, *, dev
     elif step == "predict":
         models = [item for item in matching_models(state.models, model) if item.finished_folds]
         if not models:
-            raise ValueError("No model with a finished fold" + (f" matching '{model}'" if model else "") + ".")
+            raise ValueError("No model with a finished fold" + (f" matching '{model}'" if model else "")
+                             + ". Train first (suggest --step train).")
         chosen = models[0]
         folds = prediction_folds(fold.name for fold in chosen.finished_folds)
         # ~ expanded as in the GUI (an unknown ~user stays as typed)

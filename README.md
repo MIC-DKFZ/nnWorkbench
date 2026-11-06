@@ -85,6 +85,8 @@ pip installs a CPU-only PyTorch on Windows, so an NVIDIA GPU would not be used. 
 pip install torch --index-url https://download.pytorch.org/whl/cu128
 ```
 
+If a CPU-only PyTorch is already installed, add `--force-reinstall` (pip keeps the installed version otherwise); the Info dialog of the GUI (top right) shows this command when the GPU is not usable.
+
 Then install nnWorkbench from PyPI *(coming soon: does not work at the moment)*:
 
 ```bash

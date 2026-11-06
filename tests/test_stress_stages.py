@@ -401,15 +401,20 @@ def test_t12_predict_needs_cases_and_an_output_other_than_the_input(env: _Env) -
     source = env.root / "input"
     source.mkdir()
     (source / "x_0000.nii.gz").touch()
+    predicted = env.root / "predicted"  # already holds predictions (no channel suffix)
+    predicted.mkdir()
+    (predicted / "x.nii.gz").touch()
     env.open()
     predict = env.page.pages["predict"]
     for input_folder, output_folder, reason in ((empty, env.root / "out", "no images"),
-                                                (source, source, "different from the input")):
+                                                (source, source, "different from the input"),
+                                                (predicted, predicted, "different from the input")):
         predict._input.setText(str(input_folder))
         predict._output.setText(str(output_folder))
         predict._folders_changed()
         env.wait()
         assert not predict._predict.isEnabled() and reason in predict._busy_hint.text()
+    predict._input.setText(str(source))
     predict._output.setText("~/predictions")
     predict._folders_changed()
     env.wait()

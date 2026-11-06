@@ -36,6 +36,7 @@ def test_parse_probe_reports_failures_as_unknown() -> None:
 def test_cpu_only_pytorch_with_nvidia_gpu_explains_the_reinstall() -> None:
     info = parse_probe(_output(torch="2.8.0+cpu", cuda_build=None, gpus=[], mps=False), nvidia_gpu=True)
     assert "without CUDA support" in info.problem and "download.pytorch.org/whl/cu" in info.fix_command
+    assert "--force-reinstall" in info.fix_command  # PyTorch is already installed: pip would keep the CPU build
 
 
 def test_each_device_choice_gives_the_same_command_everywhere() -> None:

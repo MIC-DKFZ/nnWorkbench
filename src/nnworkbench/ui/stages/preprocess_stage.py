@@ -545,7 +545,9 @@ class PreprocessStage(StagePage):
             reason = self.unknown_class("planner", self._planner.currentText())
         missing = self.state.raw.missing_labels
         if not reason and missing:
-            reason = f"{missing} image{'s' if missing != 1 else ''} without label · cannot preprocess (see Data)"
+            reason = (f"{missing} image{'s' if missing != 1 else ''} without label · cannot preprocess: annotate "
+                      f"{'them' if missing != 1 else 'it'}, or move the images you will not annotate out of imagesTr "
+                      "(see Data)")
         if not reason and not self.state.raw.cases:
             reason = "no raw data · cannot preprocess"
         problems = self.state.data_problems() if not reason else []
@@ -578,5 +580,6 @@ class PreprocessStage(StagePage):
                                "Preprocessing needs the images and labels in nnUNet_raw."))
         elif missing:
             items.append(badge(f"{missing} image{'s' if missing != 1 else ''} without label · cannot preprocess", "red",
-                               "nnU-Net needs a label for every image (see Data)."))
+                               "nnU-Net needs a label for every image: annotate the images, or move the images you "
+                               "will not annotate out of imagesTr (see Data)."))
         return items

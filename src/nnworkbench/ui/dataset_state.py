@@ -103,7 +103,9 @@ class DatasetState:
         if unusable:
             problems.append(f"{NON_ASCII_HINT}: {', '.join(unusable)}")
         if raw.missing_labels:
-            problems.append(f"{raw.missing_labels} image{'s' if raw.missing_labels != 1 else ''} without label")
+            problems.append(f"{raw.missing_labels} image{'s' if raw.missing_labels != 1 else ''} without label: "
+                            f"annotate {'them' if raw.missing_labels != 1 else 'it'}, or move the images you will not "
+                            "annotate out of imagesTr")
         if raw.unlisted_images:
             problems.append(f"{len(raw.unlisted_images)} image{'s' if len(raw.unlisted_images) != 1 else ''} in "
                             f"imagesTr (e.g. {raw.unlisted_images[0]}) not in the \"dataset\" file list of "

@@ -367,6 +367,9 @@ def test_a13_suggest_warns_about_the_state(tmp_path, monkeypatch) -> None:
     _raw(roots["raw"], images=("a_0000.nii.gz",), labels=())
     result = suggestion(roots, 7, "preprocess")
     assert result["warnings"] and "without label" in result["warnings"][0]
+    assert "annotate it" in result["warnings"][0]  # the problem names its fix
+    with pytest.raises(ValueError, match="Train first"):  # predict without a model names the step before
+        suggestion(roots, 7, "predict")
 
 
 def test_c5_adding_an_image_never_recreates_a_removed_dataset_folder(tmp_path) -> None:

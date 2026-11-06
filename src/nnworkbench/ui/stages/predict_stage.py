@@ -536,6 +536,8 @@ class PredictStage(StagePage):
             reason = "Choose an output folder."
         if not reason and not (source.is_absolute() and target.is_absolute()):  # would be in the GUI's start folder
             reason = "Use the full path of the input and output folder (Browse… gives it)."
+        if not reason and _same_folder(source, target):  # before the content checks: predictions in the folder
+            reason = "Choose an output folder different from the input folder."
         if not reason and self._input_error:
             reason = f"Cannot list the input folder · {self._input_error}"
         if not reason and self._input_cases is None:
@@ -544,8 +546,6 @@ class PredictStage(StagePage):
             reason = "The input folder has no images (named like in imagesTr, e.g. case_0000.nii.gz)."
         if not reason and self._not_ready:
             reason = self._not_ready
-        if not reason and _same_folder(source, target):
-            reason = "Choose an output folder different from the input folder."
         if not reason and (unusable := [str(path) for path in (source, target) if unusable_for_nnunet(path)]):
             reason = f"{NON_ASCII_HINT}: {', '.join(unusable)}."
         if not reason and not self._folds.selected():

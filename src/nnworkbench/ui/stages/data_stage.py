@@ -488,7 +488,8 @@ class DataStage(StagePage):
         items = []
         if raw.missing_labels:
             items.append(badge(f"labels incomplete · {raw.missing_labels} image{'s' if raw.missing_labels != 1 else ''} "
-                               "without label", "red"))
+                               "without label", "red",
+                               "Annotate the images (pencil), or move the images you will not annotate out of imagesTr."))
         if (id_warning := id_badge(state.record)) is not None:
             items.append(badge(*id_warning))
         if raw.unsuffixed_images:  # the tooltips name a file and the fix, as the problems on the Data tab do

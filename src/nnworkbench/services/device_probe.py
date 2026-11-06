@@ -23,7 +23,8 @@ from pathlib import Path
 from .commands import WINDOWS
 
 PYTORCH_URL = "https://pytorch.org/get-started/locally/"
-CUDA_INSTALL = "pip install torch --index-url https://download.pytorch.org/whl/cu128"  # an example, see PYTORCH_URL
+# an example, see PYTORCH_URL; --force-reinstall: pip would otherwise keep the installed CPU build (same version)
+CUDA_INSTALL = "pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu128"
 
 _PROBE = """
 import json
