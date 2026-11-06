@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/nnworkbench/"><img alt="PyPI" src="https://img.shields.io/pypi/v/nnworkbench"></a>
+  <a href="https://doi.org/10.5281/zenodo.24013948"><img alt="DOI" src="https://zenodo.org/badge/DOI/10.5281/zenodo.24013948.svg"></a>
   <img alt="Python 3.12" src="https://img.shields.io/badge/python-3.12-blue">
   <img alt="Platforms: Linux, Windows, macOS" src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey">
   <img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-green">
@@ -319,7 +320,7 @@ If nnWorkbench helps your research, please cite it together with the methods you
 
 **nnWorkbench**:
 
-> Krämer, L., Isensee, F., Maier-Hein, K. H., & Dreher, K. K. (2026). nnWorkbench (Version 0.1.0) [Computer software]. https://github.com/MIC-DKFZ/nnWorkbench
+> Krämer, L., Isensee, F., Maier-Hein, K. H., & Dreher, K. K. (2026). nnWorkbench (Version 0.1.0) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24013948
 
 <details>
 <summary>BibTeX</summary>
@@ -330,6 +331,7 @@ If nnWorkbench helps your research, please cite it together with the methods you
   title   = {nnWorkbench},
   version = {0.1.0},
   year    = {2026},
+  doi     = {10.5281/zenodo.24013948},
   url     = {https://github.com/MIC-DKFZ/nnWorkbench}
 }
 ```

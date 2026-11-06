@@ -18,6 +18,7 @@ authors:
     given-names: "Kris K."
     affiliation: "Division of Medical Image Computing, German Cancer Research Center (DKFZ), Heidelberg, Germany; Helmholtz Imaging"
 version: "0.1.0"
+doi: "10.5281/zenodo.24013948"
 date-released: "2026-11-06"
 license: "Apache-2.0"
 repository-code: "https://github.com/MIC-DKFZ/nnWorkbench"
