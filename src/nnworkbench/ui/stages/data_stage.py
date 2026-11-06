@@ -20,7 +20,13 @@ from nnworkbench.services.dataset_scanner import id_badge
 from nnworkbench.services.workflow_status import CaseRow, geometries_match, read_geometry
 
 from ..context import AppContext
-from ..dataset_state import DatasetState
+from ..dataset_state import (
+    DatasetState,
+    jpeg_files,
+    jpeg_problem,
+    other_unreadable_files,
+    unreadable_warning,
+)
 from ..description_panel import DescriptionPanel
 from ..json_editor import DatasetJsonPanel
 from ..label_statistics_dialog import LabelStatisticsView
@@ -468,6 +474,10 @@ class DataStage(StagePage):
             items.append(badge("names invalid · images need a _0000 channel suffix", "red"))
         if not raw.channels_complete:
             items.append(badge("channels missing", "red"))
+        for folder, files in (("imagesTr", raw.unsupported_images), ("labelsTr", raw.unsupported_labels)):
+            if jpeg := jpeg_files(files):  # nnU-Net cannot read JPEG: convert
+                items.append(badge(f"{len(jpeg)} JPEG file{'s' if len(jpeg) != 1 else ''} in {folder}", "red",
+                                   jpeg_problem(folder, jpeg)))
         count = state.manifest.get("numTraining") if isinstance(state.manifest, dict) else None
         if any(error.startswith("numTraining") for error in state.manifest_errors):
             items.append(badge(f"numTraining {count} ≠ {len(raw.cases)} cases", "red",
@@ -475,13 +485,18 @@ class DataStage(StagePage):
         other = [error for error in state.manifest_errors if not error.startswith("numTraining")]
         if other:
             items.append(badge("dataset.json invalid", "red", " ".join(other)))
-        if not raw.cases and state.raw_path is not None:
+        if not raw.cases and state.raw_path is not None and not raw.unsupported_images:
             items.append(badge("no images in imagesTr yet", "red", "Add images (and labels) to imagesTr and labelsTr."))
         if not items and (problems := state.data_problems()):  # e.g. file endings, colour channels, file list
             items.append(badge(f"must be fixed · {len(problems)} problem{'s' if len(problems) != 1 else ''}", "red",
                                " · ".join(problems)))
         if not items and raw.cases:
             items.append(badge("✓ ready for preprocessing", "green"))
+        # nnU-Net skips files it cannot read (.czi, .npy, …): a warning, they may be originals kept on purpose
+        for folder, files in (("imagesTr", raw.unsupported_images), ("labelsTr", raw.unsupported_labels)):
+            if other := other_unreadable_files(files):
+                items.append(badge(f"{len(other)} unreadable file{'s' if len(other) != 1 else ''} in {folder}",
+                                   "orange", unreadable_warning(folder, other)))
         if state.inherits_from:
             items.append(badge(f"from {state.inherits_from}" + (" · images linked" if raw.file_list else ""), "gray",
                                f"A later iteration of {state.inherits_from} (inherits_from in dataset.json)"

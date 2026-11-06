@@ -25,6 +25,8 @@ from .image_files import color_components, has_image_suffix, image_suffix, strip
 _CHANNEL_SUFFIX = re.compile(r"_(\d{4})$")
 _EPOCH_LINE = re.compile(r"(?m)^.*?:\s*Epoch\s+(\d+)\s*$")
 UNSUPPORTED_IMAGE_SUFFIXES = (".jpg", ".jpeg")  # common, but no nnU-Net reader
+# files next to the images that are no image data: not reported as unreadable (notes, metadata, system files)
+_NOT_IMAGE_DATA_SUFFIXES = (".txt", ".md", ".json", ".csv", ".tsv", ".log", ".xml", ".pdf", ".ini", ".db")
 _EPOCH_TIME_LINE = re.compile(r"(?m)^.*?:\s*Epoch time:\s*([0-9.]+)\s*s\s*$")
 _PSEUDO_DICE_LINE = re.compile(r"(?m)^.*?:\s*Pseudo dice\s*\[(.*)\]\s*$")
 _NUMBER = re.compile(r"\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
@@ -140,7 +142,8 @@ class RawOverview:
     channels: int
     names_valid: bool
     unmatched_labels: tuple[str, ...] = ()  # label files without an image of that case
-    unsupported_images: tuple[str, ...] = ()  # e.g. .jpg in imagesTr, which nnU-Net cannot read
+    # files in imagesTr that nnU-Net cannot read (.jpg, .czi, .npy, no ending, …): it skips them silently
+    unsupported_images: tuple[str, ...] = ()
     # the channel suffixes a case needs (_0000 … ; one RGB file covers three channel names)
     required_suffixes: tuple[str, ...] = ("0000",)
     channel_problem: str = ""  # colour channels of the files do not add up to channel_names
@@ -148,6 +151,7 @@ class RawOverview:
     missing_files: tuple[str, ...] = ()  # images listed there but not found (a missing label: missing_labels)
     unlisted_images: tuple[str, ...] = ()  # in imagesTr but not in the file list: nnU-Net ignores them
     label_times: tuple[float, ...] = ()  # when each label file found was last changed (the outdated checks)
+    unsupported_labels: tuple[str, ...] = ()  # the same in labelsTr (a .jpg mask: its case shows no label)
 
     @property
     def newest_label(self) -> float | None:
@@ -163,6 +167,15 @@ class RawOverview:
     @property
     def channels_complete(self) -> bool:
         return all(case.channels_present for case in self.cases)
+
+
+def unreadable_file(name: str) -> bool:
+    """A file in imagesTr or labelsTr that nnU-Net cannot read and skips without a message: any ending but its
+    image formats (.jpg, .czi, .lif, .nd2, .npy, .h5, a DICOM file without ending, …). Hidden and system files and
+    notes or metadata (.txt, .json, …) are no image data and do not count."""
+    if name.startswith(".") or has_image_suffix(name) or name.casefold() in ("thumbs.db", "desktop.ini"):
+        return False
+    return not name.casefold().endswith(_NOT_IMAGE_DATA_SUFFIXES)
 
 
 def _image_case(path: str | Path) -> tuple[str, str | None]:
@@ -241,7 +254,7 @@ def raw_overview(raw_path: Path | None, manifest: dict | None) -> RawOverview:
         if not _entry_is_file(entry):
             continue
         if not has_image_suffix(entry.name):
-            if os.path.splitext(entry.name)[1].lower() in UNSUPPORTED_IMAGE_SUFFIXES:
+            if unreadable_file(entry.name):
                 unsupported.append(entry.name)
             continue
         image_count += 1
@@ -250,9 +263,12 @@ def raw_overview(raw_path: Path | None, manifest: dict | None) -> RawOverview:
             names_valid = False
         images.setdefault(case, []).append(Path(entry.path))
     labels: dict[str, Path] = {}
+    unsupported_labels = []
     for entry in _scan(labels_dir):
         if _entry_is_file(entry) and has_image_suffix(entry.name):
             labels[strip_image_suffix(entry.name)] = Path(entry.path)
+        elif _entry_is_file(entry) and unreadable_file(entry.name):
+            unsupported_labels.append(entry.name)
     # one stat per label file, shared by the case rows and the outdated checks (newest_label, label_times)
     edited = {case: _modified(path) for case, path in labels.items()}
     # colour channels per suffix, from the first image of each (2D formats only; one header read per suffix)
@@ -272,7 +288,8 @@ def raw_overview(raw_path: Path | None, manifest: dict | None) -> RawOverview:
     unmatched = tuple(sorted((path.name for case, path in labels.items() if case not in images), key=str.casefold))
     return RawOverview(tuple(rows), image_count, len(labels), channels, names_valid, unmatched,
                        tuple(sorted(unsupported, key=str.casefold)), required, channel_problem,
-                       label_times=tuple(value for value in edited.values() if value is not None))
+                       label_times=tuple(value for value in edited.values() if value is not None),
+                       unsupported_labels=tuple(sorted(unsupported_labels, key=str.casefold)))
 
 
 def newest_label_time(raw_path: Path | None) -> float | None:

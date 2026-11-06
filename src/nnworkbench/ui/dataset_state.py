@@ -18,7 +18,7 @@ from nnworkbench.services.dataset_json import (
     manifest_source,
     num_training_error,
 )
-from nnworkbench.services.image_files import has_image_suffix
+from nnworkbench.services.image_files import IMAGE_SUFFIXES, has_image_suffix
 from nnworkbench.services.label_analysis import analysis_path, load_label_analysis
 from nnworkbench.services.workflow_status import (
     UNSUPPORTED_IMAGE_SUFFIXES,
@@ -79,6 +79,13 @@ class DatasetState:
     # Each returns (state, hover text). States: "" grey (nothing yet, or not possible yet), "todo" orange ring
     # (ready to run, or running), "warn" orange ! (outdated), "error" red ! (must be fixed), "ok" green ✓.
 
+    def data_warnings(self) -> list[str]:
+        """What preprocessing does not need fixed but the user should know: files in imagesTr / labelsTr that nnU-Net
+        cannot read and skips (JPEG excepted: a data problem)."""
+        return [unreadable_warning(folder, other) for folder, files in (
+            ("imagesTr", self.raw.unsupported_images), ("labelsTr", self.raw.unsupported_labels))
+            if (other := other_unreadable_files(files))]
+
     def data_problems(self) -> list[str]:
         """What must be fixed on Data before preprocessing (see ``_problems``: computed once per state)."""
         return list(self._problems)
@@ -115,10 +122,9 @@ class DatasetState:
             problems.append(f"image files with channel {', '.join('_' + channel for channel in extra)}, which "
                             f"dataset.json does not list ({raw.channels} channel{'s' if raw.channels != 1 else ''} in "
                             "channel_names): add the channel there or remove the files")
-        if raw.unsupported_images:
-            problems.append(f"{len(raw.unsupported_images)} JPEG file{'s' if len(raw.unsupported_images) != 1 else ''} "
-                            f"in imagesTr (e.g. {raw.unsupported_images[0]}), which nnU-Net cannot read: convert "
-                            "them to .png or .tif")
+        for folder, files in (("imagesTr", raw.unsupported_images), ("labelsTr", raw.unsupported_labels)):
+            if jpeg := jpeg_files(files):
+                problems.append(jpeg_problem(folder, jpeg))
         if raw.unmatched_labels:
             problems.append(f"{len(raw.unmatched_labels)} label file{'s' if len(raw.unmatched_labels) != 1 else ''} "
                             f"match no image (e.g. {raw.unmatched_labels[0]}): a label is named like its image "
@@ -153,11 +159,18 @@ class DatasetState:
             if misplaced:
                 return "error", (f"Data · {misplaced} image{'s are' if misplaced != 1 else ' is'} in the dataset "
                                  "folder itself: move images into imagesTr (and labels into labelsTr)")
+            files = self.raw.unsupported_images  # only files nnU-Net cannot read (.czi, .jpg, …): nothing to train on
+            if jpeg := jpeg_files(files):
+                return "error", "Data · " + jpeg_problem("imagesTr", jpeg)
+            if files:
+                return "error", "Data · no readable images in imagesTr: " + unreadable_warning("imagesTr", files)
             return "error", "Data · no images in imagesTr yet: add images and labels before preprocessing"
         problems = self.data_problems()
         if problems:
             return "error", "Data · must be fixed before preprocessing: " + "; ".join(problem.rstrip(".")
                                                                                      for problem in problems)
+        if warnings := self.data_warnings():
+            return "warn", "Data · ready for preprocessing, but: " + "; ".join(warnings)
         return "ok", "Data · ready for preprocessing"
 
     def preprocess_state(self) -> tuple[str, str]:
@@ -233,6 +246,33 @@ def _bom_hint(path: Path) -> str:
         return ""
     return (" It starts with a byte order mark (BOM), e.g. from Windows PowerShell 5.1's Set-Content -Encoding utf8, "
             "which nnU-Net cannot read either: save it as UTF-8 without BOM." if bom else "")
+
+
+def jpeg_files(files: tuple[str, ...]) -> tuple[str, ...]:
+    """The JPEG files among unreadable ones: an error (images saved in the wrong format, convert them)."""
+    return tuple(name for name in files if os.path.splitext(name)[1].lower() in UNSUPPORTED_IMAGE_SUFFIXES)
+
+
+def other_unreadable_files(files: tuple[str, ...]) -> tuple[str, ...]:
+    """The other unreadable files (.czi, .npy, …): a warning, they may be originals kept next to converted images."""
+    jpeg = set(jpeg_files(files))
+    return tuple(name for name in files if name not in jpeg)
+
+
+def _count(files: tuple[str, ...]) -> str:
+    return f"{len(files)} file{'s' if len(files) != 1 else ''}"
+
+
+def jpeg_problem(folder: str, files: tuple[str, ...]) -> str:
+    return (f"{_count(files)} in {folder} in JPEG format (e.g. {files[0]}), which nnU-Net cannot read: convert them "
+            "to .png or .tif")
+
+
+def unreadable_warning(folder: str, files: tuple[str, ...]) -> str:
+    """Files nnU-Net skips without a message: not part of the dataset. A warning, preprocessing still runs."""
+    return (f"{_count(files)} in {folder} that nnU-Net cannot read (e.g. {files[0]}): nnU-Net skips them, they are "
+            f"not part of the dataset. To use them, convert them to a format nnU-Net reads "
+            f"({', '.join(IMAGE_SUFFIXES)}); otherwise move them out of {folder}")
 
 
 def load_state(record: DatasetRecord, ended: dict[Path, float] | None = None) -> DatasetState:

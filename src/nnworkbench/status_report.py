@@ -42,6 +42,8 @@ def build_status(state: DatasetState, device: dict | None = None) -> dict:
         detail = hint.split(" · ", 1)[-1]
         if title == "Data" and stage_state == "error" and state.data_problems():
             detail = "must be fixed before preprocessing (see below)"  # the problems are listed once, below
+        elif title == "Data" and stage_state == "warn" and state.data_warnings():
+            detail = "ready for preprocessing, with warnings (see below)"
         stages[title.lower()] = {"state": stage_state or "none", "detail": detail}
     return {
         "dataset": state.record.directory_name,
@@ -56,6 +58,7 @@ def build_status(state: DatasetState, device: dict | None = None) -> dict:
         "labels": "sparse" if state.sparse else "dense",
         "ignore_label": state.ignore_id,
         "problems": state.data_problems(),
+        "warnings": state.data_warnings(),  # e.g. files nnU-Net cannot read and skips (.czi, .npy, …)
         "device": device,
         "stages": stages,
         "plans": [{"name": plans.name, "planner": plans.planner,
@@ -81,9 +84,12 @@ def format_status(status: dict) -> str:
         lines.insert(2, f"  device: {device['summary']}" + (f"  [fix] {device['problem']}" if device["problem"] else ""))
     for title, _method in _STAGES:
         stage = status["stages"][title.lower()]
-        lines.append(f"  {title:<11} {_MARKERS.get(stage['state'], '[ - ]'):<10} {stage['detail']}")
+        marker = "[warn]" if title == "Data" and stage["state"] == "warn" else _MARKERS.get(stage["state"], "[ - ]")
+        lines.append(f"  {title:<11} {marker:<10} {stage['detail']}")
     for problem in status["problems"]:
         lines.append(f"    - {problem}")
+    for warning in status.get("warnings", ()):
+        lines.append(f"    ! {warning}")
     if status["plans"]:
         lines += ["", "  Plans"]
         for plans in status["plans"]:

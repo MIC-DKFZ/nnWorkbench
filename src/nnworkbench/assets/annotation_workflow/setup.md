@@ -123,7 +123,7 @@ Skip this if your images are already in a supported format, one file per case:
 - **3D:** `.nii.gz` / `.nii` (recommended), `.nrrd`, `.mha`, `.gipl`, `.tif` / `.tiff`
 - **2D:** `.png`, `.bmp`, `.tif`
 
-JPEG is not supported because its lossy compression alters the images.
+JPEG is not supported because its lossy compression alters the images. Microscope and other formats (e.g. `.czi`, `.lif`, `.nd2`, `.npy`) must be converted first, e.g. to `.nii.gz` or `.tif`: nnU-Net skips files it cannot read without a message, so nnWorkbench shows a warning for them on the **Data** page.
 
 **2D slices → 3D volume.** If your 3D data is a folder of 2D slices (e.g. TIFF or PNG), combine them into one NIfTI file:
 

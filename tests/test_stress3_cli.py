@@ -271,6 +271,31 @@ def test_b4_images_and_labels_with_another_ending_and_b14_jpeg(tmp_path) -> None
     assert "JPEG" in problems and "c_0000.jpg" in problems
 
 
+def test_unreadable_formats_warn_and_jpeg_is_an_error(tmp_path) -> None:
+    """Files nnU-Net cannot read (.czi, .npy, DICOM without ending) are skipped by nnU-Net: a warning, preprocessing
+    runs. JPEG (images or labels) is an error. Notes, metadata and hidden files are no image data and stay quiet."""
+    raw = _raw(tmp_path, images=("a_0000.nii.gz", "b.czi", "c_0000.npy", "IM0001", "notes.txt", "meta.json",
+                                 ".DS_Store", "Thumbs.db"), labels=("a.nii.gz", "readme.md"), numTraining=1)
+    state = _state(raw)
+    assert state.raw.unsupported_images == ("b.czi", "c_0000.npy", "IM0001")
+    assert state.data_problems() == []
+    assert state.data_warnings() == [state.data_warnings()[0]]
+    assert "3 files in imagesTr that nnU-Net cannot read (e.g. b.czi): nnU-Net skips them" in state.data_warnings()[0]
+    assert state.data_state()[0] == "warn"
+    status = build_status(state)
+    assert status["warnings"] == state.data_warnings() and status["problems"] == []
+    (raw / "labelsTr" / "b_mask.jpg").touch()
+    state = _state(raw)
+    assert any("1 file in labelsTr in JPEG format (e.g. b_mask.jpg)" in problem for problem in state.data_problems())
+    assert state.data_state()[0] == "error"
+
+
+def test_only_unreadable_images_name_the_files_not_an_empty_folder(tmp_path) -> None:
+    raw = _raw(tmp_path, images=("sample_1.czi", "sample_2.czi"), labels=(), numTraining=0)
+    status, text = _state(raw).data_state()
+    assert status == "error" and "no readable images in imagesTr" in text and "sample_1.czi" in text
+
+
 def test_b6_extra_channel_and_b13_label_without_image(tmp_path) -> None:
     raw = _raw(tmp_path, images=("a_0000.nii.gz", "a_0001.nii.gz"), labels=("a.nii.gz", "a_0000.nii.gz"),
                numTraining=1)

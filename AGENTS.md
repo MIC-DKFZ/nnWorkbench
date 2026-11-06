@@ -88,6 +88,7 @@ Find out early, from how they write or by asking "Have you trained a segmentatio
 | A fold with `status == "stopped"` | Ask, then resume it with `--c` (step 5) |
 | Annotation Workflow and `unlabeled_cases` not empty (`problems` then says "… without label") | Human annotates (step 3), or remove the images that will not be annotated |
 | `stages.data.state == "error"` | Fix what `problems` lists (step 2) |
+| `stages.data.state == "warn"` | Tell the user what `warnings` lists (e.g. unreadable `.czi` files that nnU-Net skips); preprocessing can run |
 | `stages.preprocess.state` is `todo` or `warn` (labels changed after preprocessing) | Preprocess (again) (step 4) |
 | `stages.train.state == "todo"` (no fold yet) | Train fold 0 (step 5) |
 | Fewer than 5 finished folds and the user wants a reliable model | Next fold: `suggest --step train` (step 5) |
@@ -122,8 +123,10 @@ Ask one or two questions at a time. Each answer below says what it decides.
    stacks of slices); file format; how many; **channels** (one grey value, or several stains/modalities per image).
    - 3D → configuration `3d_fullres`; 2D → `2d`.
    - Formats: NIfTI (`.nii.gz`, recommended), `.nrrd`, `.mha`, `.gipl`, `.tif`; 2D: `.png`, `.bmp`, `.tif`. JPEG
-     is not supported. A folder of 2D slices per volume must be stacked (step 2). All files of a dataset share one
-     file ending.
+     and microscope or array formats (`.czi`, `.lif`, `.nd2`, `.npy`, …) are not supported: convert them first
+     (JPEG in imagesTr/labelsTr is listed under `problems`; other such files are skipped by nnU-Net and listed
+     under `warnings`). A folder of 2D slices per volume must
+     be stacked (step 2). All files of a dataset share one file ending.
    - Several channels → one file per channel (`_0000`, `_0001`, …) and `--channels name1,name2`.
 3. **"Do you already have outlines (labels) for your images?"** e.g. from another tool or a colleague.
    - **Yes, complete for every image** → *nnU-Net Workflow*: no annotation. Dense labels. Check names and class
@@ -393,7 +396,8 @@ nnworkbench-run inspect-predictions OUT --images IN
 - **`status --json`:** `dataset`, `inherits_from` (the source iteration, or `null`), `images_listed` (cases from the
   `"dataset"` file list of dataset.json), `folders` (`raw`, `preprocessed`, `results`; `null` when absent), `cases`,
   `labeled_cases`, `unlabeled_cases[]` (case names), `channels`, `labels` (`sparse`/`dense`), `ignore_label`,
-  `problems[]`, `device` (`kind` = `cuda`/`mps`/`cpu`/`unknown`, `summary`, `gpus[]` with `name` and `memory_gb`
+  `problems[]` (must be fixed before preprocessing), `warnings[]` (preprocessing runs, but tell the user: e.g.
+  files nnU-Net cannot read and skips, `.czi` or `.npy` next to the images), `device` (`kind` = `cuda`/`mps`/`cpu`/`unknown`, `summary`, `gpus[]` with `name` and `memory_gb`
   (GiB), `torch`, `cuda`, `problem`; `null` with `--no-device`; a clean result is cached for an hour per
   computer and environment in `device_cache.json` next to the saved paths, a `problem` is checked every time),
   `stages.<data|preprocess|train|validate|predict>`
