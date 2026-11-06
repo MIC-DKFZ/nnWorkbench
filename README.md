@@ -321,6 +321,9 @@ If nnWorkbench helps your research, please cite it together with the methods you
 
 > Krämer, L., Isensee, F., Maier-Hein, K. H., & Dreher, K. K. (2026). nnWorkbench (Version 0.1.0) [Computer software]. https://github.com/MIC-DKFZ/nnWorkbench
 
+<details>
+<summary>BibTeX</summary>
+
 ```bibtex
 @software{nnworkbench2026,
   author  = {Krämer, Lars and Isensee, Fabian and Maier-Hein, Klaus H. and Dreher, Kris K.},
@@ -331,18 +334,68 @@ If nnWorkbench helps your research, please cite it together with the methods you
 }
 ```
 
+</details>
+
 **nnInteractive** (annotation):
 
 > Isensee, F.\*, Rokuss, M.\*, Krämer, L.\*, Dinkelacker, S., Ravindran, A., Stritzke, F., Hamm, B., Wald, T., Langenberg, M., Ulrich, C., Deissler, J., Floca, R., & Maier-Hein, K. (2025). nnInteractive: Redefining 3D Promptable Segmentation. https://arxiv.org/abs/2503.08373 \
 > \*: equal contribution
 
+<details>
+<summary>BibTeX</summary>
+
+```bibtex
+@article{isensee2025nninteractive,
+  author  = {Isensee, Fabian and Rokuss, Maximilian and Krämer, Lars and Dinkelacker, Stefan and Ravindran, Ashis and Stritzke, Florian and Hamm, Benjamin and Wald, Tassilo and Langenberg, Moritz and Ulrich, Constantin and Deissler, Jonathan and Floca, Ralf and Maier-Hein, Klaus},
+  title   = {nnInteractive: Redefining 3D Promptable Segmentation},
+  journal = {arXiv preprint arXiv:2503.08373},
+  year    = {2025},
+  url     = {https://arxiv.org/abs/2503.08373}
+}
+```
+
+</details>
+
 **nnU-Net** (preprocessing, training and prediction):
 
 > Isensee, F., Jaeger, P. F., Kohl, S. A., Petersen, J., & Maier-Hein, K. H. (2021). nnU-Net: a self-configuring method for deep learning-based biomedical image segmentation. Nature Methods, 18(2), 203-211.
 
+<details>
+<summary>BibTeX</summary>
+
+```bibtex
+@article{isensee2021nnunet,
+  author  = {Isensee, Fabian and Jaeger, Paul F. and Kohl, Simon A. A. and Petersen, Jens and Maier-Hein, Klaus H.},
+  title   = {{nnU-Net}: a self-configuring method for deep learning-based biomedical image segmentation},
+  journal = {Nature Methods},
+  volume  = {18},
+  number  = {2},
+  pages   = {203--211},
+  year    = {2021},
+  doi     = {10.1038/s41592-020-01008-z}
+}
+```
+
+</details>
+
 **nnU-Net Revisited** (the residual encoder planners, including the default `nnUNetPlannerResEncL`):
 
 > Isensee, F., Wald, T., Ulrich, C., Baumgartner, M., Roy, S., Maier-Hein, K., & Jaeger, P. F. (2024). nnU-Net Revisited: A Call for Rigorous Validation in 3D Medical Image Segmentation. MICCAI 2024. https://arxiv.org/abs/2404.09556
+
+<details>
+<summary>BibTeX</summary>
+
+```bibtex
+@inproceedings{isensee2024nnunetrevisited,
+  author    = {Isensee, Fabian and Wald, Tassilo and Ulrich, Constantin and Baumgartner, Michael and Roy, Saikat and Maier-Hein, Klaus and Jaeger, Paul F.},
+  title     = {{nnU-Net} Revisited: A Call for Rigorous Validation in {3D} Medical Image Segmentation},
+  booktitle = {Medical Image Computing and Computer Assisted Intervention -- MICCAI 2024},
+  year      = {2024},
+  url       = {https://arxiv.org/abs/2404.09556}
+}
+```
+
+</details>
 
 
 ## License
