@@ -154,6 +154,11 @@ def test_train_validate_predict_pages(tmp_path: Path) -> None:
         assert state.validate_state()[0] == "ok" and state.predict_state()[0] == "ok"
         assert state.preprocess_state()[0] == "ok"
         assert not window.dataset_page.pages["validate"]._sparse_tip.isVisibleTo(window)  # dense labels
+        # the long JSON files are folded in by default; Show JSON in the file list unfolds the plans box
+        preprocess = window.dataset_page.pages["preprocess"]
+        assert preprocess._details_section.collapsed and preprocess._details_section.title().endswith("nnUNetPlans.json")
+        preprocess._show_json(record.preprocessed_path / "nnUNetPlans.json", expand=True)
+        assert not preprocess._details_section.collapsed
         import dataclasses
         from types import SimpleNamespace
 
@@ -219,6 +224,7 @@ def test_train_validate_predict_pages(tmp_path: Path) -> None:
         validate._fold_clicked(model, fold_0)
         _pump(application)
         assert validate._fold is fold_0 and len(validate._cases) == 1
+        assert validate._details_section.isVisibleTo(validate) and validate._details_section.collapsed  # folded in
         from nnworkbench.services.workflow_status import ValidationCase
 
         cases = [ValidationCase(name, "", "", dice, None, {}) for name, dice in (("b", 0.9), ("a", 0.2), ("c", None))]
@@ -490,6 +496,40 @@ def test_start_screen_marks_unset_paths_orange_and_missing_paths_red(tmp_path: P
         assert card._note.wordWrap() and card._note.text().endswith("Browse…")  # the fix is on its own line
     finally:
         card.close()
+        application.processEvents()
+
+
+def test_dataset_json_panel_shows_a_form_and_the_raw_text_on_request(tmp_path: Path) -> None:
+    from qtpy.QtWidgets import QLabel, QWidget
+
+    from nnworkbench.ui.json_editor import DatasetJsonPanel
+
+    application = _application()
+    parent = QWidget()
+    try:
+        panel = DatasetJsonPanel(parent)
+        manifest = {"channel_names": {"0": "light"}, "labels": {"background": 0, "cell": 1}, "numTraining": 2,
+                    "file_ending": ".nii.gz", "name": "Cells", "reference": "lab", "dataset": {"a": {}, "b": {}}}
+        panel.set_manifest(tmp_path, manifest, editable=True)
+        assert panel._stack.currentIndex() == 0 and panel._raw.text() == "Raw"  # the form, not the JSON text
+        texts = [item.text() for item in panel._form_holder.findChildren(QLabel)]
+        assert texts[:2] == ["name", "Cells"]  # the dataset name first, whatever the order in the file
+        assert "background" in texts and "0" in texts and "cell" in texts and "1" in texts and "light" in texts
+        assert ".nii.gz" in texts and "reference" in texts and "lab" in texts
+        assert any(text.startswith("file list with 2 cases") for text in texts)  # the file list is not listed
+        panel._raw.click()
+        assert panel._stack.currentWidget() is panel._view and panel._raw.text() == "Form"
+        assert panel._view.toPlainText() == json.dumps(manifest, indent=2)  # selectable, so it can be copied
+        panel._start_edit()
+        assert panel._stack.currentIndex() == 1 and not panel._raw.isVisibleTo(parent)
+        panel._cancel_edit()
+        assert panel._stack.currentWidget() is panel._view  # back to the view that was open before
+        panel._raw.click()
+        assert panel._stack.currentIndex() == 0
+        panel.set_manifest(tmp_path, None, editable=True)
+        assert "No dataset.json" in panel._form_holder.text()
+    finally:
+        parent.close()
         application.processEvents()
 
 

@@ -61,6 +61,9 @@ QPushButton#formSection, QPushButton#formClass {{
 QPushButton#formSection {{ font-size: 19px; }}
 QPushButton#formClass {{ font-size: 15px; }}
 QLabel#sectionLabel {{ color: {MUTED}; font-size: 11px; font-weight: 700; letter-spacing: 1px; }}
+QPushButton#sectionToggle {{ background: transparent; border: 0; padding: 0; text-align: left; color: {MUTED};
+    font-size: 11px; font-weight: 700; letter-spacing: 1px; }}
+QPushButton#sectionToggle:hover {{ color: {TEXT}; }}
 QLabel#bigNumber {{ font-size: 28px; font-weight: 700; }}
 
 QFrame#card {{ background: {PANEL}; border: 1px solid {LINE}; border-radius: 10px; }}

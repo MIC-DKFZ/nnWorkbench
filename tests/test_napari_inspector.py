@@ -217,6 +217,16 @@ def test_related_files_accept_non_nifti_images(tmp_path: Path) -> None:
     assert [path.name for path in files.labels] == ["case_001.png"]
 
 
+def test_annotation_legend_text_is_one_line_and_names_the_rest() -> None:
+    from nnworkbench.services.napari_inspector import LEGEND_INLINE, annotation_legend_text
+
+    labels = ((0, "ignore"), (1, "background"), (2, "cell <2>"))
+    assert annotation_legend_text(labels) == "<b>0</b>&nbsp;ignore · <b>1</b>&nbsp;background · <b>2</b>&nbsp;cell &lt;2&gt;"
+    many = tuple((index, f"class_{index}") for index in range(LEGEND_INLINE + 8))
+    text = annotation_legend_text(many)
+    assert text.endswith("… 8 more") and f"class_{LEGEND_INLINE - 1}" in text and f"class_{LEGEND_INLINE}" not in text
+
+
 def test_annotation_label_summary_keeps_ids_for_dense_labels(tmp_path: Path) -> None:
     images = tmp_path / "imagesTr"; images.mkdir()
     image = images / "case_001_0000.nii.gz"; image.touch()

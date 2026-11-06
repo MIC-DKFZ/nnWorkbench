@@ -1021,6 +1021,56 @@ def fit_columns(table: QTableWidget) -> None:
             header.resizeSection(column, needed)
 
 
+class CollapsibleSection(QWidget):
+    """A small section title with a chevron that folds its body in and out: for details such as a whole JSON file
+    that most users do not need (collapsed by default)."""
+
+    toggled = Signal(bool)  # collapsed
+
+    def __init__(self, title: str, body: QWidget, *, collapsed: bool = True, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        self._toggle = QPushButton()
+        self._toggle.setObjectName("sectionToggle")
+        self._toggle.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._toggle.setIconSize(QSize(12, 12))
+        self._toggle.setMinimumWidth(1)  # a long file name never widens the panel
+        self._toggle.clicked.connect(lambda _checked=False: self.set_collapsed(not self.collapsed))
+        layout.addWidget(self._toggle)
+        self.body = body
+        layout.addWidget(body, 1)
+        self._title = ""
+        self.set_title(title)
+        self.set_collapsed(collapsed)
+
+    @property
+    def collapsed(self) -> bool:
+        return self.body.isHidden()
+
+    def title(self) -> str:
+        return self._title
+
+    def set_title(self, title: str) -> None:
+        self._title = title
+        self._toggle.setText(title)
+        self._update_hint()
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        self.body.setVisible(not collapsed)
+        self._toggle.setIcon(svg_icon("chevron-right" if collapsed else "chevron-down", style.MUTED))
+        # collapsed, the section is as high as its title; expanded, the body takes the free height
+        self.setSizePolicy(QSizePolicy.Policy.Preferred,
+                           QSizePolicy.Policy.Fixed if collapsed else QSizePolicy.Policy.Expanding)
+        self._update_hint()
+        self.updateGeometry()
+        self.toggled.emit(collapsed)
+
+    def _update_hint(self) -> None:
+        self._toggle.setToolTip(f"{self._title}\n{'Show' if self.collapsed else 'Hide'}")
+
+
 def scroll(widget: QWidget) -> QScrollArea:
     area = QScrollArea()
     area.setWidgetResizable(True)

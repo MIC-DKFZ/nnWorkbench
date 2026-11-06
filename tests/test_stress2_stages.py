@@ -193,6 +193,8 @@ def test_r2_validate_500_classes_fast_correct_and_scrollable(tmp_path: Path, mon
         assert stage._dice_bars.height() == classes * stage._dice_bars.ROW_HEIGHT
         # the panel scrolls instead of drawing the classes over the details (R14)
         area = stage.right.widget(0)
+        assert stage._details_section.collapsed  # the raw summary.json is folded in by default
+        stage._details_section.set_collapsed(False)
         assert isinstance(area, QScrollArea) and stage._details.isVisibleTo(area.widget())
         # weakest class column: the Dice first, so a long name never hides it (R23)
         case = stage._cases[0]

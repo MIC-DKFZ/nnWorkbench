@@ -1,4 +1,5 @@
-"""dataset.json on the right of the Data page: a read-only view and an in-place editor.
+"""dataset.json on the right of the Data page: a read-only form, the raw JSON text (Raw) and an in-place
+editor (Edit).
 
 The editor makes the JSON itself editable: the top-level keys are fixed, only their values can be
 changed. Labels and channels can be renamed, renumbered, added and removed.
@@ -156,6 +157,56 @@ class _PairEditor(QWidget):
         return sorted({key for key in keys if keys.count(key) > 1})
 
 
+def _value_text(value: object) -> str:
+    return value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+
+
+def _form(manifest: dict) -> QWidget:
+    """The read-only form of a dataset.json (same order as the editor)."""
+    holder = QWidget()
+    grid = QGridLayout(holder)
+    grid.setContentsMargins(0, 0, 0, 0)
+    grid.setHorizontalSpacing(10)
+    grid.setVerticalSpacing(4)
+    row = 0
+
+    def add(key: str, value: object, *, indent: bool = False) -> None:
+        nonlocal row
+        key_label = label(key, muted=True, mono=True, selectable=True)
+        if indent:
+            key_label.setContentsMargins(16, 0, 0, 0)
+        value_label = label(_value_text(value), wrap=True, selectable=True, mono=not isinstance(value, str))
+        value_label.setMinimumWidth(1)
+        grid.addWidget(key_label, row, 0, Qt.AlignmentFlag.AlignTop)
+        grid.addWidget(value_label, row, 1)
+        row += 1
+
+    for key in ("name", *(key for key in _STANDARD if key != "name")):  # the dataset name first
+        if key not in manifest:
+            continue
+        value = manifest[key]
+        if key in _STRUCTURED and isinstance(value, dict):
+            grid.addWidget(label(key, muted=True, mono=True), row, 0, 1, 2)
+            row += 1
+            for inner_key, inner_value in value.items():  # labels: name → ID (or region IDs); channels: ID → name
+                add(str(inner_key), inner_value, indent=True)
+        else:
+            add(key, value)
+    custom = [(key, value) for key, value in manifest.items() if key not in _STANDARD]
+    if custom:
+        grid.addWidget(label("Custom entries", name="sectionLabel"), row, 0, 1, 2)
+        row += 1
+        for key, value in custom:
+            if key == "dataset" and isinstance(value, dict):  # the file list: may hold thousands of cases
+                add(key, f"file list with {len(value)} case{'s' if len(value) != 1 else ''} (nnU-Net reads these "
+                         "files instead of imagesTr/labelsTr)")
+            else:
+                add(key, value)
+    grid.setRowStretch(row, 1)
+    grid.setColumnStretch(1, 1)
+    return holder
+
+
 def _custom_value(text: str, was_number: bool = False) -> object:
     """Objects, lists, true/false/null (and values that were numbers) are read as JSON; everything else stays
     text, so e.g. a version "1.0" is not turned into a number."""
@@ -168,7 +219,7 @@ def _custom_value(text: str, was_number: bool = False) -> object:
 
 
 class DatasetJsonPanel(QFrame):
-    """Shows dataset.json; Edit switches to the in-place editor."""
+    """Shows dataset.json as a form; Raw shows the JSON text (to read or copy it), Edit the in-place editor."""
 
     saved = Signal()
 
@@ -187,19 +238,23 @@ class DatasetJsonPanel(QFrame):
         self._badge = badge("✓ valid", "green")
         head.addWidget(self._badge)
         head.addStretch()
+        self._raw_shown = False
+        self._raw = button("Raw", small=True, clicked=self._toggle_raw)
         self._edit = button("Edit", small=True, icon="edit", clicked=self._start_edit)
         self._cancel = button("Cancel", small=True, clicked=self._cancel_edit)
         self._save = button("Save", small=True, primary=True, clicked=self._save_edit)
-        for widget in (self._edit, self._cancel, self._save):
+        for widget in (self._raw, self._edit, self._cancel, self._save):
             head.addWidget(widget)
         layout.addLayout(head)
-        self._stack = QStackedWidget()
+        self._stack = QStackedWidget()  # 0: form, 1: editor, 2: raw text
+        self._form_holder = QWidget()
+        self._stack.addWidget(self._form_holder)
+        self._editor_holder = QWidget()
+        self._stack.addWidget(self._editor_holder)
         self._view = QPlainTextEdit()
         self._view.setObjectName("codeView")
         self._view.setReadOnly(True)
         self._stack.addWidget(self._view)
-        self._editor_holder = QWidget()
-        self._stack.addWidget(self._editor_holder)
         layout.addWidget(self._stack, 1)
         self._note = label("", muted=True, wrap=True, size=12, rich=True)
         layout.addWidget(self._note)
@@ -216,12 +271,16 @@ class DatasetJsonPanel(QFrame):
         same dataset.json is being edited (a reload after a job or Refresh), the form and its edits stay."""
         editing = self._stack.currentIndex() == 1 and directory == self._directory
         self._directory, self._manifest, self._editable, self._cases = directory, manifest, editable, cases
+        shown: dict | str
         try:
             text = json.dumps(manifest, indent=2, ensure_ascii=False) if manifest is not None else "No dataset.json found."
+            shown = manifest if isinstance(manifest, dict) else text
         except (RecursionError, ValueError, TypeError):  # e.g. nested thousands of levels deep
             text = "dataset.json cannot be displayed here (nested too deeply or not plain JSON values)."
             self._editable = False  # the editor could not show it either
+            shown = text
         self._view.setPlainText(text)
+        self._show_form(shown)
         errors = ((*definition_errors(manifest), *filter(None, [file_ending_error(manifest)]))
                   if isinstance(manifest, dict) else ("missing",))
         count_error = num_training_error(manifest, cases) if isinstance(manifest, dict) and cases else None
@@ -242,12 +301,32 @@ class DatasetJsonPanel(QFrame):
         self._set_mode(False)
 
     def _set_mode(self, editing: bool) -> None:
-        self._stack.setCurrentIndex(1 if editing else 0)
+        self._stack.setCurrentIndex(1 if editing else 2 if self._raw_shown else 0)
+        self._raw.setVisible(not editing)
+        self._raw.setText("Form" if self._raw_shown else "Raw")
+        self._raw.setToolTip("Show the form" if self._raw_shown
+                             else "Show the JSON text as it is in the file (select text to copy it)")
         self._edit.setVisible(not editing and self._editable)
         self._cancel.setVisible(editing)
         self._save.setVisible(editing)
         self.setProperty("active", editing)
         self.setStyleSheet("QFrame#card { border: 1px solid #1f5fbf; }" if editing else "")
+
+    def _toggle_raw(self) -> None:
+        self._raw_shown = not self._raw_shown
+        self._set_mode(False)
+
+    def _show_form(self, manifest: dict | str) -> None:
+        """The read-only form: channels and labels as rows, the other keys as key and value, custom entries at
+        the end. ``manifest`` is a message when the file is missing or cannot be shown."""
+        old = self._stack.widget(0)
+        self._stack.removeWidget(old)
+        old.deleteLater()
+        self._form_holder = scroll(_form(manifest)) if isinstance(manifest, dict) else label(manifest, muted=True,
+                                                                                               wrap=True)
+        self._stack.insertWidget(0, self._form_holder)
+        if self._stack.currentIndex() != 1:
+            self._stack.setCurrentIndex(2 if self._raw_shown else 0)
 
     def _start_edit(self) -> None:
         if self._directory is not None:  # the file as it is now: it may have changed since it was loaded

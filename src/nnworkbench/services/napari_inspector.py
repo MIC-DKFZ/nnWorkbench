@@ -457,7 +457,17 @@ def annotation_label_summary(image_path: Path) -> tuple[tuple[int, str], ...]:
     return tuple(sorted(translated, key=lambda entry: (entry[0], entry[1].casefold())))
 
 
-LEGEND_ROWS = 10  # rows of the annotation legend shown at once; more classes scroll
+LEGEND_ROWS = 10  # rows of the annotation legend table shown at once; more classes scroll
+LEGEND_INLINE = 12  # classes listed in one wrapped line; with more, "Show all" opens the table
+
+
+def annotation_legend_text(labels: tuple[tuple[int, str], ...], limit: int = LEGEND_INLINE) -> str:
+    """The annotation IDs as one wrapped line, ``<b>0</b> ignore · <b>1</b> background · …``: the first ``limit``
+    classes, then "… N more". Compact, so the nnInteractive controls below keep the space."""
+    parts = [f"<b>{label_id}</b>&nbsp;{escape(name)}" for label_id, name in labels[:limit]]
+    if len(labels) > limit:
+        parts.append(f"… {len(labels) - limit} more")
+    return " · ".join(parts)
 
 
 def annotation_legend(labels: tuple[tuple[int, str], ...], parent=None) -> QTableWidget:
@@ -500,8 +510,12 @@ class AnnotationSaveWidget(QWidget):
         layout.setSpacing(3)
         self._layer_info = QLabel()
         layout.addWidget(self._layer_info)
-        labels = annotation_label_summary(image_path)
-        self._label_summary = QLabel("<b>Annotation IDs</b>" if labels else "<b>Annotation IDs: </b> unavailable")
+        # The IDs in one wrapped line: a help, not the focus; the nnInteractive controls below get the space.
+        # Many classes: the line ends with "… N more" and Show all opens the scrolling table.
+        self._labels = labels = annotation_label_summary(image_path)
+        self._label_summary = QLabel()
+        self._label_summary.setWordWrap(True)
+        self._label_summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self._label_summary)
         if not labels:  # dataset.json unreadable or without labels: the IDs cannot be listed or shifted
             warning = QLabel("<i>dataset.json of this dataset cannot be read or defines no labels, so the IDs are not "
@@ -510,10 +524,14 @@ class AnnotationSaveWidget(QWidget):
             warning.setWordWrap(True)
             layout.addWidget(warning)
         self._label_list = annotation_legend(labels)
-        self._label_list.setVisible(bool(labels))
         layout.addWidget(self._label_list)
-        note = ("<i>Sparse labels: 0 is ignore (not annotated); all other label IDs are shifted by +1. "
-                "Saving writes labelsTr with the original IDs.</i>" if _dataset_ignore_id(image_path) is not None
+        self._show_all = QPushButton()
+        self._show_all.setVisible(len(labels) > LEGEND_INLINE)
+        self._show_all.clicked.connect(lambda _checked=False: self._set_all_shown(self._label_list.isHidden()))
+        layout.addWidget(self._show_all)
+        self._set_all_shown(False)
+        note = ("<i>Sparse labels: 0 is ignore, the other IDs are shifted by +1; saving writes the original IDs to "
+                "labelsTr.</i>" if _dataset_ignore_id(image_path) is not None
                 else "<i>Dense labels: 0 is background. Saving writes labelsTr.</i>")
         self._label_note = QLabel(note)
         self._label_note.setWordWrap(True)
@@ -528,6 +546,18 @@ class AnnotationSaveWidget(QWidget):
         self._viewer.layers.events.inserted.connect(self._update_layer_info)
         self._viewer.layers.events.removed.connect(self._update_layer_info)
         self._update_layer_info()
+
+    def _set_all_shown(self, shown: bool) -> None:
+        """The table with every class (shown) or the one-line summary."""
+        labels = self._labels
+        self._label_list.setVisible(shown and bool(labels))
+        self._show_all.setText("Show fewer" if shown else f"Show all {len(labels)} IDs")
+        if not labels:
+            self._label_summary.setText("<b>Annotation IDs:</b> unavailable")
+        elif shown:
+            self._label_summary.setText("<b>Annotation IDs</b>")
+        else:
+            self._label_summary.setText(f"<b>Annotation IDs:</b> {annotation_legend_text(labels)}")
 
     def _update_layer_info(self, event=None) -> None:
         try:

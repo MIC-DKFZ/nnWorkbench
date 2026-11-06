@@ -37,6 +37,7 @@ from ..context import AppContext
 from ..dataset_state import DatasetState
 from ..widgets import (
     Card,
+    CollapsibleSection,
     HowToCard,
     IconButtonsDelegate,
     badge,
@@ -276,22 +277,21 @@ class ValidateStage(StagePage):
         self._dice_base_note = ""
         self._all_classes = False
         layout.addWidget(self._dice_bars)
-        # The real summary.json (fold) or its entry (case); hidden at model level, where the bars say it all.
-        self._details_label = section_label("Details")
-        layout.addWidget(self._details_label)
+        # The real summary.json (fold) or its entry (case); hidden at model level, where the bars say it all;
+        # folded in by default (the bars show the Dice, the text is for the other metrics and the file paths).
         self._details = QPlainTextEdit()
         self._details.setObjectName("codeView")
         self._details.setReadOnly(True)
         self._details.setMinimumHeight(160)
-        layout.addWidget(self._details, 1)
+        self._details_section = CollapsibleSection("DETAILS", self._details)
+        layout.addWidget(self._details_section, 1)
         layout.addStretch()  # keeps the summary at the top while the details are hidden
         # In a scroll area: with many classes ("Show all") or a low window the details stay reachable.
         return scroll(panel)
 
     def _set_details_visible(self, visible: bool) -> None:
         self._panel_title.setText("summary.json" if visible else "Model")
-        self._details_label.setVisible(visible)
-        self._details.setVisible(visible)
+        self._details_section.setVisible(visible)
 
     # ------------------------------------------------------------ state
 

@@ -41,6 +41,7 @@ from ..editable_dropdown import EditableDropdownComboBox
 from ..widgets import (
     Card,
     ChoiceGroup,
+    CollapsibleSection,
     ElidedLabel,
     HowToCard,
     NumberField,
@@ -174,17 +175,15 @@ class PreprocessStage(StagePage):
         self._details_body = QVBoxLayout()
         self._details_body.setSpacing(8)
         layout.addLayout(self._details_body)
-        # Like the details on Validate: the raw plans file below the summary.
-        self._plans_json_label = section_label("Details")
-        self._plans_json_label.setWordWrap(True)  # long plans file names
-        self._plans_json_label.setMinimumWidth(1)
-        layout.addWidget(self._plans_json_label)
+        # Like the details on Validate: the raw plans file below the summary, folded in by default (long, and
+        # most users need only the summary); the text can be selected and copied.
         self._plans_json = QPlainTextEdit()
         self._plans_json.setObjectName("codeView")
         self._plans_json.setReadOnly(True)
         self._plans_json.setMinimumHeight(160)
-        layout.addWidget(self._plans_json, 1)
-        layout.addStretch()  # keeps title and text at the top while the plans file is hidden
+        self._details_section = CollapsibleSection("DETAILS", self._plans_json)
+        layout.addWidget(self._details_section, 1)
+        layout.addStretch()  # keeps title and text at the top while the plans file is hidden or folded in
         return panel
 
     def _show_details(self, plans: PlansInfo | None, config) -> None:
@@ -193,8 +192,7 @@ class PreprocessStage(StagePage):
             self._details_title.setText("Not preprocessed yet")
             self._details_body.addWidget(label("This dataset has not been preprocessed yet. Click ▶ Preprocess… to plan and preprocess it.",
                                                muted=True, wrap=True))
-            self._plans_json_label.hide()
-            self._plans_json.hide()
+            self._details_section.hide()
             return
         self._show_json(plans.file)
         self._details_title.setText(wrappable(f"{plans.name} · {config.name}"))
@@ -394,7 +392,8 @@ class PreprocessStage(StagePage):
                  "splits_final.json": "folds for training"}
         for path in sorted(root.glob("*.json"), key=lambda item: item.name.casefold()):
             note = notes.get(path.name, "network & patch settings" if "plans" in path.name.casefold() else "")
-            self._add_row(None, "file", path.name, note, "{ }", "Show JSON", lambda selected=path: self._show_json(selected))
+            self._add_row(None, "file", path.name, note, "{ }", "Show JSON",
+                          lambda selected=path: self._show_json(selected, expand=True))
         self._case_folder = next((root / config.data_identifier for config in (plans.configurations if plans else ())
                                   if config.preprocessed), None)
         gt = root / "gt_segmentations"
@@ -502,11 +501,13 @@ class PreprocessStage(StagePage):
 
     # ------------------------------------------------------------ JSON panel
 
-    def _show_json(self, path: Path) -> None:
-        """Show any JSON file of the folder in the Details box (where the plans file is shown)."""
-        self._plans_json_label.setText(wrappable(f"DETAILS · {path.name}"))
-        self._plans_json_label.show()
-        self._plans_json.show()
+    def _show_json(self, path: Path, expand: bool = False) -> None:
+        """Load any JSON file of the folder into the Details section (where the plans file is shown). The section
+        stays folded in unless the user asked for the file (Show JSON in the file list)."""
+        self._details_section.set_title(f"DETAILS · {path.name}")
+        self._details_section.show()
+        if expand:
+            self._details_section.set_collapsed(False)
         self._plans_json.setToolTip(str(path))
         self._plans_json.setPlainText("Loading…")
 
