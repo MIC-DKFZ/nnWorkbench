@@ -82,6 +82,8 @@ def test_dataset_page_shows_cases_and_stage_states(tmp_path: Path) -> None:
         assert data._table.rowCount() == 2
         badges = [item.text() for item in data.header_badges(state)]
         assert badges[0].startswith("labels incomplete") and badges[-1].startswith("Sparse labels")
+        validate = window.dataset_page.pages["validate"]
+        assert validate._sparse_tip.isVisibleTo(validate)  # the Dice counts only the annotated voxels
         preprocess = window.dataset_page.pages["preprocess"]
         preprocess._run_dialog.open()
         assert not preprocess._run.isEnabled()  # labels are missing
@@ -151,6 +153,7 @@ def test_train_validate_predict_pages(tmp_path: Path) -> None:
         assert state.train_state() == ("todo", "Train · a fold is training")  # fold 2 was just logged
         assert state.validate_state()[0] == "ok" and state.predict_state()[0] == "ok"
         assert state.preprocess_state()[0] == "ok"
+        assert not window.dataset_page.pages["validate"]._sparse_tip.isVisibleTo(window)  # dense labels
         import dataclasses
         from types import SimpleNamespace
 
@@ -484,6 +487,7 @@ def test_start_screen_marks_unset_paths_orange_and_missing_paths_red(tmp_path: P
         assert card._status.property("tone") == "green"
         card.set_paths(str(tmp_path), str(tmp_path / "preprocessed"), str(tmp_path / "results"))
         assert card._status.text() == "folders overlap" and card._status.property("tone") == "red"
+        assert card._note.wordWrap() and card._note.text().endswith("Browse…")  # the fix is on its own line
     finally:
         card.close()
         application.processEvents()

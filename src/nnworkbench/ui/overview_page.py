@@ -213,10 +213,11 @@ class PathsCard(Card):
         self._variables = badge("differs from nnU-Net variables", "orange")  # hover: which path is used
         self._variables.hide()
         title.addWidget(self._variables)
-        self._note = label("shared with the command line (nnworkbench-set-paths)", muted=True, size=12)
-        title.addWidget(self._note)
         title.addStretch()
         left.addLayout(title)
+        # own wrapped line: beside the title the fix for a problem was cut off at the minimum window width
+        self._note = label("shared with the command line (nnworkbench-set-paths)", muted=True, size=12, wrap=True)
+        left.addWidget(self._note)
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(6)
@@ -337,9 +338,7 @@ class PathsCard(Card):
         """Orange badge when nnU-Net's folder variables (nnUNet_raw, …) point elsewhere; nnWorkbench uses its own."""
         conflicts = environment_conflicts({f"nnUNet_{key}": str(path) for key, path
                                            in zip(_KEYS, self.local_paths()) if path}) if self._active == "Local" else []
-        self._variables.setVisible(bool(conflicts))
-        if conflicts and self._status.text() == "✓ all found":  # room for the badge; its hover text says the same
-            self._note.setText("")
+        self._variables.setVisible(bool(conflicts))  # the note has its own line, so there is room for the badge
         self._variables.setToolTip("\n\n".join(
             f"{name}\n  used (nnWorkbench): {used or 'not set'}\n  variable (not used): {value}"
             for name, value, used in conflicts) + "\n\nnnWorkbench uses its own folders, also for the nnU-Net "

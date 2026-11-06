@@ -55,6 +55,8 @@ def run_create_dataset(roots: dict[str, Path | None], dataset_id: int, name: str
         raise ValueError(f"--file-ending {file_ending!r} is not an image ending nnU-Net reads: use one of "
                          f"{', '.join(IMAGE_SUFFIXES)} (with the dot; JPEG is not supported).")
     names = [label.strip() for label in labels if label.strip()]
+    if any(label.casefold() == "background" for label in names[1:]):
+        raise ValueError("background is always class 0: list it first or leave it out.")
     if not names or names[0].casefold() != "background":
         names.insert(0, "background")  # nnU-Net needs background as label 0
     if any(label.casefold() == "ignore" for label in names):

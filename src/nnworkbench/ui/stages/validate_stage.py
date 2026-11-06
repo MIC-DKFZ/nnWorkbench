@@ -166,6 +166,10 @@ class ValidateStage(StagePage):
 
     def __init__(self, context: AppContext, parent=None) -> None:
         super().__init__(context, _howto(), parent)
+        self._sparse_tip = self.howto.add_tip(
+            f"<b>Sparse labels</b> (with ignore label): the Dice counts only the annotated voxels. Inspect the unlabeled "
+            f"regions of a fold's predictions with {icon_html('search')} before trusting the number.", "orange")
+        self._sparse_tip.hide()  # shown for datasets with the ignore label (set_state)
         self._fold: FoldInfo | None = None
         self._model: ModelInfo | None = None
         self._summary: dict | None = None
@@ -293,6 +297,7 @@ class ValidateStage(StagePage):
 
     def set_state(self, state: DatasetState) -> None:
         super().set_state(state)
+        self._sparse_tip.setVisible(state.sparse)
         models = [model for model in state.models if any(fold.has_validation for fold in model.folds)]
         self._models_hint.setText("click a fold for its results, again or the model to go back" if len(models) > 1
                                   else "click a fold for its results, again to go back")

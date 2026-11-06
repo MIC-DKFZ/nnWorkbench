@@ -286,6 +286,8 @@ def test_create_dataset_and_new_iteration_commands(tmp_path, monkeypatch, capsys
         command_runner._run_builtin_command(["create-dataset", "-d", "42", "--name", "Other", "--labels", "a"])
     with pytest.raises(ValueError, match="--ignore"):
         command_runner._run_builtin_command(["create-dataset", "-d", "7", "--name", "X", "--labels", "a,ignore"])
+    with pytest.raises(ValueError, match="always class 0"):  # not "Label names must be unique"
+        command_runner._run_builtin_command(["create-dataset", "-d", "7", "--name", "X", "--labels", "a,background"])
 
     (folder / "labelsTr" / "c.nii.gz").touch()
     assert command_runner._run_builtin_command(["new-iteration", "-d", "42", "--json"]) == 0
