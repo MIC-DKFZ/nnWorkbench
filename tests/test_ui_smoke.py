@@ -140,6 +140,10 @@ def test_train_validate_predict_pages(tmp_path: Path) -> None:
     window = MainWindow()
     try:
         record, state = _results_dataset(tmp_path)
+        # the three folders of this test, not those saved on this computer (none on the CI runners): the run
+        # checks below assume they exist
+        for name in ("raw", "preprocessed", "results"):
+            window.context.roots[name] = tmp_path / name
         window.dataset_page.record = record
         window.dataset_page._apply_state(state)
         model = state.models[0]
