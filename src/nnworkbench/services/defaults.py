@@ -8,6 +8,8 @@ from collections.abc import Iterable
 DEFAULT_PLANNER = "nnUNetPlannerResEncL"
 PLANNERS = ("ExperimentPlanner", "nnUNetPlannerResEncM", DEFAULT_PLANNER, "nnUNetPlannerResEncXL")
 DEFAULT_PLANS = "nnUNetResEncUNetLPlans"  # written by the default planner
+# the plans each planner in PLANNERS writes, in the same order
+KNOWN_PLANS = ("nnUNetPlans", "nnUNetResEncUNetMPlans", DEFAULT_PLANS, "nnUNetResEncUNetXLPlans")
 CONFIGURATIONS = ("3d_fullres", "2d", "3d_lowres")
 DEFAULT_CONFIGURATION = "3d_fullres"
 SPARSE_TRAINER = "nnUNetTrainerBetterIgnoreSampling"

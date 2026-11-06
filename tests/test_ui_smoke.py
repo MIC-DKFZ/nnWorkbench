@@ -195,11 +195,13 @@ def test_train_validate_predict_pages(tmp_path: Path) -> None:
         assert "Fold 0 of this model is finished" in train._overwrite_warning()
         train._run_dialog.close()
 
-        # without preprocessed data, plans and configuration stay empty (placeholders in the command)
+        # without preprocessed data here, plans and configuration are still filled in (preprocessed on a cluster):
+        # the command can be copied, the run stays disabled
         train.set_state(dataclasses.replace(state, plans=()))
         train._prefill(model, fold_2, continue_training=True)
-        assert train._plans.currentText() == "" and " CONFIGURATION 2 " in train._command.command()
-        assert "-p PLANS" in train._command.command()
+        assert train._plans.currentText() == "nnUNetPlans" and " 3d_fullres 2 " in train._command.command()
+        assert not train._start.isEnabled() and "not preprocessed on this computer" in train._busy_hint.text()
+        assert train._busy_hint.property("tone") == "orange" and "only with Copy command" in train._plans_hint.text()
         train._run_dialog.close()
         train.set_state(state)
 

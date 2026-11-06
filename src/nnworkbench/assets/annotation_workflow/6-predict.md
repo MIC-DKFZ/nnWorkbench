@@ -47,6 +47,8 @@ nnworkbench-run nnUNetv2_predict -i imagesTs/ -o predictions/ \
 
 Then click **▶ Predict**, or **Copy command** to run it on a remote machine. The **Input cases** table shows which cases are already predicted.
 
+If the model is not in `nnUNet_results` on your computer, e.g. because it was trained on a cluster whose folders are not mounted, enter its **Trainer**, **Plans** and **Configuration** in the panel instead of selecting a model (the fields are prefilled with the defaults the Train page would use) and select the folds it has. **▶ Predict** stays disabled, since the model is not here; **Copy command** gives the command to run where the model is. The same applies to folds: for a local model, folds that are not finished on your computer (e.g. a test run of fold 0 here, folds 1 to 4 on the cluster) can be selected for the copied command, but not run here.
+
 The output folder contains one segmentation file for each input case. Review the predictions before using them for further analysis; in nnWorkbench, the magnifier button (**Open in Napari**) next to a case opens the image and its prediction.
 
 ## Share the Model

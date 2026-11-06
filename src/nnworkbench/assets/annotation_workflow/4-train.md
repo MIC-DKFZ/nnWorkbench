@@ -96,7 +96,7 @@ nnworkbench-run nnUNetv2_train 42 3d_fullres 0 \
 
 To train a single model on all images instead, use fold `all` in place of `0`.
 
-**In nnWorkbench:** On the **Train** page, click **▶ Train…** and choose the **Trainer**, the **Plans** (e.g. `nnUNetResEncUNetLPlans`), the **Configuration** and the **Folds**, then click **▶ Train**. Several folds train one after another; at least one fold stays selected. `nnUNetTrainer` is preselected; with an `ignore` label in `dataset.json` (sparse labels), `nnUNetTrainerBetterIgnoreSampling` is preselected instead. **Device** chooses where the training runs (see [Device](#device-gpu-or-cpu)).
+**In nnWorkbench:** On the **Train** page, click **▶ Train…** and choose the **Trainer**, the **Plans** (e.g. `nnUNetResEncUNetLPlans`), the **Configuration** and the **Folds**, then click **▶ Train**. Several folds train one after another; at least one fold stays selected. `nnUNetTrainer` is preselected; with an `ignore` label in `dataset.json` (sparse labels), `nnUNetTrainerBetterIgnoreSampling` is preselected instead. **Device** chooses where the training runs (see [Device](#device-gpu-or-cpu)). Plans that are not preprocessed on your computer, e.g. because preprocessing ran on a cluster, can be chosen or typed as well: **▶ Train** then stays disabled and **Copy command** gives the command for the machine that has the preprocessed data.
 
 ### 6. Follow the Training
 

@@ -131,7 +131,7 @@ nnworkbench-set-paths --raw /path/to/nnUNet_raw --preprocessed /path/to/nnUNet_p
 ```
 
 `nnworkbench-run` then uses them for nnU-Net commands and dataset tools.
-Optionally, you can prepare this in the nnWorkbench GUI: on the overview, add a remote path profile with the folders of the remote machine; **Export** then copies the `nnworkbench-set-paths` command above with these paths. The commands themselves can also be configured in the GUI: **Copy command** in the run dialogs gives the matching `nnworkbench-run` command, which uses the paths saved on the remote machine. All commands and dataset tools for the remote machine are listed in the [CLI overview](#cli-overview).
+Optionally, you can prepare this in the nnWorkbench GUI: on the overview, add a remote path profile with the folders of the remote machine; **Export** then copies the `nnworkbench-set-paths` command above with these paths. The commands themselves can also be configured in the GUI: **Copy command** in the run dialogs gives the matching `nnworkbench-run` command, which uses the paths saved on the remote machine. The GUI does not need the cluster's data for this: plans that are only preprocessed on the cluster, and models or folds that only exist there, can be chosen or typed in the Train and Predict dialogs. The run button then stays disabled, and **Copy command** gives the command for the cluster. All commands and dataset tools for the remote machine are listed in the [CLI overview](#cli-overview).
 
 </details>
 
@@ -260,7 +260,7 @@ Yes. Datasets, preprocessed data and models stay in the standard nnU-Net folders
 <details>
 <summary><b>Can I train on a cluster and keep working in the nnWorkbench GUI on my computer?</b></summary>
 
-Yes. Use the core installation on the cluster (see *Remote machines and clusters* above) and copy the commands from the GUI (see the [CLI overview](#cli-overview)). If the cluster's `nnUNet_results` folder is mounted on your computer, the GUI shows the training progress and the validation results as if they ran locally.
+Yes. Use the core installation on the cluster (see *Remote machines and clusters* above) and copy the commands from the GUI (see the [CLI overview](#cli-overview)). If the cluster's `nnUNet_results` folder is mounted on your computer, the GUI shows the training progress and the validation results as if they ran locally. If it is not mounted, you can still configure training and prediction in the GUI: enter the plans, trainer, configuration and folds that exist on the cluster, and copy the command.
 
 </details>
 

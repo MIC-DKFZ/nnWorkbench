@@ -42,7 +42,7 @@ nnworkbench-set-paths --raw /remote/path/to/nnUNet_raw \
 
 **In nnWorkbench:** On the overview, click **＋ Add remote profile**, enter the remote paths, and click **Export** to copy this command.
 
-**Run commands:** In the nnWorkbench dialogs, click **Copy command** and run the command in a terminal on the remote machine. The `nnworkbench-run` prefix makes it use the remote paths. `nnworkbench-run status -d 42` shows there what is done and what is next for a dataset, like the page tabs in nnWorkbench.
+**Run commands:** In the nnWorkbench dialogs, click **Copy command** and run the command in a terminal on the remote machine. The `nnworkbench-run` prefix makes it use the remote paths. `nnworkbench-run status -d 42` shows there what is done and what is next for a dataset, like the page tabs in nnWorkbench. A prediction with a model that only exists on the remote machine can be configured too: enter the model's trainer, plans and configuration on the **Predict** page (see [6. Predict](6-predict.md)).
 
 **Sync the folders:** If your computer and the remote machine do not share the same storage, copy the dataset's folders (e.g. `Dataset042_CellSegmentation`) before and after each command. Each command only needs some of them:
 

@@ -26,10 +26,11 @@ def test_the_result_line_is_found_among_other_output() -> None:
     output = ("Some library prints on import\n"
               'NNWORKBENCH_CLASSES {"planners": ["ExperimentPlanner", "MyPlanner"], '
               '"trainers": ["nnUNetTrainer", "MyTrainer", "", 3]}\n')
-    assert parse_discovery(output) == NnunetClasses(("ExperimentPlanner", "MyPlanner"), ("nnUNetTrainer", "MyTrainer"))
+    assert parse_discovery(output) == NnunetClasses(("ExperimentPlanner", "MyPlanner"), ("nnUNetTrainer", "MyTrainer"),
+                                                    complete=True)
     # the default comes first, the rest in alphabetical order, and it is always listed
     assert parse_discovery('NNWORKBENCH_CLASSES {"planners": ["b", "A"], "trainers": []}') == NnunetClasses(
-        ("ExperimentPlanner", "A", "b"), ("nnUNetTrainer",))
+        ("ExperimentPlanner", "A", "b"), ("nnUNetTrainer",), complete=True)
     for broken in ("", "nothing here", "NNWORKBENCH_CLASSES not json", "NNWORKBENCH_CLASSES [1, 2]"):
         assert parse_discovery(broken) == NnunetClasses()
 
@@ -53,7 +54,7 @@ def test_the_discovery_process_gets_the_trainer_folders_and_no_console_window(mo
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setenv("nnUNet_extTrainer", "/my/trainers")
-    assert discover_nnunet_classes() == NnunetClasses(("ExperimentPlanner",), ("nnUNetTrainer", "X"))
+    assert discover_nnunet_classes() == NnunetClasses(("ExperimentPlanner",), ("nnUNetTrainer", "X"), complete=True)
     command, kwargs = calls[0]
     assert command[:3] == [sys.executable, "-m", "nnworkbench.services.nnunet_discovery"]
     folders = kwargs["env"]["nnUNet_extTrainer"]

@@ -17,7 +17,10 @@ from qtpy.QtWidgets import (
 
 from nnworkbench.services.commands import split_arguments, training_command
 from nnworkbench.services.defaults import (
+    CONFIGURATIONS,
+    DEFAULT_PLANS,
     DENSE_TRAINER,
+    KNOWN_PLANS,
     SPARSE_TRAINER,
     default_configuration,
     default_plans,
@@ -231,11 +234,7 @@ class TrainStage(StagePage):
         """Open the training form with this model and fold (Continue…, Run again…, Next fold…)."""
         self._fill_form(model.trainer, model.plans, model.configuration,
                         fold.name if isinstance(fold, FoldInfo) else fold, continue_training)
-        if self._plans.currentText():
-            self._source_note.setText(f"From {model.trainer} · {model.plans} · {model.configuration}.")
-        else:  # the model's plans are not preprocessed on this computer, so they are not filled in
-            self._source_note.setText(f"From {model.trainer}. Its plans ({model.plans} · {model.configuration}) "
-                                      "are not preprocessed on this computer.")
+        self._source_note.setText(f"From {model.trainer} · {model.plans} · {model.configuration}.")
         self._run_dialog.open()
 
     def _open_defaults(self) -> None:
@@ -243,7 +242,9 @@ class TrainStage(StagePage):
         if self.state is None:
             return
         trainer = trainer_for(self.state.sparse)
-        plans = default_plans(plans.name for plans in self.state.plans)  # only plans in nnUNet_preprocessed
+        # the default planner's plans when preprocessed here, else the first preprocessed plans, else the default
+        # (preprocessed elsewhere: the command can still be copied)
+        plans = default_plans(plans.name for plans in self.state.plans) or DEFAULT_PLANS
         self._plans.setCurrentText(plans)  # refreshes the configurations of these plans
         configuration = default_configuration(self._configuration.itemText(index)
                                               for index in range(self._configuration.count()))
@@ -255,12 +256,10 @@ class TrainStage(StagePage):
 
     def _fill_form(self, trainer: str, plans: str, configuration: str, fold: str, continue_training: bool) -> None:
         self._trainer.setCurrentText(trainer)
-        # Plans and configuration only when they are preprocessed here; otherwise the fields stay empty.
-        preprocessed = self.state.plans if self.state else ()
-        plans_info = next((item for item in preprocessed if item.name == plans), None)
-        self._plans.setCurrentText(plans if plans_info else "")
-        names = [config.name for config in plans_info.configurations] if plans_info else []
-        self._configuration.setCurrentText(configuration if configuration in names else "")
+        # plans and configuration as given, also when they are not preprocessed on this computer (then the run
+        # stays disabled and Copy command gives the command for the machine that has them, see update_actions)
+        self._plans.setCurrentText(plans)
+        self._configuration.setCurrentText(configuration)
         if fold in self._fold_choice.options():
             self._fold_choice.set_selected([fold])
         self._arguments.clear()
@@ -319,7 +318,10 @@ class TrainStage(StagePage):
             "sampling.")))
         layout.addWidget(self._trainer_hint)
         layout.addLayout(form_row("Plans", self._plans, info=(
-            "The preprocessed data and network settings to train with. Only preprocessed plans are listed.")))
+            "The preprocessed data and network settings to train with. Plans that are not preprocessed on this "
+            "computer (e.g. on a cluster) can be chosen or typed too; then only Copy command works.")))
+        self._plans_hint = form_hint("")
+        layout.addWidget(self._plans_hint)
         layout.addLayout(form_row("Configuration", self._configuration, info=(
             "The configuration defines the data handling and the model input: <b>3d_fullres</b> 3D at full "
             "resolution (the usual choice), <b>2d</b> single slices (faster), <b>3d_lowres</b> downsampled 3D (only "
@@ -376,13 +378,13 @@ class TrainStage(StagePage):
         self._models.blockSignals(False)
         size_models_table(self._models, state.models)
         # Panel defaults
-        plans_names = [plans.name for plans in state.plans]
+        preprocessed_names = [plans.name for plans in state.plans]
+        plans_names = preprocessed_names + [name for name in KNOWN_PLANS if name not in preprocessed_names]
         current_plans = self._plans.currentText()
         self._plans.blockSignals(True)
         self._plans.clear()
         self._plans.addItems(plans_names)
-        self._plans.setCurrentText(current_plans if current_plans in plans_names else
-                                   (plans_names[0] if plans_names else ""))
+        self._plans.setCurrentText(current_plans or default_plans(preprocessed_names) or DEFAULT_PLANS)
         self._plans.blockSignals(False)
         self._plans_changed()
         folds = [str(index) for index in range(state.fold_count)] + ["all"]
@@ -431,15 +433,33 @@ class TrainStage(StagePage):
         if self.state is None:
             return
         plans = next((item for item in self.state.plans if item.name == self._plans.currentText()), None)
-        configurations = [config.name for config in plans.configurations] if plans else []
+        configurations = [config.name for config in plans.configurations] if plans else list(CONFIGURATIONS)
         current = self._configuration.currentText()
         self._configuration.blockSignals(True)
         self._configuration.clear()
         self._configuration.addItems(configurations)
         self._configuration.setCurrentText(current if current in configurations else
-                                           (configurations[0] if configurations else ""))
+                                           default_configuration(configurations))
         self._configuration.blockSignals(False)
+        preprocessed = [item.name for item in self.state.plans]
+        if plans is None:
+            self._plans_hint.setText("not preprocessed on this computer · only with Copy command" + (
+                f" · preprocessed here: {', '.join(preprocessed)}" if preprocessed else ""))
+        else:
+            self._plans_hint.setText("")
         self._update_command()
+
+    def _not_preprocessed_here(self) -> str:
+        """Why the run is only possible elsewhere: the plans or configuration are not preprocessed here."""
+        plans = next((item for item in self.state.plans if item.name == self._plans.currentText()), None)
+        if plans is None:
+            return (f"{self._plans.currentText() or 'These plans'} are not preprocessed on this computer. Use Copy "
+                    "command and run it where the preprocessed data is (e.g. on the cluster), or preprocess here.")
+        if self._configuration.currentText() not in [config.name for config in plans.configurations]:
+            return (f"Configuration {self._configuration.currentText() or '?'} of {plans.name} is not preprocessed "
+                    "on this computer. Use Copy command and run it where the preprocessed data is, or preprocess "
+                    "it here.")
+        return ""
 
     # ------------------------------------------------------------ tables
 
@@ -570,8 +590,12 @@ class TrainStage(StagePage):
         if self.state is None or not getattr(self, "_run_dialog", None) or not self._run_dialog.visible:
             return  # nothing to show while the run dialog is closed
         reason = arguments_error(self._arguments.text()) or self.busy_or_missing("preprocessed", "results")
-        if not reason and not any(plans.preprocessed_time for plans in self.state.plans):
-            reason = "no preprocessed data · cannot train"
+        if not reason and not (self._plans.currentText() and self._configuration.currentText()):
+            reason = "Enter the plans and the configuration."
+        if not reason:
+            reason = self.unknown_class("trainer", self._trainer.currentText())
+        if not reason:
+            reason = self._not_preprocessed_here()
         folds = len(self._fold_choice.selected())
         if not reason and not folds:
             reason = "Select at least one fold."
@@ -580,8 +604,7 @@ class TrainStage(StagePage):
         self._start.setText(f"▶ Train {folds} folds" if folds > 1 else "▶ Train")
         self._start.setEnabled(not reason)
         self._start.setToolTip(reason)
-        self._busy_hint.setText(reason)
-        self._busy_hint.setVisible(bool(reason))
+        self.show_run_reason(self._busy_hint, reason)
         self._run_dialog.refit()
 
     def _start_training(self) -> None:

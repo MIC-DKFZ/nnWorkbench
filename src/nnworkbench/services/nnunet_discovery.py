@@ -28,10 +28,12 @@ _WINDOWS = os.name == "nt"
 
 @dataclass(frozen=True)
 class NnunetClasses:
-    """The class names the GUI offers; the defaults alone when nnU-Net could not be inspected."""
+    """The class names the GUI offers; the defaults alone when nnU-Net could not be inspected (``complete`` is
+    False then: the GUI cannot tell whether a typed name exists and does not block a run on it)."""
 
     planners: tuple[str, ...] = (DEFAULT_PLANNER,)
     trainers: tuple[str, ...] = (DEFAULT_TRAINER,)
+    complete: bool = False
 
 
 def _subclass_names(package, base_class, prefix: str) -> set[str]:
@@ -147,7 +149,7 @@ def parse_discovery(output: str) -> NnunetClasses:
         if not isinstance(data, dict):
             break
         return NnunetClasses(_names(data.get("planners"), DEFAULT_PLANNER),
-                             _names(data.get("trainers"), DEFAULT_TRAINER))
+                             _names(data.get("trainers"), DEFAULT_TRAINER), complete=True)
     return NnunetClasses()
 
 

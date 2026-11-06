@@ -746,6 +746,9 @@ class ChoiceGroup(QWidget):
             widget.setObjectName(self._object_name)
             widget.setCheckable(True)
             widget.setCursor(Qt.CursorShape.PointingHandCursor)
+            # as wide as the text (plus the stylesheet's padding and border): Fusion's 80 px minimum per button
+            # made six folds (0-4, all) wider than the Predict panel
+            widget.setFixedWidth(max(36, widget.fontMetrics().horizontalAdvance(option) + 22))
             widget.setEnabled(option not in disabled)
             widget.setToolTip(tooltips.get(option, ""))
             self._group.addButton(widget)

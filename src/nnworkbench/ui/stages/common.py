@@ -23,7 +23,17 @@ from nnworkbench.services.dataset_json import REGIONS_NOTE
 
 from ..context import AppContext
 from ..dataset_state import DatasetState
-from ..widgets import Card, ElidedLabel, FlowLayout, HowToCard, badge, button, clear_layout, label
+from ..widgets import (
+    Card,
+    ElidedLabel,
+    FlowLayout,
+    HowToCard,
+    badge,
+    button,
+    clear_layout,
+    label,
+    polish,
+)
 
 
 def format_command(command: str) -> str:
@@ -317,6 +327,28 @@ class StagePage(QWidget):
 
     def update_actions(self) -> None:
         """Enable or disable run buttons (one job at a time, missing folders)."""
+
+    def unknown_class(self, kind: str, name: str) -> str:
+        """Why a run cannot start here: *name* is not an installed trainer or planner ("" when it is, when the
+        name is empty, or while the installed classes are unknown or could not be listed)."""
+        classes = self.context.nnunet_classes
+        if classes is None or not classes.complete or not name:
+            return ""
+        known = classes.trainers if kind == "trainer" else classes.planners
+        if name in known:
+            return ""
+        return (f"{kind.capitalize()} {name} is not installed on this computer (nnU-Net does not know it). Use "
+                "Copy command and run it where it exists.")
+
+    def show_run_reason(self, hint, reason: str) -> None:
+        """Why the run button is disabled: hidden when it can run; orange when the run is possible elsewhere
+        (Copy command), blue for everything else."""
+        hint.setText(reason)
+        hint.setVisible(bool(reason))
+        tone = "orange" if "Copy command" in reason else "blue"
+        if hint.property("tone") != tone:
+            hint.setProperty("tone", tone)
+            polish(hint)
 
     def busy_or_missing(self, *roots: str) -> str:
         """Return why a run button is disabled, or an empty string when it can run."""

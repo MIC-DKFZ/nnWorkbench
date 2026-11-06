@@ -541,6 +541,8 @@ class PreprocessStage(StagePage):
         if self.state is None or not getattr(self, "_run_dialog", None) or not self._run_dialog.visible:
             return  # nothing to show while the run dialog is closed
         reason = arguments_error(self._arguments.text()) or self.busy_or_missing("raw", "preprocessed")
+        if not reason:
+            reason = self.unknown_class("planner", self._planner.currentText())
         missing = self.state.raw.missing_labels
         if not reason and missing:
             reason = f"{missing} image{'s' if missing != 1 else ''} without label · cannot preprocess (see Data)"
@@ -551,8 +553,7 @@ class PreprocessStage(StagePage):
             reason = "fix the data first (see Data) · " + "; ".join(problem.rstrip(".") for problem in problems)
         self._run.setEnabled(not reason)
         self._run.setToolTip(reason)
-        self._run_hint.setText(reason)
-        self._run_hint.setVisible(bool(reason))
+        self.show_run_reason(self._run_hint, reason)
 
     def _run_preprocessing(self) -> None:
         if arguments_error(self._arguments.text()):
